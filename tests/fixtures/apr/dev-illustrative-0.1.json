@@ -1,0 +1,74 @@
+{
+  "calculator": "dev-illustrative@0.1",
+  "source": "Independent Python reference implementation of the DEVELOPMENT calculator (Newton's method for APR, Decimal for DSR). NOT derived from the bank APR workbook.",
+  "cases": [
+    {
+      "name": "6m 12.5% with obligations",
+      "inputs": {
+        "assetCostKobo": 100000000,
+        "equityContributionKobo": 0,
+        "markupRatePercent": "12.5",
+        "tenorMonths": 6,
+        "averageMonthlyInflowKobo": 50000000,
+        "existingMonthlyObligationsKobo": 5000000
+      },
+      "expected": {
+        "aprPercent": "41.6725",
+        "dsrPercent": "47.5000",
+        "markupKobo": 12500000,
+        "costPlusMarkupKobo": 112500000
+      }
+    },
+    {
+      "name": "12m 20% with equity",
+      "inputs": {
+        "assetCostKobo": 2000000000,
+        "equityContributionKobo": 200000000,
+        "markupRatePercent": "20",
+        "tenorMonths": 12,
+        "averageMonthlyInflowKobo": 600000000,
+        "existingMonthlyObligationsKobo": 0
+      },
+      "expected": {
+        "aprPercent": "35.0742",
+        "dsrPercent": "30.0000",
+        "markupKobo": 360000000,
+        "costPlusMarkupKobo": 2160000000
+      }
+    },
+    {
+      "name": "3m 7.25% odd kobo",
+      "inputs": {
+        "assetCostKobo": 123456789,
+        "equityContributionKobo": 0,
+        "markupRatePercent": "7.25",
+        "tenorMonths": 3,
+        "averageMonthlyInflowKobo": 99999999,
+        "existingMonthlyObligationsKobo": 1234567
+      },
+      "expected": {
+        "aprPercent": "42.9956",
+        "dsrPercent": "45.3703",
+        "markupKobo": 8950617,
+        "costPlusMarkupKobo": 132407406
+      }
+    },
+    {
+      "name": "zero markup",
+      "inputs": {
+        "assetCostKobo": 50000000,
+        "equityContributionKobo": 0,
+        "markupRatePercent": "0",
+        "tenorMonths": 5,
+        "averageMonthlyInflowKobo": 40000000,
+        "existingMonthlyObligationsKobo": 0
+      },
+      "expected": {
+        "aprPercent": "0.0000",
+        "dsrPercent": "25.0000",
+        "markupKobo": 0,
+        "costPlusMarkupKobo": 50000000
+      }
+    }
+  ]
+}

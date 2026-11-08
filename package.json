@@ -1,0 +1,48 @@
+{
+  "name": "wakeelboost-work-desk",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WakeelBoost Work Desk - internal Alternative Bank workbench for WakeelBoost merchant stock financing",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "dev:all": "tsx scripts/dev-all.ts",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "worker": "tsx scripts/worker.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "seed": "tsx scripts/seed.ts",
+    "db:reset": "tsx scripts/migrate.ts --reset && tsx scripts/seed.ts",
+    "demo:routes": "tsx scripts/demo-routes.ts",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.913.0",
+    "@aws-sdk/s3-request-presigner": "^3.913.0",
+    "exceljs": "^4.4.0",
+    "next": "^15.5.29",
+    "nodemailer": "^7.0.9",
+    "pg": "^8.16.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@types/node": "^22.18.12",
+    "@types/nodemailer": "^7.0.2",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.38.0",
+    "eslint-config-next": "^15.5.29",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
+  }
+}
