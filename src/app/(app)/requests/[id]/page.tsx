@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
 import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
@@ -7,39 +8,76 @@ import { getCase } from "@/server/domain/views";
 import { signDocumentLink, CATEGORY_LABEL, DOC_CATEGORIES, UPLOADABLE_BY_STAGE, PACK, type DocumentRow } from "@/server/domain/documents";
 import { STAGE_LABELS, ACTION_LABELS, allowedActions, type Stage, type TaskAction } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
-import { APPLICANT_TYPE_LABELS, assetCostKobo, requiredSubmissionDocuments, type DraftData } from "@/server/domain/application-data";
+import { APPLICANT_TYPE_LABELS, assetCostKobo, type DraftData } from "@/server/domain/application-data";
 import { getRoute } from "@/server/domain/routing";
-import { activeCalculator, calculatorKey } from "@/server/domain/apr/registry";
+import { activeCalculator, calculatorKey, findCalculator } from "@/server/domain/apr/registry";
 import { REMINDER_MIN_AGE_MS } from "@/server/domain/workflow";
 import { formatKobo, koboToNairaString } from "@/server/money";
 import { formatDateOnly, formatDuration, formatLagos, lagosDate } from "@/server/time";
 import { maskWithLast4 } from "@/server/mask";
 import { config } from "@/server/config";
-import {
-  AssessmentForm,
-  BookingForm,
-  CrmsOkay,
-  FirstReviewApprove,
-  GenerateOffer,
-  ReasonButton,
-  ReminderButton,
-  RevealIdentifiers,
-  TaskButton,
-  UploadForm,
-} from "./CaseClient";
+import { StageChip, OutcomeChip } from "@/components/Status";
+import { UploadPanel } from "@/components/UploadPanel";
+import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
 type Case = Awaited<ReturnType<typeof getCase>>;
 type SP = Record<string, string | undefined>;
+const ic = { className: "icon", "aria-hidden": true } as const;
 
 export const metadata = { title: "Request" };
 
 const TABS = [
-  ["summary", "Summary"],
+  ["overview", "Overview"],
   ["documents", "Documents"],
-  ["assessment", "Credit assessment"],
-  ["history", "History & handoffs"],
-  ["audit", "Audit trail"],
+  ["assessment", "Assessment"],
+  ["activity", "Activity"],
 ] as const;
+const TAB_ALIASES: Record<string, string> = { summary: "overview", history: "activity", audit: "activity" };
+
+/** Milestones for the progress timeline (presentation only; maps existing stages). */
+const MILESTONES: { label: string; stages: Stage[] }[] = [
+  { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
+  { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT"] },
+  { label: "Credit review", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"] },
+  { label: "Approvals", stages: ["UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
+  { label: "Offer & insurance", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
+  { label: "Disbursement", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
+  { label: "Closure", stages: ["COMPLETION", "VENDOR_CONFIRMATION", "CLOSED"] },
+];
+function milestoneIndex(stage: Stage) {
+  return MILESTONES.findIndex((m) => m.stages.includes(stage));
+}
+
+const OUTPUT_LABELS: Record<string, string> = {
+  facilityType: "Facility type",
+  rateType: "Rate type",
+  totalNumberOfPayments: "Total number of payments (N)",
+  paymentsPerYear: "Payments per year (n)",
+  periodicInstalmentKobo: "Periodic instalment",
+  monthlyEquivalentInstalmentKobo: "Monthly-equivalent instalment (for DSR)",
+  totalMarkupKobo: "Total mark-up",
+  takafulKobo: "Takaful contribution",
+  stampDutyKobo: "Stamp duty",
+  totalFeesKobo: "Total fees and charges",
+  costOfFacilityKobo: "Cost of facility (c)",
+  totalPaymentKobo: "Total amount payable",
+  aprPercent: "APR (%)",
+  dsrPercent: "DSR (%)",
+  markupKobo: "Mark-up",
+  costPlusMarkupKobo: "Cost plus mark-up",
+  aprFormula: "APR formula",
+  dsrFormula: "DSR formula",
+  amountApprovedKobo: "Amount approved (L)",
+  markupRatePercent: "Mark-up / rental rate (% p.a.)",
+  frequency: "Instalment frequency",
+  tenorMonths: "Tenor (months)",
+  takafulPercent: "Takaful (%)",
+  stampDutyPercent: "Stamp duty (%)",
+  adminFeePercent: "Administrative fee (%)",
+  averageMonthlyInflowKobo: "Average monthly inflow",
+  existingMonthlyObligationsKobo: "Existing monthly obligations",
+};
+const showVal = (k: string, v: unknown) => (k.endsWith("Kobo") ? formatKobo(Number(v)) : String(v));
 
 export default async function CasePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<SP> }) {
   const { ctx, session, roles } = await requireUser();
@@ -53,9 +91,9 @@ export default async function CasePage({ params, searchParams }: { params: Promi
     if (e instanceof DomainError && e.code === "NOT_FOUND") notFound();
     if (e instanceof DomainError && e.code === "FORBIDDEN")
       return (
-        <div className="card" role="alert">
+        <div className="card" role="alert" style={{ maxWidth: 560 }}>
           <h1>Access denied</h1>
-          <p className="muted">Documents and details are visible only to officers authorised on this request. This attempt was recorded.</p>
+          <p className="muted">Request details and documents are visible only to officers authorised on this request. This attempt was recorded in the audit trail.</p>
           <Link className="btn btn-primary" href="/queue">
             My Action Queue
           </Link>
@@ -65,45 +103,69 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   }
   const app = c.app;
   const myTask = c.openTask && c.openTask.assignee_id === session.staffId && roles.includes(c.openTask.assignee_role) ? c.openTask : null;
-  const tab = (TABS.find(([k]) => k === sp.tab)?.[0] ?? "summary") as (typeof TABS)[number][0];
+  const rawTab = sp.tab ? TAB_ALIASES[sp.tab] ?? sp.tab : "overview";
+  const tab = (TABS.find(([k]) => k === rawTab)?.[0] ?? "overview") as (typeof TABS)[number][0];
   const previewDoc = sp.doc ? c.documents.find((d) => d.id === sp.doc) ?? null : null;
   const link = (docId: string, mode: "view" | "download") => signDocumentLink(docId, session.staffId, session.sessionId, mode);
   const tabHref = (t: string, extra: SP = {}) => {
     const q = new URLSearchParams(Object.entries({ task: sp.task, tab: t, ...extra }).filter(([, v]) => v) as [string, string][]);
     return `/requests/${id}?${q.toString()}`;
   };
+  const doneHref = `/requests/${id}?done=1`;
   const data: DraftData | null = c.version?.data ?? c.working?.data ?? null;
   const isInitiator = app.initiator_id === session.staffId;
   const waited = c.openTask?.assigned_at ? Date.now() - new Date(c.openTask.assigned_at).getTime() : 0;
   const staleDeepLink = sp.task && (!myTask || myTask.id !== sp.task);
+  // Committed result of the officer's last action (read back from the database, not from the URL).
+  const committed = sp.done
+    ? (await db.query(`SELECT d.action, d.created_at, d.stage FROM decisions d WHERE d.application_id = $1 AND d.actor_id = $2 ORDER BY d.seq DESC LIMIT 1`, [id, session.staffId])).rows[0]
+    : null;
+  const current = milestoneIndex(app.stage as Stage);
+  const rejectedAt = app.stage === "REJECTED" ? milestoneIndex((c.tasks.at(-1)?.stage ?? "BUSINESS_ENDORSEMENT") as Stage) : -1;
 
   return (
     <>
+      <nav aria-label="Breadcrumb" className="crumbs" style={{ marginBottom: 8 }}>
+        <Link href="/queue">My Action Queue</Link>
+        <span aria-hidden="true">/</span>
+        {isInitiator && (
+          <>
+            <Link href="/requests">View Progress</Link>
+            <span aria-hidden="true">/</span>
+          </>
+        )}
+        <span aria-current="page">{app.ref}</span>
+      </nav>
       <div className="case-head">
-        <div>
-          <p className="small muted" style={{ margin: 0 }}>
-            <Link href="/queue">My Action Queue</Link> / Request
-          </p>
-          <h1 className="mono" style={{ marginBottom: 4 }}>
-            {app.ref}
-          </h1>
-          <div className="case-meta">
-            <strong>{app.customer_name || "Draft"}</strong>
-            <span className="badge">{APPLICANT_TYPE_LABELS[app.applicant_type as keyof typeof APPLICANT_TYPE_LABELS]}</span>
-            <span className={`badge ${app.status === "REJECTED" ? "badge-red" : app.status === "CLOSED" ? "badge-dark" : app.status === "BOOKED" ? "badge-green" : "badge-yellow"}`}>
-              {STAGE_LABELS[app.stage as Stage]}
-            </span>
+        <div style={{ minWidth: 0 }}>
+          <div className="case-title">
+            <h1>{app.ref}</h1>
+            <StageChip stage={app.stage as Stage} status={app.status} />
             {app.route && <span className="badge badge-blue">Route {app.route}</span>}
-            <span className="badge">{formatKobo(app.requested_amount_kobo)}</span>
           </div>
+          <dl className="case-facts">
+            <div>
+              <dt>Customer</dt>
+              <dd>{app.customer_name || "Draft"}</dd>
+            </div>
+            <div>
+              <dt>Amount</dt>
+              <dd className="tnum">{formatKobo(app.requested_amount_kobo)}</dd>
+            </div>
+            <div>
+              <dt>Applicant</dt>
+              <dd>{APPLICANT_TYPE_LABELS[app.applicant_type as keyof typeof APPLICANT_TYPE_LABELS]}</dd>
+            </div>
+            <div>
+              <dt>Current owner</dt>
+              <dd>
+                {c.openTask ? (c.openTask.assignee_name ?? <span style={{ color: "var(--danger)" }}>No eligible assignee (escalated)</span>) : "—"}
+                {c.openTask?.assigned_at && <span className="small muted"> · {formatDuration(waited)}</span>}
+              </dd>
+            </div>
+          </dl>
         </div>
-        <div className="stack" style={{ alignItems: "flex-end", gap: 6 }}>
-          {c.openTask && (
-            <span className="small muted">
-              With {c.openTask.assignee_name ?? <strong style={{ color: "var(--danger)" }}>no eligible assignee (escalated to Super Admin)</strong>}
-              {c.openTask.assigned_at && <> · waiting {formatDuration(waited)}</>}
-            </span>
-          )}
+        <div className="row">
           {isInitiator && c.openTask?.assignee_id && c.openTask.assignee_id !== session.staffId && waited > REMINDER_MIN_AGE_MS && <ReminderButton applicationId={app.id} />}
           {isInitiator && (app.stage === "DRAFT" || (myTask && myTask.stage === "INITIATOR_CORRECTION")) && (
             <Link className="btn btn-primary" href={`/requests/${app.id}/edit`}>
@@ -112,10 +174,38 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           )}
         </div>
       </div>
-      {sp.submitted && <div className="alert alert-success" role="status" style={{ marginBottom: 12 }}>Submitted successfully.</div>}
+
+      <ol className="progress" aria-label="Request progress">
+        {MILESTONES.map((m, i) => {
+          const state = app.stage === "REJECTED" ? (i < rejectedAt ? "done" : i === rejectedAt ? "stopped" : "") : app.stage === "CLOSED" ? "done" : i < current ? "done" : i === current ? "current" : "";
+          return (
+            <li key={m.label} className={state} aria-current={state === "current" ? "step" : undefined}>
+              {m.label}
+              <span className="sr-only">{state === "done" ? " (complete)" : state === "current" ? " (current)" : state === "stopped" ? " (rejected here)" : " (not started)"}</span>
+            </li>
+          );
+        })}
+      </ol>
+
+      {committed && (
+        <div className="alert alert-success" role="status" style={{ marginBottom: 12 }}>
+          <CheckCircle2 {...ic} />
+          <span>
+            Recorded: <strong>{ACTION_LABELS[committed.action as TaskAction] ?? committed.action}</strong> at {STAGE_LABELS[committed.stage as Stage]}, {formatLagos(committed.created_at)}. The request is now <strong>{STAGE_LABELS[app.stage as Stage]}</strong>
+            {c.openTask ? ` with ${c.openTask.assignee_name ?? "the Super Admin for assignment"}.` : "."}
+          </span>
+        </div>
+      )}
+      {sp.submitted && (
+        <div className="alert alert-success" role="status" style={{ marginBottom: 12 }}>
+          <CheckCircle2 {...ic} />
+          Submitted. The request is with {c.openTask?.assignee_name ?? "the Super Admin for assignment"} for {STAGE_LABELS[app.stage as Stage].toLowerCase()}.
+        </div>
+      )}
       {staleDeepLink && (
         <div className="alert alert-info" role="status" style={{ marginBottom: 12 }}>
-          The task in this link is no longer awaiting your action (it may have been actioned or reassigned). You can still view the request.
+          <AlertTriangle {...ic} />
+          The task in this link is no longer awaiting your action (it was actioned or reassigned). You can still view the request.
         </div>
       )}
 
@@ -125,29 +215,39 @@ export default async function CasePage({ params, searchParams }: { params: Promi
             {TABS.map(([k, label]) => (
               <Link key={k} className="tab" href={tabHref(k)} aria-current={tab === k ? "page" : undefined}>
                 {label}
-                {k === "documents" ? ` (${c.documents.filter((d) => !d.superseded_at).length})` : ""}
+                {k === "documents" ? <span className="badge">{c.documents.filter((d) => !d.superseded_at).length}</span> : null}
               </Link>
             ))}
           </nav>
-          {tab === "summary" && <Summary c={c} data={data} />}
+          {tab === "overview" && <Overview c={c} data={data} />}
           {tab === "documents" && <Documents c={c} link={link} tabHref={tabHref} previewId={previewDoc?.id ?? null} myTask={myTask} isInitiator={isInitiator} />}
           {tab === "assessment" && <Assessment c={c} />}
-          {tab === "history" && <History c={c} />}
-          {tab === "audit" && <CaseAudit appId={app.id} />}
+          {tab === "activity" && (
+            <>
+              <History c={c} />
+              <CaseAudit appId={app.id} />
+            </>
+          )}
         </section>
         <aside className="split-right" aria-label="Actions and preview">
-          {myTask && <ActionPanel c={c} task={myTask} data={data} />}
+          {myTask && <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />}
           {!myTask && c.openTask && (
             <div className="card">
-              <h2>Current step</h2>
-              <p style={{ margin: 0 }}>
-                <strong>{STAGE_LABELS[c.openTask.stage as Stage]}</strong> — {c.openTask.required_action}
+              <p className="eyebrow">Current step</p>
+              <h2 style={{ marginBottom: 4 }}>{STAGE_LABELS[c.openTask.stage as Stage]}</h2>
+              <p className="small" style={{ margin: 0 }}>
+                {c.openTask.required_action}
               </p>
               <p className="small muted" style={{ margin: "6px 0 0" }}>
-                Owner: {c.openTask.assignee_name ?? "awaiting assignment"} ({ROLE_LABELS[c.openTask.assignee_role as Role]})
+                Owner: {c.openTask.assignee_name ?? "awaiting assignment by the Super Admin"} ({ROLE_LABELS[c.openTask.assignee_role as Role]})
+                {c.openTask.assigned_at && ` · since ${formatLagos(c.openTask.assigned_at)}`}
+              </p>
+              <p className="small muted" style={{ margin: "6px 0 0" }}>
+                You can view this request and its documents. Actions are available only to the assigned officer.
               </p>
             </div>
           )}
+          {!c.openTask && <ClosureCard c={c} compact />}
           {previewDoc && <Preview doc={previewDoc} link={link} closeHref={tabHref("documents")} />}
         </aside>
       </div>
@@ -155,14 +255,22 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   );
 }
 
-// ------------------------------------------------------------------ summary
+// ------------------------------------------------------------------ overview
 
-function Summary({ c, data }: { c: Case; data: DraftData | null }) {
+function Overview({ c, data }: { c: Case; data: DraftData | null }) {
   const app = c.app;
   const route = getRoute(app.route);
   const name = (id: string | null) => (id ? c.people[id] ?? "—" : "—");
   return (
     <div className="stack">
+      {c.assessment && (
+        <div className="metric-grid" aria-label="Credit assessment summary">
+          <div className="metric"><div className="k">APR</div><div className="v">{c.assessment.apr_percent}%</div></div>
+          <div className="metric"><div className="k">DSR</div><div className="v">{c.assessment.dsr_percent}%</div></div>
+          <div className="metric"><div className="k">Mark-up</div><div className="v">{formatKobo(c.assessment.markup_kobo)}</div></div>
+          <div className="metric"><div className="k">Cost plus mark-up</div><div className="v">{formatKobo(c.assessment.cost_plus_markup_kobo)}</div></div>
+        </div>
+      )}
       <div className="card">
         <div className="card-head">
           <h2>Applicant</h2>
@@ -206,15 +314,13 @@ function Summary({ c, data }: { c: Case; data: DraftData | null }) {
       </div>
       {data && (
         <div className="card">
-          <h2>Financing request</h2>
+          <h2>Facility</h2>
           <table className="kv">
             <tbody>
-              <tr><th>Requested amount</th><td><strong>{formatKobo(data.requestedAmountKobo)}</strong></td></tr>
+              <tr><th>Requested amount</th><td className="tnum"><strong>{formatKobo(data.requestedAmountKobo)}</strong></td></tr>
               <tr><th>Tenor</th><td>{data.tenorMonths ? `${data.tenorMonths} months` : "—"}</td></tr>
               <tr><th>DAO code</th><td className="mono">{data.daoCode || "—"}</td></tr>
               <tr><th>POS serial number</th><td className="mono">{data.posSerial || "—"}</td></tr>
-              <tr><th>Supplier</th><td>{data.supplierName}{data.supplierAddress && <div className="small muted">{data.supplierAddress} {data.supplierPhone}</div>}</td></tr>
-              <tr><th>Invoice reference</th><td className="mono">{data.invoiceRef || "—"}</td></tr>
               <tr><th>Rental coverage</th><td>{data.rentStart ? `${formatDateOnly(data.rentStart)} – ${formatDateOnly(data.rentEnd)}` : "—"}</td></tr>
               <tr><th>12-month statements confirmed</th><td>{data.statementsCover12Months ? "Yes" : "No"}</td></tr>
             </tbody>
@@ -242,6 +348,19 @@ function Summary({ c, data }: { c: Case; data: DraftData | null }) {
           </div>
         </div>
       )}
+      {data && (
+        <div className="card">
+          <h2>Vendor</h2>
+          <table className="kv">
+            <tbody>
+              <tr><th>Supplier</th><td>{data.supplierName || "—"}</td></tr>
+              <tr><th>Address / phone</th><td>{[data.supplierAddress, data.supplierPhone].filter(Boolean).join(" · ") || "—"}</td></tr>
+              <tr><th>Account for vendor payment</th><td className="mono">{data.supplierAccount || "—"}</td></tr>
+              <tr><th>Invoice reference</th><td className="mono">{data.invoiceRef || "—"}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      )}
       <div className="card">
         <h2>Routing and officers</h2>
         <table className="kv">
@@ -249,51 +368,85 @@ function Summary({ c, data }: { c: Case; data: DraftData | null }) {
             <tr><th>Initiator</th><td>{name(app.initiator_id)} ({ROLE_LABELS[app.initiator_role as Role]}{app.region ? `, ${app.region}` : ""})</td></tr>
             {app.selected_rbe_id && <tr><th>Selected RBE</th><td>{name(app.selected_rbe_id)}</td></tr>}
             <tr><th>Business endorsement</th><td>{name(app.endorser_id)}</td></tr>
-            <tr><th>Credit route</th><td>{route ? route.label : "Determined after endorsement"}</td></tr>
+            <tr><th>Credit route</th><td>{route ? route.label : "Set after business endorsement"}</td></tr>
             <tr><th>First credit reviewer</th><td>{name(app.first_reviewer_id)}</td></tr>
             <tr><th>Second credit reviewer</th><td>{name(app.second_reviewer_id)}</td></tr>
             <tr><th>Credit Officer 3 (pack)</th><td>{name(app.pack_co3_id)}</td></tr>
-            <tr><th>Disbursement officers</th><td>{name(app.do1_id)} / {name(app.do2_id)}</td></tr>
+            <tr><th>Disbursement officers 1 / 2</th><td>{name(app.do1_id)} / {name(app.do2_id)}</td></tr>
           </tbody>
         </table>
       </div>
-      {c.assessment && (
+      {(c.disbursement || app.status === "CLOSED") && <ClosureCard c={c} />}
+    </div>
+  );
+}
+
+/** Disbursed → Awaiting Vendor Payment Confirmation → Closed, with actor, time and notification status. */
+function ClosureCard({ c, compact = false }: { c: Case; compact?: boolean }) {
+  const app = c.app;
+  if (!c.disbursement) {
+    if (app.stage === "REJECTED")
+      return (
         <div className="card">
-          <h2>Credit assessment</h2>
-          <div className="metric-grid">
-            <div className="metric"><div className="k">APR</div><div className="v">{c.assessment.apr_percent}%</div></div>
-            <div className="metric"><div className="k">DSR</div><div className="v">{c.assessment.dsr_percent}%</div></div>
-            <div className="metric"><div className="k">Markup</div><div className="v">{formatKobo(c.assessment.markup_kobo)}</div></div>
-            <div className="metric"><div className="k">Cost plus markup</div><div className="v">{formatKobo(c.assessment.cost_plus_markup_kobo)}</div></div>
-          </div>
-          <p className="small muted" style={{ margin: "8px 0 0" }}>
-            {c.assessment.calculator_id}@{c.assessment.calculator_version} by {c.assessment.assessor_name}, {formatLagos(c.assessment.created_at)}
-            {!c.assessment.production_validated && " · development calculator, not bank validated"}
-          </p>
+          <p className="eyebrow">Outcome</p>
+          <StageChip stage="REJECTED" />
+          <p className="small muted" style={{ margin: "8px 0 0" }}>Rejected {formatLagos(app.rejected_at)}. See Activity for the reason.</p>
         </div>
+      );
+    return null;
+  }
+  const name = (id: string | null) => (id ? c.people[id] ?? "—" : "—");
+  const step = (done: boolean, label: string, detail: React.ReactNode) => (
+    <li>
+      <span className={`tick ${done ? "ok" : "no"}`} aria-hidden="true">
+        {done ? <CheckCircle2 className="icon" /> : <Circle className="icon" />}
+      </span>
+      <span>
+        <strong>{label}</strong>
+        <div className="small muted">{detail}</div>
+      </span>
+      <span className="sr-only">{done ? "(done)" : "(pending)"}</span>
+    </li>
+  );
+  const d = c.disbursement;
+  return (
+    <div className="card">
+      <h2>Booking and closure</h2>
+      <ul className="checklist" style={{ marginBottom: 12 }}>
+        {step(true, "Disbursed", `${formatKobo(d.amount_kobo)} on ${formatDateOnly(d.disbursed_on)} · ref ${d.transaction_ref} · recorded by ${d.recorded_by_name}, ${formatLagos(d.recorded_at)}`)}
+        {step(!!app.process_completed_at, "Process completed (Credit Officer 3)", app.process_completed_at ? `${name(app.process_completed_by)}, ${formatLagos(app.process_completed_at)}` : "Pending")}
+        {step(!!app.vendor_confirmed_at, app.vendor_confirmed_at ? "Vendor payment confirmed" : "Awaiting Vendor Payment Confirmation", app.vendor_confirmed_at ? `${name(app.vendor_confirmed_by)}, ${formatLagos(app.vendor_confirmed_at)}` : "Initiator confirms after Credit Officer 3 completes the process")}
+        {step(app.status === "CLOSED", "Closed", app.closed_at ? `${formatLagos(app.closed_at)} · repayment prompts active` : "After vendor payment confirmation")}
+      </ul>
+      {c.closure && (
+        <p className="small" style={{ margin: "0 0 8px" }}>
+          <Mail className="icon" aria-hidden="true" /> Closure pack to Legal and Shariah Compliance ({c.closure.delivery_mode === "ATTACHMENTS" ? "attachments" : "secure link"}):{" "}
+          <span className={`badge ${c.closure.delivery_status === "SENT" ? "badge-green" : c.closure.delivery_status === "DEAD" || c.closure.delivery_status === "FAILED" ? "badge-red" : "badge-warn"}`}>
+            {c.closure.delivery_status === "SENT" ? "Delivered" : c.closure.delivery_status === "FAILED" ? "Retrying" : c.closure.delivery_status === "DEAD" ? "Failed - admin retry needed" : "Queued"}
+          </span>
+          {c.closure.attempts > 0 && <span className="muted"> · {c.closure.attempts} attempt(s)</span>}
+        </p>
       )}
-      {c.disbursement && (
-        <div className="card">
-          <h2>Booking</h2>
-          <table className="kv">
-            <tbody>
-              <tr><th>Approved / disbursed</th><td>{formatKobo(c.disbursement.approved_amount_kobo)} / <strong>{formatKobo(c.disbursement.amount_kobo)}</strong></td></tr>
-              <tr><th>Disbursement date</th><td>{formatDateOnly(c.disbursement.disbursed_on)}</td></tr>
-              <tr><th>Transaction reference</th><td className="mono">{c.disbursement.transaction_ref}</td></tr>
-              <tr><th>Recorded by</th><td>{c.disbursement.recorded_by_name}, {formatLagos(c.disbursement.recorded_at)}</td></tr>
-              <tr><th>Repayment schedule</th><td>{c.instalments.map((i: { seq: number; due_date: string; amount_kobo: string }) => <div key={i.seq}>{formatDateOnly(i.due_date)} · {formatKobo(i.amount_kobo)}</div>)}</td></tr>
-              <tr><th>Process completed (CO3)</th><td>{app.process_completed_at ? `${name(app.process_completed_by)}, ${formatLagos(app.process_completed_at)}` : "Pending"}</td></tr>
-              <tr><th>Vendor payment confirmed</th><td>{app.vendor_confirmed_at ? `${name(app.vendor_confirmed_by)}, ${formatLagos(app.vendor_confirmed_at)}` : <span className="badge badge-yellow">Pending</span>}</td></tr>
-              {c.closure && <tr><th>Closure pack email</th><td>{c.closure.delivery_mode === "ATTACHMENTS" ? "Attachments" : "Secure link"} · <span className="badge">{c.closure.delivery_status}</span> {c.closure.attempts > 0 && `(${c.closure.attempts} attempt${c.closure.attempts > 1 ? "s" : ""})`}</td></tr>}
-            </tbody>
-          </table>
-        </div>
+      {!compact && (
+        <table className="kv">
+          <tbody>
+            <tr><th>Approved / disbursed</th><td className="tnum">{formatKobo(d.approved_amount_kobo)} / <strong>{formatKobo(d.amount_kobo)}</strong></td></tr>
+            <tr><th>Repayment schedule</th><td>{c.instalments.map((i: { seq: number; due_date: string; amount_kobo: string }) => <div key={i.seq} className="tnum">{formatDateOnly(i.due_date)} · {formatKobo(i.amount_kobo)}</div>)}</td></tr>
+          </tbody>
+        </table>
       )}
     </div>
   );
 }
 
 // ------------------------------------------------------------------ documents
+
+function docStatus(d: DocumentRow) {
+  if (d.scan_status === "QUARANTINED") return <span className="badge badge-warn"><AlertTriangle className="icon" aria-hidden="true" />Quarantined</span>;
+  if (d.scan_status === "REJECTED") return <span className="badge badge-red"><X className="icon" aria-hidden="true" />Rejected by scan</span>;
+  if (d.superseded_at) return <span className="badge">Superseded</span>;
+  return <span className="badge badge-green"><CheckCircle2 className="icon" aria-hidden="true" />Current</span>;
+}
 
 function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Case; link: (id: string, m: "view" | "download") => string; tabHref: (t: string, e?: SP) => string; previewId: string | null; myTask: Case["openTask"]; isInitiator: boolean }) {
   const stage = c.app.stage as Stage;
@@ -303,34 +456,34 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
   return (
     <div className="stack">
       <div className="table-wrap">
-        <table className="data">
+        <table className="data responsive">
           <caption className="sr-only">All documents retained on this request</caption>
           <thead>
-            <tr><th>Document</th><th>Uploaded</th><th>Version</th><th>Open</th></tr>
+            <tr><th>Category and file</th><th>Uploaded</th><th>Version</th><th><span className="sr-only">Open</span></th></tr>
           </thead>
           <tbody>
-            {c.documents.length === 0 && <tr><td colSpan={4} className="empty">No documents yet.</td></tr>}
+            {c.documents.length === 0 && <tr><td colSpan={4} className="empty"><FileText {...ic} />No documents yet.</td></tr>}
             {c.documents.map((d) => (
               <tr key={d.id} className={previewId === d.id ? "selected-row" : undefined}>
-                <td className="small" style={{ minWidth: 180 }}>
+                <td className="small" data-label="Document" style={{ minWidth: 200 }}>
                   <strong>{CATEGORY_LABEL[d.category] ?? d.category}</strong>
                   <div style={{ wordBreak: "break-all" }}>{d.filename} <span className="muted">· {(Number(d.size_bytes) / 1024).toFixed(0)} KB</span></div>
                   {d.generated && <span className="badge badge-blue">Generated · template v{d.template_version}</span>}
                 </td>
-                <td className="small" style={{ minWidth: 150 }}>
+                <td className="small" data-label="Uploaded" style={{ minWidth: 150 }}>
                   {d.uploader_name}
                   <div className="muted">{d.uploaded_role ? ROLE_LABELS[d.uploaded_role as Role] ?? d.uploaded_role : ""}</div>
                   <div className="muted nowrap">{formatLagos(d.uploaded_at)}</div>
                 </td>
-                <td className="small">
+                <td className="small" data-label="Version">
                   <div>v{d.version_no}</div>
-                  {d.scan_status === "QUARANTINED" ? <span className="badge badge-yellow">Quarantined</span> : d.scan_status === "REJECTED" ? <span className="badge badge-red">Rejected (scan)</span> : d.superseded_at ? <span className="badge">Superseded</span> : <span className="badge badge-green">Current</span>}
+                  {docStatus(d)}
                 </td>
-                <td>
+                <td className="row-actions">
                   {d.scan_status === "CLEAN" && !d.purged_at ? (
-                    <div className="stack" style={{ gap: 6 }}>
-                      <Link className="btn btn-sm" href={tabHref("documents", { doc: d.id })} aria-label={`Preview ${d.filename} version ${d.version_no}`}>Preview</Link>
-                      <a className="btn btn-sm" href={link(d.id, "download")} aria-label={`Download ${d.filename} version ${d.version_no}`}>Download</a>
+                    <div className="row">
+                      <Link className="btn btn-sm" href={tabHref("documents", { doc: d.id })} aria-label={`Preview ${d.filename} version ${d.version_no}`}><Eye {...ic} />Preview</Link>
+                      <a className="btn btn-sm" href={link(d.id, "download")} aria-label={`Download ${d.filename} version ${d.version_no}`}><Download {...ic} />Download</a>
                     </div>
                   ) : (
                     <span className="small muted">Unavailable</span>
@@ -342,17 +495,14 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
         </table>
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        Every officer authorised on this request can view and download all retained documents, including superseded versions. Links expire after 5 minutes and every view or download is audited.
+        Every officer authorised on this request can view and download all retained versions. Links expire after 5 minutes; every view and download is audited.
       </p>
       {cats.length > 0 && (
-        <div className="card">
-          <h2>Upload a document</h2>
-          <UploadForm
-            applicationId={c.app.id}
-            categories={cats.map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))}
-            replaces={current.filter((d) => cats.includes(d.category) && DOC_CATEGORIES.find((k) => k.code === d.category)?.multiple).map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename} (v${d.version_no})` }))}
-          />
-        </div>
+        <UploadPanel
+          applicationId={c.app.id}
+          categories={cats.map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))}
+          replaces={current.filter((d) => cats.includes(d.category) && DOC_CATEGORIES.find((k) => k.code === d.category)?.multiple).map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename} (v${d.version_no})` }))}
+        />
       )}
     </div>
   );
@@ -364,12 +514,12 @@ function Preview({ doc, link, closeHref }: { doc: DocumentRow; link: (id: string
   return (
     <div className="card">
       <div className="card-head">
-        <h2 style={{ fontSize: "1rem" }}>
+        <h2 style={{ fontSize: "0.95rem" }}>
           {CATEGORY_LABEL[doc.category]} · v{doc.version_no} {doc.superseded_at && <span className="badge">Superseded</span>}
         </h2>
         <div className="row">
-          <a className="btn btn-sm" href={link(doc.id, "download")}>Download</a>
-          <Link className="btn btn-sm btn-ghost" href={closeHref} aria-label="Close preview">✕</Link>
+          <a className="btn btn-sm" href={link(doc.id, "download")}><Download {...ic} />Download</a>
+          <Link className="btn btn-sm btn-ghost" href={closeHref} aria-label="Close preview"><X {...ic} /></Link>
         </div>
       </div>
       <p className="small muted" style={{ marginTop: -6 }}>{doc.filename}</p>
@@ -390,49 +540,69 @@ function Preview({ doc, link, closeHref }: { doc: DocumentRow; link: (id: string
 // ------------------------------------------------------------------ assessment
 
 function Assessment({ c }: { c: Case }) {
-  if (!c.assessments.length) return <div className="card"><p className="muted" style={{ margin: 0 }}>The APR / DSR assessment is pending. It is completed by the first credit reviewer.</p></div>;
+  if (!c.assessments.length)
+    return (
+      <div className="card">
+        <p className="muted" style={{ margin: 0 }}>The APR / DSR assessment is pending. The first credit reviewer completes it.</p>
+      </div>
+    );
   return (
     <div className="stack">
-      {c.assessments.map((a: Case["assessments"][number]) => (
-        <div className="card" key={a.id}>
-          <div className="card-head">
-            <h2>{a.superseded_at ? "Superseded assessment" : "Current assessment"}</h2>
-            <span className={`badge ${a.superseded_at ? "" : "badge-green"}`}>{a.calculator_id}@{a.calculator_version}</span>
-          </div>
-          {!a.production_validated && <div className="alert alert-warn" style={{ marginBottom: 10 }}>Development calculator: not the bank&apos;s validated APR workbook. Production credit approval is blocked until the bank calculator is configured.</div>}
-          <div className="grid-2">
-            <div>
-              <h3>Inputs</h3>
-              <table className="kv"><tbody>
-                {Object.entries(a.inputs as Record<string, string | number>).map(([k, v]) => (
-                  <tr key={k}><th>{k}</th><td className="mono">{k.endsWith("Kobo") ? formatKobo(Number(v)) : String(v)}</td></tr>
-                ))}
-              </tbody></table>
+      {c.assessments.map((a: Case["assessments"][number]) => {
+        const calc = findCalculator(`${a.calculator_id}@${a.calculator_version}`);
+        const versionNo = c.versions.find((v: { id: string }) => v.id === a.version_id)?.version_no ?? "?";
+        return (
+          <div className="card" key={a.id}>
+            <div className="card-head">
+              <h2>{a.superseded_at ? "Superseded assessment" : "Current assessment"}</h2>
+              <span className={`badge ${a.superseded_at ? "" : "badge-green"}`}>{a.calculator_id}@{a.calculator_version} · application v{versionNo}</span>
             </div>
-            <div>
-              <h3>Outputs</h3>
-              <table className="kv"><tbody>
-                {Object.entries(a.outputs as Record<string, string | number>).map(([k, v]) => (
-                  <tr key={k}><th>{k}</th><td className="mono">{k.endsWith("Kobo") ? formatKobo(Number(v)) : String(v)}</td></tr>
-                ))}
-              </tbody></table>
+            <div className="metric-grid" style={{ marginBottom: 12 }}>
+              <div className="metric"><div className="k">APR</div><div className="v">{a.apr_percent}%</div></div>
+              <div className="metric"><div className="k">DSR</div><div className="v">{a.dsr_percent}%</div></div>
+              <div className="metric"><div className="k">Mark-up</div><div className="v">{formatKobo(a.markup_kobo)}</div></div>
+              <div className="metric"><div className="k">Cost plus mark-up</div><div className="v">{formatKobo(a.cost_plus_markup_kobo)}</div></div>
             </div>
+            {calc?.validationNote && (
+              <p className="blocked" style={{ margin: "0 0 12px" }}>
+                <AlertTriangle {...ic} />
+                {calc.validationNote}
+              </p>
+            )}
+            <div className="grid-2">
+              <div>
+                <h3>Inputs</h3>
+                <table className="kv"><tbody>
+                  {Object.entries(a.inputs as Record<string, string | number>).map(([k, v]) => (
+                    <tr key={k}><th>{OUTPUT_LABELS[k] ?? k}</th><td className="tnum">{showVal(k, v)}</td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+              <div>
+                <h3>Outputs</h3>
+                <table className="kv"><tbody>
+                  {Object.entries(a.outputs as Record<string, string | number>).map(([k, v]) => (
+                    <tr key={k}><th>{OUTPUT_LABELS[k] ?? k}</th><td className="tnum">{showVal(k, v)}</td></tr>
+                  ))}
+                </tbody></table>
+              </div>
+            </div>
+            <p className="small muted" style={{ margin: "8px 0 0" }}>
+              Assessor: {a.assessor_name} · started {formatLagos(a.started_at)} · saved {formatLagos(a.created_at)}
+            </p>
           </div>
-          <p className="small muted" style={{ margin: "8px 0 0" }}>
-            Assessor: {a.assessor_name} · started {formatLagos(a.started_at)} · saved {formatLagos(a.created_at)} · application version {c.versions.find((v: { id: string }) => v.id === a.version_id)?.version_no ?? "?"}
-          </p>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-// ------------------------------------------------------------------ history
+// ------------------------------------------------------------------ activity
 
 function History({ c }: { c: Case }) {
   const decisionByTask = new Map(c.decisions.map((d: { task_id: string }) => [d.task_id, d]));
   return (
-    <div className="stack">
+    <div className="stack" style={{ marginBottom: 16 }}>
       <div className="card">
         <h2>Handoffs and stage durations</h2>
         <ol className="timeline">
@@ -443,12 +613,10 @@ function History({ c }: { c: Case }) {
               <li key={t.id} className={t.status === "OPEN" ? "open" : "done"}>
                 <div className="row" style={{ gap: 8 }}>
                   <strong>{STAGE_LABELS[t.stage as Stage]}</strong>
-                  {t.status === "OPEN" ? <span className="badge badge-yellow">Current</span> : d ? <span className={`badge ${d.action === "REJECT" ? "badge-red" : ["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(d.action) ? "badge-blue" : "badge-green"}`}>{ACTION_LABELS[d.action as TaskAction] ?? d.action}</span> : null}
-                  {d?.invalidated_at && <span className="badge badge-red" title={d.invalidated_reason}>Invalidated</span>}
+                  {t.status === "OPEN" ? <span className="badge badge-yellow">Current</span> : d ? <span className={`badge ${d.action === "REJECT" ? "badge-red" : ["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(d.action) ? "badge-warn" : "badge-green"}`}>{ACTION_LABELS[d.action as TaskAction] ?? d.action}</span> : null}
+                  {d?.invalidated_at && <span className="badge badge-red" title={d.invalidated_reason}><AlertTriangle className="icon" aria-hidden="true" />Invalidated</span>}
                 </div>
-                <div className="small">
-                  {t.assignee_name ?? "Unassigned"} · {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role}
-                </div>
+                <div className="small">{t.assignee_name ?? "Unassigned"} · {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role}</div>
                 <div className="small muted">
                   Entered {formatLagos(t.entered_at)} · {t.completed_at ? `exited ${formatLagos(t.completed_at)}` : "in progress"} · {formatDuration(end - new Date(t.entered_at).getTime())}
                   {t.last_reminder_at && ` · last reminder ${formatLagos(t.last_reminder_at)}`}
@@ -463,9 +631,9 @@ function History({ c }: { c: Case }) {
       {c.corrections.length > 0 && (
         <div className="card">
           <h2>Corrections</h2>
-          <div className="table-wrap"><table className="data"><thead><tr><th>Requested</th><th>From</th><th>To</th><th>Reason</th><th>Resolution</th></tr></thead><tbody>
+          <div className="table-wrap"><table className="data responsive"><thead><tr><th>Requested</th><th>From</th><th>To</th><th>Reason</th><th>Resolution</th></tr></thead><tbody>
             {c.corrections.map((x: Case["corrections"][number]) => (
-              <tr key={x.id}><td className="small nowrap">{formatLagos(x.created_at)}<div className="muted">{x.requested_by_name}</div></td><td className="small">{STAGE_LABELS[x.from_stage as Stage]}</td><td className="small">{STAGE_LABELS[x.to_stage as Stage]}</td><td className="small">{x.reason}</td><td className="small">{x.resolution ?? "Open"}{x.resolved_at && <div className="muted">{formatLagos(x.resolved_at)}</div>}</td></tr>
+              <tr key={x.id}><td className="small nowrap" data-label="Requested">{formatLagos(x.created_at)}<div className="muted">{x.requested_by_name}</div></td><td className="small" data-label="From">{STAGE_LABELS[x.from_stage as Stage]}</td><td className="small" data-label="To">{STAGE_LABELS[x.to_stage as Stage]}</td><td className="small" data-label="Reason">{x.reason}</td><td className="small" data-label="Resolution">{x.resolution ?? "Open"}{x.resolved_at && <div className="muted">{formatLagos(x.resolved_at)}</div>}</td></tr>
             ))}
           </tbody></table></div>
         </div>
@@ -489,25 +657,28 @@ async function CaseAudit({ appId }: { appId: string }) {
     [appId],
   )).rows;
   return (
-    <div className="table-wrap">
-      <table className="data">
-        <caption className="sr-only">Audit trail for this request</caption>
-        <thead><tr><th>Time</th><th>Who</th><th>Role</th><th>Action</th><th>Outcome</th><th>Stage</th><th>Reason</th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
-              <td className="small nowrap">{formatLagos(r.occurred_at)}</td>
-              <td className="small">{r.full_name ?? "System"}</td>
-              <td className="small">{r.actor_role ? ROLE_LABELS[r.actor_role as Role] ?? r.actor_role : "—"}</td>
-              <td className="small mono">{r.action}{r.document_version ? ` (v${r.document_version})` : ""}</td>
-              <td><span className={`badge ${r.outcome === "SUCCESS" ? "badge-green" : "badge-red"}`}>{r.outcome}</span></td>
-              <td className="small">{r.stage ? STAGE_LABELS[r.stage as Stage] ?? r.stage : "—"}</td>
-              <td className="small">{r.reason ?? ""}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="small muted" style={{ padding: "8px 12px", margin: 0 }}>Network address and device metadata are available to the Super Admin in System audit.</p>
+    <div className="card">
+      <h2>Audit trail</h2>
+      <div className="table-wrap">
+        <table className="data responsive">
+          <caption className="sr-only">Audit trail for this request</caption>
+          <thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Outcome</th><th>Stage</th><th>Reason</th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td className="small nowrap" data-label="Time">{formatLagos(r.occurred_at)}</td>
+                <td className="small" data-label="Actor">{r.full_name ?? "System"}</td>
+                <td className="small" data-label="Role">{r.actor_role ? ROLE_LABELS[r.actor_role as Role] ?? r.actor_role : "—"}</td>
+                <td className="small mono" data-label="Action">{r.action}{r.document_version ? ` (v${r.document_version})` : ""}</td>
+                <td data-label="Outcome"><OutcomeChip outcome={r.outcome} /></td>
+                <td className="small" data-label="Stage">{r.stage ? STAGE_LABELS[r.stage as Stage] ?? r.stage : "—"}</td>
+                <td className="small" data-label="Reason">{r.reason ?? ""}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="small muted" style={{ margin: "8px 0 0" }}>Client IP and device metadata are shown to the Super Admin in the audit trail.</p>
     </div>
   );
 }
@@ -517,14 +688,22 @@ async function CaseAudit({ appId }: { appId: string }) {
 function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
     <li>
-      <span className={`tick ${ok ? "ok" : "no"}`} aria-hidden="true">{ok ? "✓" : "•"}</span>
+      <span className={`tick ${ok ? "ok" : "no"}`} aria-hidden="true">{ok ? <CheckCircle2 className="icon" /> : <Circle className="icon" />}</span>
       <span>{children}</span>
       <span className="sr-only">{ok ? "(done)" : "(outstanding)"}</span>
     </li>
   );
 }
+function Blocked({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="blocked" style={{ margin: 0 }}>
+      <AlertTriangle className="icon" aria-hidden="true" />
+      <span>{children}</span>
+    </p>
+  );
+}
 
-function ActionPanel({ c, task, data }: { c: Case; task: NonNullable<Case["openTask"]>; data: DraftData | null }) {
+async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNullable<Case["openTask"]>; data: DraftData | null; doneHref: string }) {
   const app = c.app;
   const stage = task.stage as Stage;
   const hidden = { taskId: task.id, lockVersion: String(app.lock_version) };
@@ -535,48 +714,70 @@ function ActionPanel({ c, task, data }: { c: Case; task: NonNullable<Case["openT
   const assessmentCurrent = !!c.assessment && c.assessment.version_id === app.current_version_id;
   const openCorrection = c.corrections.filter((x: { resolved_at: Date | null }) => !x.resolved_at).at(-1);
   const calc = activeCalculator();
+  const isDo1 = stage === "DISBURSEMENT_CHECK";
+  const isDo2 = stage === "DISBURSEMENT_BOOKING";
 
   const body: React.ReactNode[] = [];
   if (openCorrection && ["CREDIT_CORRECTION", "INITIATOR_CORRECTION", "DISBURSEMENT_CORRECTION", "OFFER_PREPARATION"].includes(stage)) {
-    body.push(<div key="corr" className="alert alert-warn">Correction requested by {openCorrection.requested_by_name}: {openCorrection.reason}</div>);
+    body.push(
+      <div key="corr" className="alert alert-warn">
+        <AlertTriangle className="icon" aria-hidden="true" />
+        <span>
+          <strong>Correction requested</strong> by {openCorrection.requested_by_name}: {openCorrection.reason}
+        </span>
+      </div>,
+    );
   }
 
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
-      body.push(<p key="t" className="small muted">Business endorsement is required before credit routing.</p>);
-      body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" />);
+      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>Business endorsement must be approved before credit routing. Review the Overview and Documents.</p>);
+      body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} />);
       break;
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION": {
-      const vals = (k: string, defaultFrom?: string) => {
+      const vals = (k: string, defaultFrom?: string, defaultValue?: string) => {
         const prev = c.assessment?.inputs as Record<string, string | number> | undefined;
         if (prev && prev[k] !== undefined) return k.endsWith("Kobo") ? koboToNairaString(Number(prev[k])) : String(prev[k]);
         if (defaultFrom === "assetCost" && data) return koboToNairaString(assetCostKobo(data.items));
+        if (defaultFrom === "requestedAmount" && app.requested_amount_kobo) return koboToNairaString(Number(app.requested_amount_kobo));
         if (defaultFrom === "tenorMonths" && data?.tenorMonths) return String(data.tenorMonths);
-        return "";
+        return defaultValue ?? "";
       };
       body.push(
         <ul key="cl" className="checklist">
           <Check ok={reports >= 3}>Three credit reports uploaded ({reports}/3)</Check>
-          <Check ok={assessmentCurrent}>APR calculation with DSR completed{c.assessment ? `: APR ${c.assessment.apr_percent}%, DSR ${c.assessment.dsr_percent}%` : ""}</Check>
-          <Check ok={false}>Logged invoice on invoice portal (confirm below)</Check>
+          <Check ok={assessmentCurrent}>APR with DSR saved for application v{c.versions.find((v: { id: string }) => v.id === app.current_version_id)?.version_no ?? "—"}{c.assessment && assessmentCurrent ? `: APR ${c.assessment.apr_percent}%, DSR ${c.assessment.dsr_percent}%` : ""}</Check>
+          {stage === "FIRST_CREDIT_REVIEW" && <Check ok={false}>“Logged invoice on invoice portal” confirmed at approval</Check>}
         </ul>,
       );
       body.push(
         <details key="up" open={reports < 3}>
-          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Upload credit report</summary>
-          <UploadForm applicationId={app.id} categories={[{ code: "CREDIT_REPORT", label: "Credit report" }, { code: "SUPPORTING", label: "Other supporting document" }]} />
+          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Credit reports ({reports}/3)</summary>
+          <div style={{ marginTop: 8 }}>
+            <UploadPanel compact applicationId={app.id} title="Upload credit report" categories={[{ code: "CREDIT_REPORT", label: "Credit report" }, { code: "SUPPORTING", label: "Other supporting document" }]} />
+          </div>
         </details>,
       );
       body.push(
         <details key="calc" open={!assessmentCurrent}>
-          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>APR / DSR calculator</summary>
-          {!calc.productionValidated && <div className="alert alert-warn small" style={{ margin: "8px 0" }}>Development calculator ({calculatorKey(calc)}). {config.isProduction ? "Approval is blocked in production." : "Replace with the bank's APR workbook before production."}</div>}
-          <AssessmentForm applicationId={app.id} calculatorLabel={calc.label} fields={calc.fields.map((f) => ({ key: f.key, label: f.label, kind: f.kind, value: vals(f.key, f.defaultFrom) }))} />
+          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>APR / DSR calculator · {calculatorKey(calc)}</summary>
+          <div style={{ marginTop: 8 }} className="stack">
+            {!calc.productionValidated && (
+              <Blocked>
+                {calc.validationNote ?? "This calculator is not validated for production."} {config.isProduction ? "Credit approval is blocked in production." : "Approvals are allowed in this development environment only."}
+              </Blocked>
+            )}
+            <AssessmentForm
+              applicationId={app.id}
+              calculatorLabel={calc.label}
+              fields={calc.fields.map((f) => ({ key: f.key, label: f.label, kind: f.kind, options: f.options, optional: f.optional, value: vals(f.key, f.defaultFrom, f.defaultValue) }))}
+            />
+          </div>
         </details>,
       );
-      if (stage === "FIRST_CREDIT_REVIEW") body.push(<FirstReviewApprove key="ap" hidden={hidden} ready={reports >= 3 && assessmentCurrent} />);
-      else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${STAGE_LABELS[(openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW"]}`} />);
+      if (stage === "FIRST_CREDIT_REVIEW") body.push(<FirstReviewApprove key="ap" hidden={hidden} ready={reports >= 3 && assessmentCurrent} doneHref={doneHref} />);
+      else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${STAGE_LABELS[(openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW"]}`} doneHref={doneHref} />);
       break;
     }
     case "SECOND_CREDIT_REVIEW":
@@ -584,59 +785,95 @@ function ActionPanel({ c, task, data }: { c: Case; task: NonNullable<Case["openT
     case "DIVISIONAL_HEAD_REVIEW":
       body.push(
         c.assessment ? (
-          <div key="a" className="highlight small">APR <strong>{c.assessment.apr_percent}%</strong> · DSR <strong>{c.assessment.dsr_percent}%</strong> · Cost plus markup {formatKobo(c.assessment.cost_plus_markup_kobo)}</div>
+          <div key="a" className="highlight small">
+            APR <strong>{c.assessment.apr_percent}%</strong> · DSR <strong>{c.assessment.dsr_percent}%</strong> · Cost plus mark-up {formatKobo(c.assessment.cost_plus_markup_kobo)}
+            <div className="muted">{c.assessment.calculator_id}@{c.assessment.calculator_version} · assessed by {c.assessment.assessor_name}</div>
+          </div>
         ) : (
-          <div key="a" className="alert alert-warn">Assessment pending.</div>
+          <Blocked key="a">Assessment pending.</Blocked>
         ),
       );
-      if (actions.includes("PROCEED")) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed" />);
-      if (actions.includes("APPROVE")) body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve" />);
+      if (actions.includes("PROCEED")) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed" doneHref={doneHref} />);
+      if (actions.includes("APPROVE")) body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve" doneHref={doneHref} />);
       if (stage === "DIVISIONAL_HEAD_REVIEW") body.push(<p key="n" className="small muted" style={{ margin: 0 }}>Approval assigns the initiator to prepare the signed offer pack.</p>);
       break;
     case "INITIATOR_CORRECTION":
-      body.push(<p key="t" className="small">Update the request or replace documents, then resubmit. Changes to underwriting fields (amount, tenor, items, identifiers) require a fresh credit review.</p>);
+      body.push(<p key="t" className="small" style={{ margin: 0 }}>Update the request or replace documents, then resubmit. Changes to underwriting fields (amount, tenor, items, identifiers) require a fresh credit review.</p>);
       body.push(<Link key="l" className="btn btn-primary" href={`/requests/${app.id}/edit`}>Edit and resubmit</Link>);
-      body.push(<UploadForm key="u" applicationId={app.id} categories={(UPLOADABLE_BY_STAGE.INITIATOR_CORRECTION ?? []).filter((x) => app.applicant_type !== "INDIVIDUAL" || x !== "CAC_CERTIFICATE").map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
-      body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit without field changes" primary={false} />);
+      body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit without field changes" primary={false} doneHref={doneHref} />);
       break;
-    case "OFFER_PREPARATION":
+    case "OFFER_PREPARATION": {
+      const tpl = (await db.query("SELECT name, version, production_approved FROM offer_templates WHERE status = 'ACTIVE'")).rows[0];
+      const generated = c.documents.filter((d) => d.category === "GENERATED_OFFER");
+      const signed = c.documents.filter((d) => d.category === "SIGNED_OFFER");
+      const missing = ["GENERATED_OFFER", ...PACK].filter((p) => !has(p));
+      body.push(
+        <div key="terms" className="summary-box small">
+          <p className="eyebrow">Approved terms</p>
+          <table className="kv"><tbody>
+            <tr><th>Facility amount</th><td className="tnum">{formatKobo(app.requested_amount_kobo)}</td></tr>
+            {c.assessment && <tr><th>Mark-up</th><td className="tnum">{formatKobo(c.assessment.markup_kobo)} ({String((c.assessment.inputs as Record<string, unknown>).markupRatePercent ?? "")}% p.a.)</td></tr>}
+            {c.assessment && <tr><th>Cost plus mark-up</th><td className="tnum">{formatKobo(c.assessment.cost_plus_markup_kobo)}</td></tr>}
+            {c.assessment && <tr><th>APR</th><td className="tnum">{c.assessment.apr_percent}%</td></tr>}
+            <tr><th>Tenor</th><td>{data?.tenorMonths ?? "—"} months</td></tr>
+          </tbody></table>
+        </div>,
+      );
+      body.push(
+        <GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={tpl ? `${tpl.name} v${tpl.version}${tpl.production_approved ? "" : " (not bank-approved)"}` : "none active"} />,
+      );
+      if (generated.length || signed.length)
+        body.push(
+          <div key="versions" className="small">
+            {generated.map((d) => <div key={d.id}>Generated offer v{d.version_no} · template v{d.template_version} · {formatLagos(d.uploaded_at)}{d.superseded_at ? " · superseded" : ""}</div>)}
+            {signed.map((d) => <div key={d.id}>Signed offer v{d.version_no} · {formatLagos(d.uploaded_at)}{d.superseded_at ? " · superseded" : ""}</div>)}
+          </div>,
+        );
       body.push(
         <ul key="cl" className="checklist">
           <Check ok={has("GENERATED_OFFER")}>Offer letter generated from the bank template</Check>
           {PACK.map((p) => <Check key={p} ok={has(p)}>{CATEGORY_LABEL[p]}</Check>)}
         </ul>,
       );
-      body.push(<GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} />);
-      body.push(<UploadForm key="u" applicationId={app.id} categories={[...PACK, "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
-      body.push(<TaskButton key="s" hidden={hidden} action="SUBMIT_PACK" label="Submit pack to Credit Officer 3" />);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack document" categories={[...PACK, "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
+      if (missing.length) body.push(<Blocked key="miss">Missing before submission: {missing.map((m) => CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
+      body.push(<TaskButton key="s" hidden={hidden} action="SUBMIT_PACK" label="Submit pack to Credit Officer 3" disabled={missing.length > 0} doneHref={doneHref} />);
       break;
-    case "CO3_PACK_REVIEW":
-      body.push(<ul key="cl" className="checklist"><Check ok={docs.some((d) => d.category === "INSURANCE_EVIDENCE" && d.uploaded_role === "CREDIT_OFFICER_3")}>Separate evidence of insurance uploaded</Check></ul>);
-      body.push(<UploadForm key="u" applicationId={app.id} categories={[{ code: "INSURANCE_EVIDENCE", label: CATEGORY_LABEL.INSURANCE_EVIDENCE }, { code: "SUPPORTING", label: CATEGORY_LABEL.SUPPORTING }]} />);
-      body.push(<TaskButton key="f" hidden={hidden} action="FORWARD" label="Forward to Disbursement Officer 1" />);
+    }
+    case "CO3_PACK_REVIEW": {
+      const evidence = docs.some((d) => d.category === "INSURANCE_EVIDENCE" && d.uploaded_role === "CREDIT_OFFICER_3");
+      body.push(
+        <ul key="cl" className="checklist">
+          <Check ok={has("INSURANCE_SIGNED")}>Customer-signed insurance document (from initiator)</Check>
+          <Check ok={evidence}>Separate evidence of insurance (uploaded by you)</Check>
+        </ul>,
+      );
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload evidence of insurance" categories={[{ code: "INSURANCE_EVIDENCE", label: CATEGORY_LABEL.INSURANCE_EVIDENCE }, { code: "SUPPORTING", label: CATEGORY_LABEL.SUPPORTING }]} />);
+      if (!evidence) body.push(<Blocked key="b">Upload evidence of insurance before forwarding.</Blocked>);
+      body.push(<TaskButton key="f" hidden={hidden} action="FORWARD" label="Forward to Disbursement Officer 1" disabled={!evidence} doneHref={doneHref} />);
       break;
+    }
     case "DISBURSEMENT_CHECK":
-      body.push(<p key="t" className="small muted">Check the full pack in the Documents tab before confirming.</p>);
-      body.push(<CrmsOkay key="o" hidden={hidden} />);
+      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>Check the full pack in Documents. Okay sends the request to Disbursement Officer 2. Send for Correction returns it directly to Credit Officer 3.</p>);
+      body.push(<CrmsOkay key="o" hidden={hidden} doneHref={doneHref} />);
       break;
     case "DISBURSEMENT_CORRECTION":
-      body.push(<UploadForm key="u" applicationId={app.id} categories={(UPLOADABLE_BY_STAGE.DISBURSEMENT_CORRECTION ?? []).map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
-      body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit to Disbursement Officer 1" />);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload replacement" categories={(UPLOADABLE_BY_STAGE.DISBURSEMENT_CORRECTION ?? []).map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
+      body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit to Disbursement Officer 1" doneHref={doneHref} />);
       break;
     case "DISBURSEMENT_BOOKING":
-      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} />);
+      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} doneHref={doneHref} />);
       break;
     case "COMPLETION":
-      body.push(<p key="t" className="small">Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator.</p>);
-      body.push(<TaskButton key="c" hidden={hidden} action="COMPLETE_PROCESS" label="Complete Process" confirm="Complete the process and send the closure pack to Legal and Shariah Compliance?" />);
+      body.push(<p key="t" className="small" style={{ margin: 0 }}>Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator. The initiator then confirms vendor payment separately.</p>);
+      body.push(<TaskButton key="c" hidden={hidden} action="COMPLETE_PROCESS" label="Complete Process" confirm="Send the closure pack to Legal and Shariah Compliance and hand the request to the initiator for vendor payment confirmation?" doneHref={doneHref} />);
       break;
     case "VENDOR_CONFIRMATION":
-      body.push(<p key="t" className="small">Confirm the vendor has been paid. This closes the request and activates repayment prompts.</p>);
-      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" confirm="Confirm vendor payment and close this request?" />);
+      body.push(<p key="t" className="small" style={{ margin: 0 }}>Confirm the vendor has been paid. This closes the request and activates repayment prompts.</p>);
+      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" confirm="Confirm that the vendor has been paid and close this request?" doneHref={doneHref} />);
       break;
   }
 
-  // Reason-required secondary actions
   const reasonActions: [TaskAction, string, boolean][] = [
     ["RETURN", stage === "CO3_PACK_REVIEW" ? "Return pack to initiator" : "Return for correction", false],
     ["REQUEST_INITIATOR", "Request documents from initiator", false],
@@ -647,8 +884,10 @@ function ActionPanel({ c, task, data }: { c: Case; task: NonNullable<Case["openT
 
   return (
     <div className="card action-panel">
+      <p className="eyebrow">Your action</p>
       <h2>
-        <span className="badge badge-dark">Your action</span> {STAGE_LABELS[stage]}
+        <span className={`role-tag ${isDo1 ? "alt" : ""}`}>{isDo1 ? "CRMS review" : isDo2 ? "Record disbursement" : ROLE_LABELS[task.assignee_role as Role]}</span>
+        {STAGE_LABELS[stage]}
       </h2>
       <p className="small muted" style={{ marginTop: -4 }}>
         As {ROLE_LABELS[task.assignee_role as Role]} · assigned {formatLagos(task.assigned_at)}
@@ -659,12 +898,12 @@ function ActionPanel({ c, task, data }: { c: Case; task: NonNullable<Case["openT
           <hr />
           <div className="stack">
             {secondary.map(([a, label, danger]) => (
-              <ReasonButton key={a} hidden={hidden} action={a} label={label} danger={danger} />
+              <ReasonButton key={a} hidden={hidden} action={a} label={label} danger={danger} doneHref={doneHref} />
             ))}
           </div>
         </>
       )}
-      {stage === "DRAFT" && requiredSubmissionDocuments(app.applicant_type).length > 0 && null}
     </div>
   );
 }
+

@@ -1,7 +1,10 @@
 import Link from "next/link";
-import { AuthFrame } from "@/components/Brand";
+import { AuthScene } from "@/components/Brand";
 import { config } from "@/server/config";
+import { maskEmail } from "@/server/mask";
 import { safeNext } from "@/lib/paths";
+import { currentTheme } from "../../_lib/theme";
+import { readPending } from "../actions";
 import { VerifyForm } from "./VerifyForm";
 
 export const metadata = { title: "Enter code" };
@@ -9,26 +12,25 @@ export const metadata = { title: "Enter code" };
 export default async function Verify({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   const next = safeNext(sp.next);
+  const pending = await readPending();
   return (
-    <AuthFrame>
-      <div className="card stack">
-        <h1>Enter your one-time code</h1>
-        <p className="muted" style={{ margin: 0 }}>
-          If your email is provisioned, a 6-digit code was sent to it. The code expires in {Math.round(config.otpTtlSeconds / 60)} minutes and can be used once.
-        </p>
-        <VerifyForm next={next} />
-        <p className="small" style={{ margin: 0 }}>
-          <Link href={`/sign-in?as=${encodeURIComponent(sp.as ?? "STAFF")}&next=${encodeURIComponent(next)}`}>Request a new code</Link>
-          {!config.isProduction && (
-            <>
-              {" · "}
-              <Link href="/dev/mailbox" target="_blank">
-                Open development mailbox
-              </Link>
-            </>
-          )}
-        </p>
-      </div>
-    </AuthFrame>
+    <AuthScene theme={await currentTheme()}>
+      <h1 className="auth-h1-sm">Check your email</h1>
+      {pending ? (
+        <>
+          <p className="lede">
+            If {maskEmail(pending.email)} belongs to provisioned staff, we sent it a 6-digit code. It works once.
+          </p>
+          <VerifyForm next={next} as={pending.as} expiresAt={pending.at + config.otpTtlSeconds * 1000} ttlMs={config.otpTtlSeconds * 1000} devMailbox={!config.isProduction && config.mailDriver === "dev"} />
+        </>
+      ) : (
+        <>
+          <p className="lede">This sign-in attempt has expired.</p>
+          <p className="auth-feedback">
+            <Link href={`/sign-in?next=${encodeURIComponent(next)}`}>Start again with your work email</Link>
+          </p>
+        </>
+      )}
+    </AuthScene>
   );
 }

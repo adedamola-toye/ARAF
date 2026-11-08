@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { AuthFrame } from "@/components/Brand";
+import { PlainFrame } from "@/components/Brand";
 import { config } from "@/server/config";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
@@ -14,7 +14,7 @@ export default async function DevMailbox({ searchParams }: { searchParams: Promi
   const to = (sp.to ?? "").toLowerCase();
   const rows = (await db.query("SELECT * FROM dev_mailbox WHERE ($1 = '' OR $1 = ANY(to_addresses) OR $1 = ANY(cc_addresses)) ORDER BY id DESC LIMIT 40", [to])).rows;
   return (
-    <AuthFrame right={<span className="badge badge-yellow">Development adapter</span>}>
+    <PlainFrame right={<span className="badge badge-yellow">Development adapter</span>}>
       <div className="stack">
         <div className="card">
           <h1>Development mailbox</h1>
@@ -33,6 +33,6 @@ export default async function DevMailbox({ searchParams }: { searchParams: Promi
           </article>
         ))}
       </div>
-    </AuthFrame>
+    </PlainFrame>
   );
 }

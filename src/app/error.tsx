@@ -1,27 +1,21 @@
 "use client";
 import Link from "next/link";
-import { AuthFrame } from "@/components/Brand";
+import { AuthScene } from "@/components/Brand";
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  const theme = typeof document !== "undefined" && document.documentElement.dataset.theme === "light" ? "light" : "dark";
   return (
-    <AuthFrame>
-      <div className="card" role="alert">
-        <h1>Something went wrong</h1>
-        <p className="muted">The request could not be completed. No partial changes were saved. If this keeps happening, share the reference below with support.</p>
-        {error.digest && (
-          <p className="small">
-            Reference: <code>{error.digest}</code>
-          </p>
-        )}
-        <div className="row">
-          <button className="btn btn-primary" onClick={() => reset()}>
-            Try again
-          </button>
-          <Link className="btn" href="/queue">
-            My Action Queue
-          </Link>
-        </div>
+    <AuthScene theme={theme}>
+      <h1 className="auth-h1-sm">Something went wrong</h1>
+      <p className="lede" role="alert">The request could not be completed and no partial changes were saved.{error.digest ? ` Reference: ${error.digest}.` : ""}</p>
+      <div className="auth-form">
+        <button className="auth-continue" onClick={() => reset()}>
+          Try again <span aria-hidden="true">↗</span>
+        </button>
+        <p className="auth-feedback">
+          <Link href="/queue">Go to My Action Queue</Link>
+        </p>
       </div>
-    </AuthFrame>
+    </AuthScene>
   );
 }

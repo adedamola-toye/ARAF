@@ -1,16 +1,19 @@
 import Link from "next/link";
-import { AuthFrame } from "@/components/Brand";
+import { AuthScene } from "@/components/Brand";
+import { currentTheme } from "../_lib/theme";
 
-export default function Forbidden() {
+export const metadata = { title: "Access denied" };
+
+export default async function Forbidden() {
   return (
-    <AuthFrame>
-      <div className="card" role="alert">
-        <h1>Access denied</h1>
-        <p className="muted">Your current role assignments do not allow access to this page. Access is granted by the Super Admin through role assignments, not by workspace selection.</p>
-        <Link className="btn btn-primary" href="/queue">
-          My Action Queue
+    <AuthScene theme={await currentTheme()}>
+      <h1 className="auth-h1-sm">Access denied</h1>
+      <p className="lede" role="alert">Your current role assignments do not allow this page. Access comes from role assignments made by the Super Admin, not from the workspace you choose.</p>
+      <div className="auth-form">
+        <Link className="auth-continue" href="/queue" style={{ textDecoration: "none" }}>
+          My Action Queue <span aria-hidden="true">↗</span>
         </Link>
       </div>
-    </AuthFrame>
+    </AuthScene>
   );
 }

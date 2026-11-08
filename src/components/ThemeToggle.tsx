@@ -1,22 +1,12 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { Moon, Sun } from "lucide-react";
 
 type Theme = "light" | "dark";
 
-/** Persistent light/dark preference (cookie for server rendering + localStorage). */
-export function ThemeToggle({ initial }: { initial: Theme | null }) {
-  const [theme, setTheme] = useState<Theme | null>(initial);
-  useEffect(() => {
-    if (theme) return;
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem("wb-theme");
-    } catch {
-      /* storage unavailable */
-    }
-    const t = stored === "dark" || stored === "light" ? stored : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-    setTheme(t);
-  }, [theme]);
+/** Discreet, persistent light/dark control. Dark is the default on first visit. */
+export function ThemeToggle({ initial, variant = "icon" }: { initial: Theme | null; variant?: "icon" | "pill" }) {
+  const [theme, setTheme] = useState<Theme>(initial ?? "dark");
   const toggle = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
     setTheme(next);
@@ -25,14 +15,22 @@ export function ThemeToggle({ initial }: { initial: Theme | null }) {
     try {
       localStorage.setItem("wb-theme", next);
     } catch {
-      /* ignore */
+      /* storage unavailable */
     }
   };
-  const label = theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  const target = theme === "dark" ? "light" : "dark";
+  const label = `Switch to ${target} mode`;
+  const Icon = theme === "dark" ? Sun : Moon;
+  if (variant === "pill")
+    return (
+      <button type="button" className="theme-pill" onClick={toggle} aria-label={label} aria-pressed={theme === "dark"}>
+        <Icon className="icon" aria-hidden="true" />
+        <span>{target === "light" ? "Light mode" : "Dark mode"}</span>
+      </button>
+    );
   return (
-    <button type="button" className="btn btn-sm theme-toggle" onClick={toggle} aria-label={label} title={label}>
-      <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
-      <span className="sr-only">{label}</span>
+    <button type="button" className="btn btn-sm btn-ghost" onClick={toggle} aria-label={label} title={label}>
+      <Icon className="icon" aria-hidden="true" />
     </button>
   );
 }

@@ -27,6 +27,8 @@ export function FormMessages({ state }: { state: FormState }) {
   const fieldErrors = state.fields ? Object.entries(state.fields) : [];
   return (
     <div role={state.error ? "alert" : "status"} className={`alert ${state.error ? "alert-error" : "alert-success"}`}>
+      <span>
+      {state.error ? <strong>Not completed: </strong> : null}
       {state.error ?? state.message}
       {fieldErrors.length > 0 && (
         <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
@@ -35,6 +37,7 @@ export function FormMessages({ state }: { state: FormState }) {
           ))}
         </ul>
       )}
+      </span>
     </div>
   );
 }
@@ -51,6 +54,7 @@ export function ActionForm({
   resetOnSuccess = false,
   encType,
   showMessages = true,
+  doneHref,
 }: {
   action: Action;
   children: ReactNode | ((state: FormState) => ReactNode);
@@ -59,6 +63,8 @@ export function ActionForm({
   resetOnSuccess?: boolean;
   encType?: "multipart/form-data";
   showMessages?: boolean;
+  /** After success, navigate here (e.g. the case page with ?done=1 to show the committed result). */
+  doneHref?: string;
 }) {
   const [state, formAction] = useActionState(action, {});
   const router = useRouter();
@@ -68,9 +74,10 @@ export function ActionForm({
     if (state.ok) {
       setKey(crypto.randomUUID());
       if (resetOnSuccess) ref.current?.reset();
-      if (refreshOnSuccess) router.refresh();
+      if (doneHref) router.replace(doneHref);
+      else if (refreshOnSuccess) router.refresh();
     }
-  }, [state, refreshOnSuccess, resetOnSuccess, router]);
+  }, [state, refreshOnSuccess, resetOnSuccess, router, doneHref]);
   return (
     <form ref={ref} action={formAction} className={className} encType={encType}>
       <input type="hidden" name="idempotencyKey" value={key} />
@@ -87,12 +94,14 @@ export function ReasonAction({
   label,
   danger = false,
   placeholder = "Reason (required)",
+  doneHref,
 }: {
   action: Action;
   hidden: Record<string, string>;
   label: string;
   danger?: boolean;
   placeholder?: string;
+  doneHref?: string;
 }) {
   const [open, setOpen] = useState(false);
   if (!open)
@@ -102,7 +111,7 @@ export function ReasonAction({
       </button>
     );
   return (
-    <ActionForm action={action}>
+    <ActionForm action={action} doneHref={doneHref}>
       {Object.entries(hidden).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}

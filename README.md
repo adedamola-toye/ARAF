@@ -63,7 +63,7 @@ try provisioning.
 | `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
 | `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
 
-The test suite has 102 tests. It covers:
+The test suite has 151 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
 
 - **Routing:** boundary amounts, all three routes end to end, every endorsement path, random eligibility and separation of duties, and unstaffed stages with admin resolution.
 - **Workflow rules:** correction and rejection routing, material-change invalidation, the three-report, APR and invoice gates, the production APR block, and the pack, insurance and CRMS gates.
@@ -110,12 +110,24 @@ Set `APP_ENV=production`. Then:
 
 | Input | Status in this build | To go live |
 |---|---|---|
-| **APR workbook** | `dev-illustrative@0.1` calculator (`productionValidated: false`), clearly labelled in the UI. **Production credit approval is blocked** until a validated calculator is configured. It does not use the 15% illustrative portfolio return. | Implement the workbook as a new `AprCalculator`, add workbook fixture rows under `tests/fixtures/apr/` (see its README), set `APR_CALCULATOR`. |
+| **APR workbook** | **Implemented** as `altbank-apr-2024@1.0` from "APR Model - ALTBANK v.1 2024" (`src/server/domain/apr/altbank-2024.ts`). It matches the bank's workbook on 48 rows recalculated in LibreOffice (`scripts/apr-workbook-fixtures.py`). **DSR is not defined in the workbook.** The DSR used is (existing monthly obligations + monthly-equivalent instalment) / average monthly inflow, and production credit approval stays blocked until the bank confirms it. | Confirm or supply the DSR definition, then set `productionValidated: true`. |
 | **Offer letter template** | "DEVELOPMENT SAMPLE" template, not bank-approved. **Production offer generation is blocked** for non-approved templates. | Super Admin → Offer templates: paste the bank's template (placeholders listed on the page), tick *bank-approved*, activate. |
-| **Brand colours / logo** | Provisional tokens in `src/app/globals.css` from the yellow Wakeel POS reference; text wordmark in `src/components/Brand.tsx`. | Replace tokens and wordmark with approved values and asset. |
+| **Brand / typeface** | Golden Yellow #FFC900 and Deep Graphite #1C1D20 tokens (`src/app/globals.css`), "Wakeel" text wordmark, dark theme by default. Century Gothic is used where installed; it is a licensed font and is not bundled. | Supply a licensed Century Gothic web font (add an `@font-face` in `globals.css`) and the approved logo asset if wanted. |
+| **Merchant photograph** | Local copy of the image from the official Wakeel page (`public/images/wakeel-merchant-*.jpg`), taken from the accepted landing reference. | Confirm the bank's usage rights for internal use. |
 | **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |
 | **Bank directory** | Seeded `bank_directory` table. | Scheduled import from the HR/AD directory. |
 | **Email channel, malware scanning, object storage** | Dev mailbox, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
+
+## Interface
+
+The UI follows the accepted landing reference and the UI handoff. It has:
+- a full-bleed merchant photograph on the sign-in, OTP, expired-session and error screens, with the exact landing copy
+- a compact side navigation scoped by role, with a mobile menu and a profile menu holding the workspace switcher and sign-out
+- request pages with a progress timeline and Overview / Documents / Assessment / Activity tabs, and a sticky action panel showing each gate and the exact reason an action is blocked
+- uploads with progress and retry, a confirmation summary before **Disbursed**, and Disbursed → Awaiting Vendor Payment Confirmation → Closed states
+- tables that become cards on phones
+
+The RM / ANM / Merchant Officer / Staff choice is on the OTP step ("Open workspace"), so the landing page keeps the reference's single email field.
 
 ## Design decisions to confirm with the product owner
 

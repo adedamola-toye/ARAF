@@ -48,11 +48,12 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
     <>
       <div className="page-head">
         <div>
+          <p className="eyebrow">Reporting</p>
           <h1>Reports</h1>
           <p>{scope.regions ? `Scoped to region: ${scope.regions.join(", ")}.` : "Bank-wide."} Exports use exactly these filters and are logged.</p>
         </div>
         <div className="row">
-          <a className="btn btn-dark" href={`/api/reports/export?${qs}${qs ? "&" : ""}format=csv`}>
+          <a className="btn" href={`/api/reports/export?${qs}${qs ? "&" : ""}format=csv`}>
             Export CSV
           </a>
           <a className="btn btn-primary" href={`/api/reports/export?${qs}${qs ? "&" : ""}format=xlsx`}>
@@ -104,7 +105,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <div className="metric"><div className="k">Corrections</div><div className="v">{t.corrections}</div></div>
         <div className="metric"><div className="k">Disbursed ({t.disbursedCount})</div><div className="v">{formatKobo(t.disbursedKobo)}</div></div>
         <div className="metric"><div className="k">Outstanding queue items</div><div className="v">{t.outstandingTasks}</div></div>
-        <div className="metric"><div className="k">Repayments due (30 days)</div><div className="v">{t.upcomingRepaymentsCount} · {formatKobo(t.upcomingRepaymentsKobo)}</div></div>
+        <div className="metric"><div className="k">Repayments due in 30 days ({t.upcomingRepaymentsCount})</div><div className="v">{formatKobo(t.upcomingRepaymentsKobo)}</div></div>
       </div>
       <div className="grid-2" style={{ marginBottom: 16 }}>
         <div className="card">

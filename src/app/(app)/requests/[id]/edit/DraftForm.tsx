@@ -1,5 +1,7 @@
 "use client";
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
+import { UploadPanel } from "@/components/UploadPanel";
 import { useRouter } from "next/navigation";
 import { saveDraftAction } from "../../actions";
 import { FormMessages } from "@/components/forms";
@@ -83,6 +85,10 @@ export function DraftForm(props: {
   directors: { id: string; fullName: string; masked: string }[];
   rbes: { id: string; label: string }[];
   isCorrection: boolean;
+  correction: { by: string; reason: string; at: string } | null;
+  required: { code: string; label: string; done: boolean }[];
+  uploadCategories: { code: string; label: string }[];
+  uploaded: { id: string; label: string; href: string; quarantined: boolean }[];
 }) {
   const [state, action] = useActionState(saveDraftAction, {});
   const router = useRouter();
@@ -93,6 +99,18 @@ export function DraftForm(props: {
   const [tin, setTin] = useState("");
   const [intent, setIntent] = useState("save");
   const [key, setKey] = useState(() => crypto.randomUUID());
+  const banner = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (props.correction) banner.current?.focus();
+  }, [props.correction]);
+  useEffect(() => {
+    if (state.error && state.fields) {
+      const first = Object.keys(state.fields)[0];
+      const el = first ? (document.getElementById(first) ?? document.getElementById(first.startsWith("doc_") ? "documents-section" : "")) : null;
+      (el ?? formRef.current?.querySelector<HTMLElement>(".alert-error"))?.focus();
+    }
+  }, [state]);
   useEffect(() => {
     if (state.ok) {
       setKey(crypto.randomUUID());
@@ -136,7 +154,15 @@ export function DraftForm(props: {
   });
 
   return (
-    <form action={action} className="stack" noValidate>
+    <form ref={formRef} action={action} className="stack" noValidate>
+      {props.correction && (
+        <div ref={banner} tabIndex={-1} className="alert alert-warn" role="alert">
+          <AlertTriangle className="icon" aria-hidden="true" />
+          <span>
+            <strong>Correction requested</strong> by {props.correction.by} ({props.correction.at}): {props.correction.reason}
+          </span>
+        </div>
+      )}
       <input type="hidden" name="applicationId" value={props.applicationId} />
       <input type="hidden" name="taskId" value={props.taskId} />
       <input type="hidden" name="idempotencyKey" value={key} />
@@ -145,7 +171,7 @@ export function DraftForm(props: {
       <FormMessages state={state} />
 
       <section className="card">
-        <h2>Customer</h2>
+        <h2>1. Applicant</h2>
         <div className="grid-2">
           {T === "LIMITED" ? (
             <Field f={f} id="companyName" label="Company name">
@@ -179,7 +205,7 @@ export function DraftForm(props: {
       </section>
 
       <section className="card">
-        <h2>Restricted identifiers</h2>
+        <h3>Restricted identifiers</h3>
         <p className="small muted">Stored encrypted. Only the last four digits are displayed. Leave blank to keep the saved value.</p>
         <div className="grid-2">
           {T !== "LIMITED" && (
@@ -229,7 +255,7 @@ export function DraftForm(props: {
       </section>
 
       <section className="card">
-        <h2>Financing</h2>
+        <h2>2. Facility</h2>
         <div className="grid-3">
           <Field f={f} id="requestedAmountKobo" label="Requested amount (₦)" hint="₦1 – ₦50,000,000">
             <input id="requestedAmountKobo" value={d.amount} onChange={set("amount")} inputMode="decimal" aria-invalid={!!f.requestedAmountKobo} />
@@ -277,7 +303,39 @@ export function DraftForm(props: {
       </section>
 
       <section className="card">
-        <h2>Supplier and invoice</h2>
+        <h3>Rent and statements</h3>
+        <div className="grid-2">
+          <Field f={f} id="rentStart" label="Rental coverage start" hint="Coverage must be active on submission (Lagos time).">
+            <input id="rentStart" type="date" value={d.rentStart} onChange={set("rentStart")} aria-invalid={!!f.rentStart} />
+          </Field>
+          <Field f={f} id="rentEnd" label="Rental coverage end">
+            <input id="rentEnd" type="date" value={d.rentEnd} onChange={set("rentEnd")} aria-invalid={!!f.rentEnd} />
+          </Field>
+        </div>
+        <label className="check" style={{ marginTop: 10 }}>
+          <input type="checkbox" checked={d.statementsCover12Months} onChange={(e) => setD({ ...d, statementsCover12Months: e.target.checked })} />
+          The uploaded bank statements cover the last 12 months.
+        </label>
+        {f.statementsCover12Months && <span className="err">{f.statementsCover12Months}</span>}
+      </section>
+
+      {props.initiatorRole === "RM" && (
+        <section className="card">
+          <h3>Business endorsement</h3>
+          <Field f={f} id="rbeId" label="Regional Business Executive" hint="The request goes to this RBE for endorsement.">
+            <select id="rbeId" value={d.rbeId ?? ""} onChange={(e) => setD({ ...d, rbeId: e.target.value || null })} aria-invalid={!!f.rbeId}>
+              <option value="">Select by name…</option>
+              {props.rbes.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </section>
+      )}
+      <section className="card">
+        <h2>3. Vendor</h2>
         <div className="grid-2">
           <Field f={f} id="supplierName" label="Supplier name">
             <input id="supplierName" value={d.supplierName} onChange={set("supplierName")} aria-invalid={!!f.supplierName} />
@@ -297,38 +355,30 @@ export function DraftForm(props: {
         </div>
       </section>
 
-      <section className="card">
-        <h2>Rent and statements</h2>
-        <div className="grid-2">
-          <Field f={f} id="rentStart" label="Rental coverage start" hint="Coverage must be active on submission (Lagos time).">
-            <input id="rentStart" type="date" value={d.rentStart} onChange={set("rentStart")} aria-invalid={!!f.rentStart} />
-          </Field>
-          <Field f={f} id="rentEnd" label="Rental coverage end">
-            <input id="rentEnd" type="date" value={d.rentEnd} onChange={set("rentEnd")} aria-invalid={!!f.rentEnd} />
-          </Field>
-        </div>
-        <label className="check" style={{ marginTop: 10 }}>
-          <input type="checkbox" checked={d.statementsCover12Months} onChange={(e) => setD({ ...d, statementsCover12Months: e.target.checked })} />
-          The uploaded bank statements cover the last 12 months.
-        </label>
-        {f.statementsCover12Months && <span className="err">{f.statementsCover12Months}</span>}
+      <section className="card" id="documents-section" tabIndex={-1}>
+        <h2>4. Documents</h2>
+        <ul className="checklist" style={{ marginBottom: 12 }}>
+          {props.required.map((r) => (
+            <li key={r.code}>
+              <span className={`tick ${r.done ? "ok" : "no"}`} aria-hidden="true">
+                {r.done ? <CheckCircle2 className="icon" /> : <Circle className="icon" />}
+              </span>
+              {r.label}
+              <span className="sr-only">{r.done ? "(uploaded)" : "(missing)"}</span>
+            </li>
+          ))}
+        </ul>
+        <UploadPanel applicationId={props.applicationId} categories={props.uploadCategories} />
+        {props.uploaded.length > 0 && (
+          <ul style={{ margin: "12px 0 0", paddingLeft: 18 }}>
+            {props.uploaded.map((d) => (
+              <li key={d.id} className="small">
+                <a href={d.href}>{d.label}</a> {d.quarantined && <span className="badge badge-warn">Quarantined</span>}
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
-
-      {props.initiatorRole === "RM" && (
-        <section className="card">
-          <h2>Business endorsement</h2>
-          <Field f={f} id="rbeId" label="Regional Business Executive" hint="The request goes to this RBE for endorsement.">
-            <select id="rbeId" value={d.rbeId ?? ""} onChange={(e) => setD({ ...d, rbeId: e.target.value || null })} aria-invalid={!!f.rbeId}>
-              <option value="">Select by name…</option>
-              {props.rbes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </section>
-      )}
       {Object.keys(f).some((k) => k.startsWith("doc_")) && (
         <div className="alert alert-error">
           {Object.entries(f)

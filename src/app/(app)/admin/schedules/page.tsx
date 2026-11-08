@@ -9,7 +9,7 @@ export const metadata = { title: "Scheduled emails" };
 
 export default async function Schedules() {
   await requireSuperAdmin();
-  const s = (await db.query("SELECT * FROM schedule_settings WHERE code = 'MONTHLY_REPORT'")).rows[0];
+  const s = (await db.query("SELECT ss.*, st.full_name AS updated_by_name FROM schedule_settings ss LEFT JOIN staff st ON st.id = ss.updated_by WHERE ss.code = 'MONTHLY_REPORT'")).rows[0];
   const runs = (await db.query("SELECT r.*, (SELECT count(*) FROM digest_deliveries d WHERE d.run_id = r.id AND d.outbox_id IS NOT NULL) AS sent FROM schedule_runs r ORDER BY started_at DESC LIMIT 20")).rows;
   const staff = (
     await db.query(
@@ -39,6 +39,7 @@ export default async function Schedules() {
         <div className="card">
           <h2>Monthly leads summary</h2>
           <p className="small">Prior calendar month&apos;s pipeline, bookings, turnaround, corrections/rejections and upcoming repayments, scoped to each recipient&apos;s access. Current period due: <strong>{formatLagos(m.dueAt)}</strong> ({m.label}).</p>
+          <p className="small muted">Last changed {formatLagos(s.updated_at)}{s.updated_by_name ? ` by ${s.updated_by_name}` : " (default)"}.</p>
           <ScheduleForm s={s} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
         </div>
       </div>

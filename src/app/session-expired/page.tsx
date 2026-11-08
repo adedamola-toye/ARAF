@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { AuthFrame } from "@/components/Brand";
+import { AuthScene } from "@/components/Brand";
 import { safeNext } from "@/lib/paths";
+import { currentTheme } from "../_lib/theme";
 import { ClearSession } from "./ClearSession";
 
-export const metadata = { title: "Session expired" };
+export const metadata = { title: "Session ended" };
 
 const REASONS: Record<string, string> = {
   IDLE_TIMEOUT: "You were inactive for five minutes, so your session was closed to protect customer information.",
@@ -17,16 +18,16 @@ export default async function SessionExpired({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const next = safeNext(sp.next);
   return (
-    <AuthFrame>
+    <AuthScene theme={await currentTheme()}>
       <ClearSession />
-      <div className="card stack" role="alert">
-        <h1>{sp.reason === "LOGOUT" ? "Signed out" : "Your session has ended"}</h1>
-        <p className="muted" style={{ margin: 0 }}>{REASONS[sp.reason ?? "IDLE_TIMEOUT"] ?? REASONS.IDLE_TIMEOUT}</p>
-        <p className="small muted" style={{ margin: 0 }}>Saved drafts remain available after you sign in again.</p>
-        <Link className="btn btn-primary" href={`/sign-in?next=${encodeURIComponent(next)}`}>
-          Sign in with a new code
+      <h1 className="auth-h1-sm">{sp.reason === "LOGOUT" ? "Signed out" : "Session ended"}</h1>
+      <p className="lede" role="alert">{REASONS[sp.reason ?? "IDLE_TIMEOUT"] ?? REASONS.IDLE_TIMEOUT}</p>
+      <div className="auth-form">
+        <Link className="auth-continue" href={`/sign-in?next=${encodeURIComponent(next)}`} style={{ textDecoration: "none" }}>
+          Sign in with a new code <span aria-hidden="true">↗</span>
         </Link>
+        <p className="auth-feedback">Saved drafts remain available after you sign in again.</p>
       </div>
-    </AuthFrame>
+    </AuthScene>
   );
 }

@@ -5,6 +5,7 @@ import { formatLagos } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { STAGE_LABELS, type Stage } from "@/server/domain/stages";
 import { pageHref } from "@/components/SortHeader";
+import { OutcomeChip } from "@/components/Status";
 
 export const metadata = { title: "System audit" };
 
@@ -39,7 +40,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
     <>
       <div className="page-head">
         <div>
-          <h1>System audit</h1>
+          <h1>Audit trail</h1>
           <p>Append-only. Per-request and per-customer trails: filter by request ID or customer ID. Client IP (server-observed via trusted proxy configuration) and device metadata are recorded separately.</p>
         </div>
       </div>
@@ -65,7 +66,7 @@ export default async function AuditPage({ searchParams }: { searchParams: Promis
                 <td className="small">{e.actor_email ?? "system"}</td>
                 <td className="small">{e.actor_role ? ROLE_LABELS[e.actor_role as Role] ?? e.actor_role : "—"}</td>
                 <td className="small mono">{e.action}{e.document_version ? ` v${e.document_version}` : ""}</td>
-                <td><span className={`badge ${e.outcome === "SUCCESS" ? "badge-green" : "badge-red"}`}>{e.outcome}</span></td>
+                <td><OutcomeChip outcome={e.outcome} /></td>
                 <td className="small">{e.ref ? <Link href={`/admin/audit?ref=${e.ref}`} className="mono">{e.ref}</Link> : "—"}{e.customer_id && <div><Link className="muted" href={`/admin/audit?customer=${e.customer_id}`}>{e.customer_name ?? "customer"}</Link></div>}</td>
                 <td className="small">{e.stage ? STAGE_LABELS[e.stage as Stage] ?? e.stage : "—"}</td>
                 <td className="small" style={{ maxWidth: 260, wordBreak: "break-word" }}>{e.reason}{Object.keys(e.details ?? {}).length > 0 && <div className="muted mono" style={{ fontSize: 11 }}>{JSON.stringify(e.details).slice(0, 220)}</div>}</td>

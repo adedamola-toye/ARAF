@@ -7,6 +7,9 @@ import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { formatKobo } from "@/server/money";
 import { formatDuration, formatLagos } from "@/server/time";
 import { SortHeader, pageHref } from "@/components/SortHeader";
+import { PageHeader } from "@/components/PageHeader";
+import { StageChip, WaitChip } from "@/components/Status";
+import { ArrowRight, Inbox, Search } from "lucide-react";
 
 export const metadata = { title: "My Action Queue" };
 
@@ -28,15 +31,16 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const filtered = q.total !== q.allTotal;
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>My Action Queue</h1>
-          <p>
+      <PageHeader
+        eyebrow="Work"
+        title="My Action Queue"
+        intro={
+          <>
             {q.allTotal} item{q.allTotal === 1 ? "" : "s"} assigned to you across all your roles.
             {filtered && ` Showing ${q.total} matching the filters.`}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
       <form className="filters" method="get" role="search" aria-label="Filter queue">
         <div className="field">
           <label htmlFor="q">Search</label>
@@ -66,7 +70,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         </div>
         <input type="hidden" name="sort" value={sp.sort ?? "waiting"} />
         <input type="hidden" name="dir" value={sp.dir ?? "desc"} />
-        <button className="btn">Apply</button>
+        <button className="btn"><Search className="icon" aria-hidden="true" />Apply</button>
         {filtered && (
           <Link className="btn btn-ghost" href="/queue">
             Clear filters
@@ -74,7 +78,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
         )}
       </form>
       <div className="table-wrap">
-        <table className="data">
+        <table className="data responsive">
           <caption className="sr-only">Items awaiting your action</caption>
           <thead>
             <tr>
@@ -94,6 +98,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
             {q.rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="empty">
+                  <Inbox className="icon" aria-hidden="true" />
                   {filtered ? "No items match these filters." : "Nothing is waiting for you. New assignments appear here automatically."}
                 </td>
               </tr>
@@ -103,25 +108,25 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
               const waited = now - new Date(r.assigned_at).getTime();
               return (
                 <tr key={r.task_id} className="clickable">
-                  <td className="nowrap">
-                    <Link className="row-link mono" href={href}>
+                  <td className="nowrap" data-label="Request ID">
+                    <Link className="row-link mono" href={href} aria-label={`Open ${r.ref} for ${r.customer_name ?? "customer"}`}>
                       {r.ref}
                     </Link>
                   </td>
-                  <td>{r.customer_name}</td>
-                  <td className="num">{formatKobo(r.requested_amount_kobo)}</td>
-                  <td>
-                    <span className="badge badge-yellow">{STAGE_LABELS[r.stage]}</span>
+                  <td data-label="Customer">{r.customer_name}</td>
+                  <td className="num" data-label="Requested amount">{formatKobo(r.requested_amount_kobo)}</td>
+                  <td data-label="Stage">
+                    <StageChip stage={r.stage} />
                     <div className="small muted">as {ROLE_LABELS[r.assignee_role as Role] ?? r.assignee_role}</div>
                   </td>
-                  <td className="small nowrap">{formatLagos(r.assigned_at)}</td>
-                  <td className="nowrap">
-                    <span className={waited > 6 * 3600_000 ? "badge badge-red" : "badge"}>{formatDuration(waited)}</span>
+                  <td className="small nowrap" data-label="Assigned">{formatLagos(r.assigned_at)}</td>
+                  <td className="nowrap" data-label="Waiting">
+                    <WaitChip ms={waited} label={formatDuration(waited)} />
                   </td>
-                  <td className="small">{r.required_action}</td>
+                  <td className="small" data-label="Next action">{r.required_action}</td>
                   <td className="row-actions">
                     <Link className="btn btn-primary btn-sm" href={href}>
-                      Take Action
+                      Take Action <ArrowRight className="icon" aria-hidden="true" />
                     </Link>
                   </td>
                 </tr>

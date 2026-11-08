@@ -2,12 +2,15 @@ import Link from "next/link";
 import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
 import { initiatorRequests } from "@/server/domain/views";
-import { STAGE_LABELS, type Stage } from "@/server/domain/stages";
+import { type Stage } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role, INITIATOR_ROLES } from "@/server/domain/roles";
 import { formatKobo } from "@/server/money";
 import { formatDuration, formatLagos } from "@/server/time";
 import { REMINDER_MIN_AGE_MS } from "@/server/domain/workflow";
 import { ReminderButton } from "./[id]/CaseClient";
+import { PageHeader } from "@/components/PageHeader";
+import { StageChip, WaitChip } from "@/components/Status";
+import { ClipboardList, FilePlus2 } from "lucide-react";
 
 export const metadata = { title: "View Progress" };
 
@@ -20,17 +23,18 @@ export default async function Progress() {
   const live = rows.filter((r) => r.status !== "DRAFT");
   return (
     <>
-      <div className="page-head">
-        <div>
-          <h1>View Progress</h1>
-          <p>Requests you initiated: current owner, stage and time waiting. Open a request for its full handoff history.</p>
-        </div>
-        {isInitiator && (
-          <Link className="btn btn-primary" href="/requests/new">
-            Initiate New Request
-          </Link>
-        )}
-      </div>
+      <PageHeader
+        eyebrow="Work"
+        title="View Progress"
+        intro="Requests you initiated: current owner, stage and time waiting. Open a request for its full handoff history."
+        actions={
+          isInitiator && (
+            <Link className="btn btn-primary" href="/requests/new">
+              <FilePlus2 className="icon" aria-hidden="true" /> Initiate New Request
+            </Link>
+          )
+        }
+      />
       {drafts.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <h2>Saved drafts</h2>
@@ -44,7 +48,7 @@ export default async function Progress() {
         </div>
       )}
       <div className="table-wrap">
-        <table className="data">
+        <table className="data responsive">
           <thead>
             <tr>
               <th>Request ID</th>
@@ -61,6 +65,7 @@ export default async function Progress() {
             {live.length === 0 && (
               <tr>
                 <td colSpan={8} className="empty">
+                  <ClipboardList className="icon" aria-hidden="true" />
                   No submitted requests yet.
                 </td>
               </tr>
@@ -69,24 +74,22 @@ export default async function Progress() {
               const waited = r.assigned_at ? now - new Date(r.assigned_at).getTime() : 0;
               return (
                 <tr key={r.id} className="clickable">
-                  <td className="nowrap">
+                  <td className="nowrap" data-label="Request ID">
                     <Link className="row-link mono" href={`/requests/${r.id}?tab=history`}>
                       {r.ref}
                     </Link>
                   </td>
-                  <td>{r.customer_name}</td>
-                  <td className="num">{formatKobo(r.requested_amount_kobo)}</td>
-                  <td>
-                    <span className={`badge ${r.status === "REJECTED" ? "badge-red" : r.status === "CLOSED" ? "badge-dark" : r.status === "BOOKED" ? "badge-green" : "badge-yellow"}`}>
-                      {STAGE_LABELS[r.stage as Stage]}
-                    </span>
+                  <td data-label="Customer">{r.customer_name}</td>
+                  <td className="num" data-label="Amount">{formatKobo(r.requested_amount_kobo)}</td>
+                  <td data-label="Stage">
+                    <StageChip stage={r.stage as Stage} status={r.status} />
                   </td>
-                  <td className="small">
+                  <td className="small" data-label="Current owner">
                     {r.owner_name ?? (r.task_id ? <span className="badge badge-red">Awaiting assignment</span> : "—")}
                     {r.owner_role && <div className="muted">{ROLE_LABELS[r.owner_role as Role]}</div>}
                   </td>
-                  <td className="small nowrap">{r.entered_at ? formatLagos(r.entered_at) : "—"}</td>
-                  <td className="nowrap">{r.assigned_at ? formatDuration(waited) : "—"}</td>
+                  <td className="small nowrap" data-label="In stage since">{r.entered_at ? formatLagos(r.entered_at) : "—"}</td>
+                  <td className="nowrap" data-label="Waiting">{r.assigned_at ? <WaitChip ms={waited} label={formatDuration(waited)} /> : "—"}</td>
                   <td className="row-actions">
                     {r.owner_id && r.owner_id !== session.staffId ? (
                       waited > REMINDER_MIN_AGE_MS ? (
