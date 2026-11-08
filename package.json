@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "mail:test": "tsx scripts/send-test-email.ts",
     "setup": "tsx scripts/setup.ts"
   },
   "engines": {

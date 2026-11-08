@@ -104,7 +104,7 @@ export const config = {
     return bool("RETENTION_PURGE_ENABLED", false);
   },
   get mailDriver() {
-    return str("MAIL_DRIVER", "dev") as "dev" | "smtp";
+    return str("MAIL_DRIVER", "dev") as "dev" | "smtp" | "resend";
   },
   get mailFrom() {
     return str("MAIL_FROM", "WakeelBoost Work Desk <workdesk@altbank.ng>");
@@ -116,6 +116,13 @@ export const config = {
       user: process.env.SMTP_USER || undefined,
       pass: process.env.SMTP_PASS || undefined,
       secure: bool("SMTP_SECURE", false),
+    };
+  },
+  get resend() {
+    return {
+      apiKey: str("RESEND_API_KEY", ""),
+      baseUrl: str("RESEND_BASE_URL", "https://api.resend.com").replace(/\/$/, ""),
+      replyTo: process.env.RESEND_REPLY_TO || undefined,
     };
   },
   get closureMaxAttachmentBytes() {

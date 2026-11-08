@@ -75,6 +75,12 @@ Sessions end after 5 minutes without activity; just sign in again.
 
 All emails end in `@altbank.ng`; the full list is in the README.
 
+## Send real email instead of the test mailbox (optional)
+
+By default the test copy sends no real email; codes appear at `/dev/mailbox`. To deliver real email
+through Resend, add a verified domain and key, then follow [docs/EMAIL.md](EMAIL.md). While the domain
+is still being verified in Cloudflare, keep `MAIL_DRIVER=dev`.
+
 ## Review the offer letters and approve the templates
 
 1. Sign in as `anm.south@altbank.ng`, workspace **Agent Network Manager**.

@@ -68,9 +68,54 @@ class SmtpTransport implements MailTransport {
   }
 }
 
+/** Resend HTTP API (https://resend.com/docs/api-reference/emails/send-email). */
+class ResendTransport implements MailTransport {
+  readonly name = "resend";
+  async send(m: OutgoingEmail) {
+    const r = config.resend;
+    if (!r.apiKey) throw new Error("RESEND_API_KEY is required when MAIL_DRIVER=resend");
+    const body: Record<string, unknown> = {
+      from: config.mailFrom,
+      to: m.to,
+      subject: m.subject,
+      text: m.text,
+    };
+    if (m.cc.length) body.cc = m.cc;
+    if (r.replyTo) body.reply_to = r.replyTo;
+    if (m.attachments.length) {
+      body.attachments = m.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content.toString("base64"),
+        content_type: a.contentType,
+      }));
+    }
+    const res = await fetch(`${r.baseUrl}/emails`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${r.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const detail = (await res.text()).slice(0, 500);
+      throw new Error(`Resend API ${res.status}: ${detail}`);
+    }
+    const data = (await res.json()) as { id?: string };
+    return { messageId: data.id ? `resend-${data.id}` : `resend-${Date.now()}` };
+  }
+}
+
 let transport: MailTransport | null = null;
 export function mailTransport(): MailTransport {
-  if (!transport) transport = config.mailDriver === "smtp" ? new SmtpTransport() : new DevMailbox();
+  if (!transport) {
+    transport =
+      config.mailDriver === "resend"
+        ? new ResendTransport()
+        : config.mailDriver === "smtp"
+          ? new SmtpTransport()
+          : new DevMailbox();
+  }
   return transport;
 }
 export function setMailTransportForTests(t: MailTransport | null) {

@@ -64,6 +64,7 @@ try provisioning.
 | `npm test` | Vitest suite against `TEST_DATABASE_URL` (schema is recreated) |
 | `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
 | `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
+| `npm run mail:test -- you@example.com` | Send one test email through the configured transport |
 
 The test suite has 194 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
 
@@ -102,7 +103,7 @@ Set `APP_ENV=production`. Then:
 - **Secrets.** Generate `FIELD_ENCRYPTION_KEY`, `APP_HMAC_KEY` and `STORAGE_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep them in the bank's secret manager. Rotating the field key requires re-encryption. Values are versioned (`v1:`).
 - **Storage.** Use `STORAGE_DRIVER=s3` with a private bucket (block public access), `S3_KMS_KEY_ID` for SSE-KMS, and IAM limited to the bucket.
 - **Scanning.** Use `SCANNER_DRIVER=clamd` (or replace the adapter with the bank's scanning service).
-- **Email.** Use `MAIL_DRIVER=smtp` with the bank-approved relay. Set `CLOSURE_MAX_ATTACHMENT_BYTES` to the relay's limit; larger packs go out as an authenticated link.
+- **Email.** Use `MAIL_DRIVER=smtp` with the bank-approved relay, or `MAIL_DRIVER=resend` with `RESEND_API_KEY` and a verified sending domain in `MAIL_FROM` (Resend and Cloudflare DNS steps in [docs/EMAIL.md](docs/EMAIL.md)). Set `CLOSURE_MAX_ATTACHMENT_BYTES` to the provider's limit; larger packs go out as an authenticated link.
 - **Network.** Set `TRUSTED_PROXY_HOPS` to the number of reverse proxies so the audit records the real client IP. Set `COOKIE_SECURE=true` (HTTPS only).
 - **Directory.** Load the bank directory export into `bank_directory` (provisioning and recipient groups validate against it). Then create the first Super Admin with a one-off SQL insert; there is no public registration.
 - **Processes.** Run `npm run migrate`, then `npm run build && npm start`, and at least one `npm run worker`. Several workers are safe because they use `SKIP LOCKED` and advisory locks.
