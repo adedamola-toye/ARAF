@@ -1,0 +1,93 @@
+{
+ "calculator": "wakeelboost-pricing@2026.1",
+ "format": "pricing",
+ "source": "Bank WakeelBoost DSR and facility pricing instruction (acceptance case) plus band/threshold boundary cases. Settings: 1–2 months 10%, 3–6 months 15%, max 6 months, threshold 10%.",
+ "settings": {
+  "id": "fixture",
+  "version": 1,
+  "maxTenorMonths": 6,
+  "shortRateE4": 100000,
+  "longRateE4": 150000,
+  "thresholdE4": 100000,
+  "effectiveFrom": "2020-01-01T00:00:00Z"
+ },
+ "cases": [
+  {
+   "name": "Bank acceptance case: ₦50m, 6 months, verified monthly turnover ₦77.5m",
+   "inputs": {
+    "annualTurnoverKobo": 93023800000,
+    "verifiedMonthlyTurnoverKobo": 7750000000,
+    "monthlyTurnoverOverrideReason": "Verified monthly turnover from statement review",
+    "principalKobo": 5000000000,
+    "tenorMonths": 6,
+    "existingObligationsKobo": 0,
+    "facilityType": "MURABAHA",
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125"
+   },
+   "expected": {
+    "derivedMonthlyTurnoverKobo": 7751983333,
+    "monthlyTurnoverUsedKobo": 7750000000,
+    "flatMarkupRatePercent": "15",
+    "markupKobo": 750000000,
+    "totalRepaymentKobo": 5750000000,
+    "monthlyRepaymentKobo": 958333333,
+    "facilityDsrPercent": "12.37",
+    "totalDsrPercent": "12.37",
+    "result": "EXCEEDS_THRESHOLD",
+    "excessKobo": 183333333,
+    "maxAffordablePrincipalKobo": 4043478260
+   }
+  },
+  {
+   "name": "2 months → 10% band",
+   "inputs": {
+    "annualTurnoverKobo": 1200000000,
+    "principalKobo": 1000000000,
+    "tenorMonths": 2,
+    "existingObligationsKobo": 0,
+    "facilityType": "MURABAHA",
+    "takafulPercent": "0",
+    "stampDutyPercent": "0"
+   },
+   "expected": {
+    "derivedMonthlyTurnoverKobo": 100000000,
+    "monthlyTurnoverUsedKobo": 100000000,
+    "flatMarkupRatePercent": "10",
+    "markupKobo": 100000000,
+    "totalRepaymentKobo": 1100000000,
+    "monthlyRepaymentKobo": 550000000,
+    "facilityDsrPercent": "550.00",
+    "totalDsrPercent": "550.00",
+    "result": "EXCEEDS_THRESHOLD",
+    "excessKobo": 540000000,
+    "maxAffordablePrincipalKobo": 18181818
+   }
+  },
+  {
+   "name": "Exactly 3 months → 15% band",
+   "inputs": {
+    "annualTurnoverKobo": 120000000000,
+    "principalKobo": 1000000000,
+    "tenorMonths": 3,
+    "existingObligationsKobo": 0,
+    "facilityType": "MURABAHA",
+    "takafulPercent": "0",
+    "stampDutyPercent": "0"
+   },
+   "expected": {
+    "derivedMonthlyTurnoverKobo": 10000000000,
+    "monthlyTurnoverUsedKobo": 10000000000,
+    "flatMarkupRatePercent": "15",
+    "markupKobo": 150000000,
+    "totalRepaymentKobo": 1150000000,
+    "monthlyRepaymentKobo": 383333333,
+    "facilityDsrPercent": "3.83",
+    "totalDsrPercent": "3.83",
+    "result": "WITHIN_THRESHOLD",
+    "excessKobo": 0,
+    "maxAffordablePrincipalKobo": 2608695652
+   }
+  }
+ ]
+}

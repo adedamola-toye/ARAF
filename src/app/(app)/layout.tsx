@@ -1,4 +1,4 @@
-import { BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
+import { Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { currentTheme } from "../_lib/theme";
 import { Footer, Wordmark } from "@/components/Brand";
@@ -73,6 +73,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/groups" icon={<UsersRound {...ic} />}>
               Closure recipients
+            </NavLink>
+            <NavLink href="/admin/pricing" icon={<Percent {...ic} />}>
+              Pricing settings
             </NavLink>
             <NavLink href="/admin/templates" icon={<FileText {...ic} />}>
               Offer templates

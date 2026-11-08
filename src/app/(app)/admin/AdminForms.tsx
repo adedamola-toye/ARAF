@@ -171,3 +171,34 @@ export function ApproveTemplateButton({ templateId }: { templateId: string }) {
     </ActionForm>
   );
 }
+
+export function PricingSettingsForm({ current }: { current: { maxTenorMonths: number; shortRatePercent: string; longRatePercent: string } }) {
+  return (
+    <ActionForm action={A.pricingSettingsAction}>
+      <div className="grid-3">
+        <div className="field">
+          <label htmlFor="ps-max">Maximum tenor (months, 1–6)</label>
+          <input id="ps-max" name="maxTenorMonths" type="number" min={1} max={6} step={1} defaultValue={current.maxTenorMonths} required />
+        </div>
+        <div className="field">
+          <label htmlFor="ps-short">1–2 months flat rate (%)</label>
+          <input id="ps-short" name="shortRatePercent" defaultValue={current.shortRatePercent} inputMode="decimal" required />
+        </div>
+        <div className="field">
+          <label htmlFor="ps-long">3 months and above flat rate (%)</label>
+          <input id="ps-long" name="longRatePercent" defaultValue={current.longRatePercent} inputMode="decimal" required />
+        </div>
+        <div className="field">
+          <label htmlFor="ps-eff">Effective from (Lagos time, blank = now)</label>
+          <input id="ps-eff" name="effectiveFrom" type="datetime-local" />
+        </div>
+        <div className="field" style={{ gridColumn: "span 2" }}>
+          <label htmlFor="ps-reason">Reason (recorded in the audit trail)</label>
+          <input id="ps-reason" name="reason" required minLength={5} />
+        </div>
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Changes apply prospectively. Approved facilities and saved assessments keep the settings they were priced under; drafts priced under older settings are flagged for recalculation.</p>
+      <div><SubmitButton className="btn btn-dark">Save new settings version</SubmitButton></div>
+    </ActionForm>
+  );
+}

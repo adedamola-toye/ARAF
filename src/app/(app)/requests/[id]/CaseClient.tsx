@@ -224,7 +224,7 @@ export function AssessmentForm({ applicationId, fields, calculatorLabel }: { app
                 ))}
               </select>
             ) : (
-              <input id={`calc-${f.key}`} name={f.key} defaultValue={f.value} inputMode="decimal" required={!f.optional && f.kind !== "money"} />
+              <input id={`calc-${f.key}`} name={f.key} defaultValue={f.value} inputMode={f.kind === "text" ? "text" : "decimal"} required={!f.optional} />
             )}
           </div>
         ))}

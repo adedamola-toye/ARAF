@@ -1,10 +1,11 @@
 import type { AprCalculator } from "./types";
 import { devIllustrativeCalculator } from "./dev-illustrative";
 import { altbankApr2024Calculator } from "./altbank-2024";
+import { wakeelboostPricingCalculator } from "./wakeelboost-pricing";
 import { config } from "../../config";
 
-/** Registered calculators. altbank-apr-2024 implements the bank workbook; dev-illustrative is kept for history. */
-const CALCULATORS: AprCalculator[] = [altbankApr2024Calculator, devIllustrativeCalculator];
+/** Registered calculators. wakeelboost-pricing is the WakeelBoost default; earlier ones are kept so historical assessments stay readable. */
+const CALCULATORS: AprCalculator[] = [wakeelboostPricingCalculator, altbankApr2024Calculator, devIllustrativeCalculator];
 
 export function calculatorKey(c: AprCalculator) {
   return `${c.id}@${c.version}`;

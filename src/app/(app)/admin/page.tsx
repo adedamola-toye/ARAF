@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CalendarClock, FileText, History, Mail, Route, Users, UsersRound } from "lucide-react";
+import { Percent, CalendarClock, FileText, History, Mail, Route, Users, UsersRound } from "lucide-react";
 import { requireSuperAdmin } from "./guard";
 import { db } from "@/server/db";
 import { PageHeader } from "@/components/PageHeader";
@@ -20,7 +20,7 @@ export default async function AdminHome() {
   const recent = (
     await db.query(
       `SELECT e.occurred_at, e.action, e.actor_email, e.details FROM audit_events e
-        WHERE e.action IN ('STAFF_PROVISIONED','ROLE_GRANTED','ROLE_REVOKED','STAFF_STATUS_CHANGED','GROUP_MEMBER_ADDED','GROUP_MEMBER_REMOVED','TEMPLATE_CREATED','TEMPLATE_ACTIVATED','SCHEDULE_UPDATED','TASK_REASSIGNED')
+        WHERE e.action IN ('STAFF_PROVISIONED','ROLE_GRANTED','ROLE_REVOKED','STAFF_STATUS_CHANGED','GROUP_MEMBER_ADDED','GROUP_MEMBER_REMOVED','TEMPLATE_CREATED','TEMPLATE_ACTIVATED','TEMPLATE_APPROVED','PRICING_SETTINGS_CHANGED','SCHEDULE_UPDATED','TASK_REASSIGNED')
         ORDER BY e.id DESC LIMIT 12`,
     )
   ).rows;
@@ -29,6 +29,7 @@ export default async function AdminHome() {
     { href: "/admin/exceptions", icon: Route, title: "Routing exceptions", body: exceptions ? `${exceptions} stage(s) need an eligible assignee.` : "No unassigned stages. Hand over assigned tasks here." },
     { href: "/admin/groups", icon: UsersRound, title: "Closure recipients", body: `${members} approved Legal and Shariah Compliance recipient(s).` },
     { href: "/admin/templates", icon: FileText, title: "Offer templates", body: tpl ? `Active: ${tpl.name} v${tpl.version}${tpl.production_approved ? " (bank-approved)" : " (not bank-approved)"}.` : "No active template." },
+    { href: "/admin/pricing", icon: Percent, title: "Pricing settings", body: "Flat markup rates by tenor band and the maximum tenor (≤ 6 months), with change history." },
     { href: "/admin/schedules", icon: CalendarClock, title: "Scheduled emails", body: "Weekly initiator digest and monthly leads summary." },
     { href: "/admin/outbox", icon: Mail, title: "Email delivery", body: dead ? `${dead} message(s) failed or awaiting retry.` : "All recent messages delivered or queued." },
     { href: "/admin/audit", icon: History, title: "Audit trail", body: "System-wide, per-request and per-customer audit with IP and device." },

@@ -19,6 +19,7 @@ import {
 } from "@/server/domain/admin";
 import { retryOutbox } from "@/server/jobs/outbox";
 import { auditOutsideTx } from "@/server/audit";
+import { updatePricingSettings } from "@/server/domain/pricing";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 type Op = (fd: FormData, ctx: Awaited<ReturnType<typeof requireUser>>["ctx"]) => Promise<string | void>;
@@ -89,3 +90,20 @@ export async function uploadTemplateAction(_p: ActionState, fd: FormData): Promi
   }
 }
 export const approveTemplateAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => approveTemplate(ctx, s(f, "templateId")), "Template approved for production offers.");
+export async function pricingSettingsAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const eff = s(fd, "effectiveFrom");
+  try {
+    const r = await updatePricingSettings(ctx, {
+      maxTenorMonths: Number(s(fd, "maxTenorMonths")),
+      shortRatePercent: s(fd, "shortRatePercent"),
+      longRatePercent: s(fd, "longRatePercent"),
+      // datetime-local is Lagos wall-clock time (WAT, UTC+1)
+      effectiveFrom: eff ? new Date(`${eff}:00+01:00`) : null,
+      reason: s(fd, "reason"),
+    });
+    return { ok: true, message: `Pricing settings v${r.version} saved, effective ${r.effectiveFrom.toISOString()}. Existing assessments keep their snapshot.`, nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

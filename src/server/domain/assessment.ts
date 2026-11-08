@@ -4,7 +4,30 @@ import type { Ctx } from "../context";
 import { audit } from "../audit";
 import { invalid, forbidden, notFound } from "../errors";
 import { activeCalculator, calculatorKey } from "./apr/registry";
-import { parseNairaToKobo, parsePercentE4 } from "../money";
+import { formatKobo, parseNairaToKobo, parsePercentE4 } from "../money";
+import { pricingSettingsAt, type PricingResult } from "./pricing";
+import type { CalculatorResult } from "./apr/types";
+
+/** Audit summary of a WakeelBoost pricing assessment: both turnover figures, the basis used and the result. */
+function pricingAuditDetails(r: CalculatorResult) {
+  const p = (r.outputs as { pricing?: PricingResult }).pricing;
+  if (!p) return null;
+  return {
+    annualTurnoverKobo: p.turnover.annualTurnoverKobo,
+    derivedMonthlyTurnover: p.turnover.derivedMonthlyTurnoverExact,
+    verifiedMonthlyTurnoverKobo: p.turnover.verifiedMonthlyTurnoverKobo,
+    turnoverBasis: p.turnover.basis,
+    overrideReason: p.turnover.overrideReason,
+    principalKobo: p.facility.principalKobo,
+    tenorMonths: p.facility.tenorMonths,
+    flatMarkupRatePercent: p.facility.flatMarkupRatePercent,
+    existingObligationsKobo: p.capacity.existingObligationsKobo,
+    totalDsrPercent: p.capacity.totalDsrPercent4,
+    thresholdResult: p.capacity.result,
+    excessKobo: p.capacity.excessKobo,
+    pricingVersion: p.settings.version,
+  };
+}
 
 export interface AssessmentRow {
   id: string;
@@ -14,7 +37,7 @@ export interface AssessmentRow {
   calculator_version: string;
   production_validated: boolean;
   inputs: Record<string, string | number>;
-  outputs: Record<string, string | number>;
+  outputs: Record<string, unknown>;
   apr_percent: string;
   dsr_percent: string;
   markup_kobo: string;
@@ -45,8 +68,15 @@ export function parseCalculatorForm(raw: Record<string, string>): Record<string,
     if (f.kind === "select") {
       if (!f.options?.some((o) => o.value === v)) errors[f.key] = `${f.label}: choose an option.`;
       else out[f.key] = v;
+    } else if (f.kind === "text") {
+      if (v) out[f.key] = v.slice(0, 500);
+      else if (!f.optional) errors[f.key] = `${f.label}: required.`;
     } else if (f.kind === "money") {
-      const k = v === "" ? 0 : parseNairaToKobo(v);
+      if (v === "") {
+        if (!f.optional) errors[f.key] = `${f.label}: enter an amount (0 if none).`;
+        continue;
+      }
+      const k = parseNairaToKobo(v);
       if (k === null) errors[f.key] = `${f.label}: enter a naira amount.`;
       else out[f.key] = k;
     } else if (f.kind === "percent") {
@@ -84,12 +114,20 @@ export async function recordAssessment(ctx: Ctx, appId: string, inputs: Record<s
     const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = $2 AND active", [actor.staffId, task.assignee_role]);
     if (!held.rowCount) throw forbidden("Your role assignment for this task is no longer active.");
     const calc = activeCalculator();
-    const result = calc.calculate(inputs);
+    const pricing = calc.usesPricingSettings ? await pricingSettingsAt(tx, ctx.now) : undefined;
+    if (calc.usesPricingSettings) {
+      const principal = Number(inputs.principalKobo);
+      if (Number.isSafeInteger(principal) && principal > Number(app.requested_amount_kobo)) {
+        throw invalid("Check the assessment inputs.", { principalKobo: `Principal cannot exceed the requested amount (${formatKobo(Number(app.requested_amount_kobo))}); the credit route was set on that amount.` });
+      }
+    }
+    const result = calc.calculate(inputs, { pricing });
     await tx.query("UPDATE credit_assessments SET superseded_at = $2 WHERE application_id = $1 AND superseded_at IS NULL", [appId, ctx.now]);
     const ins = await tx.query<{ id: string }>(
       `INSERT INTO credit_assessments (application_id, version_id, calculator_id, calculator_version, production_validated,
-         inputs, outputs, apr_percent, dsr_percent, markup_kobo, cost_plus_markup_kobo, assessor_id, started_at, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+         inputs, outputs, apr_percent, dsr_percent, markup_kobo, cost_plus_markup_kobo, assessor_id, started_at, created_at,
+         threshold_result, pricing_settings_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
       [
         appId,
         app.current_version_id,
@@ -105,6 +143,8 @@ export async function recordAssessment(ctx: Ctx, appId: string, inputs: Record<s
         actor.staffId,
         startedAt ?? ctx.now,
         ctx.now,
+        result.thresholdResult ?? null,
+        result.pricingSettingsId ?? null,
       ],
     );
     await audit(tx, ctx, {
@@ -112,8 +152,30 @@ export async function recordAssessment(ctx: Ctx, appId: string, inputs: Record<s
       actorRole: task.assignee_role,
       applicationId: appId,
       stage: task.stage,
-      details: { assessmentId: ins.rows[0].id, calculator: calculatorKey(calc), apr: result.aprPercent, dsr: result.dsrPercent, versionId: app.current_version_id },
+      details: {
+        assessmentId: ins.rows[0].id,
+        calculator: calculatorKey(calc),
+        apr: result.aprPercent,
+        dsr: result.dsrPercent,
+        versionId: app.current_version_id,
+        ...(pricingAuditDetails(result) ?? {}),
+      },
     });
     return { id: ins.rows[0].id, ...result };
   });
+}
+
+/**
+ * The assessment the credit approvals were based on: the one referenced by the latest valid
+ * first-credit-review approval. Offer terms are populated from this snapshot. Falls back to the
+ * latest assessment before any approval exists.
+ */
+export async function approvedAssessment(q: Db, appId: string): Promise<AssessmentRow | null> {
+  const r = await q.query<AssessmentRow>(
+    `SELECT a.*, s.full_name AS assessor_name FROM decisions d JOIN credit_assessments a ON a.id = d.assessment_id JOIN staff s ON s.id = a.assessor_id
+      WHERE d.application_id = $1 AND d.stage = 'FIRST_CREDIT_REVIEW' AND d.action = 'APPROVE' AND d.invalidated_at IS NULL
+      ORDER BY d.seq DESC LIMIT 1`,
+    [appId],
+  );
+  return r.rows[0] ?? (await latestAssessment(q, appId));
 }

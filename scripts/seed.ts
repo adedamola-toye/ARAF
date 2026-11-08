@@ -3,7 +3,7 @@ loadEnv();
 import { db, closePool } from "../src/server/db";
 import { seedReferenceData, DEMO_STAFF } from "../src/server/demo/seed";
 import { NAIRA } from "../src/server/money";
-import { createSubmittedCase, act, approveFirstReview, driveToOffer, driveToClosed, prepareFirstReview } from "../src/server/demo/scenario";
+import { createSubmittedCase, act, approveFirstReview, driveToOffer, driveToClosed, prepareFirstReview, recordAcceptanceAssessment } from "../src/server/demo/scenario";
 
 /**
  * Seeds SYNTHETIC staff, directory entries, recipient groups, the development offer template and
@@ -28,6 +28,10 @@ async function main() {
     // At offer preparation (Route 1, ANM South)
     const d = await createSubmittedCase({ initiator: "ANM_SOUTH", amountKobo: NAIRA(4_000_000) });
     await driveToOffer(d);
+    // Bank acceptance case: ₦50m, 6 months, verified monthly turnover ₦77.5m → DSR 12.37%, exceeds by ₦1,833,333.33
+    const acc = await createSubmittedCase({ initiator: "RM", type: "ENTERPRISE", amountKobo: NAIRA(50_000_000) });
+    await act(acc, "ENDORSE");
+    await recordAcceptanceAssessment(acc);
     // Fully closed and booked (Route 1, RM)
     const e = await createSubmittedCase({ initiator: "RM", type: "ENTERPRISE", amountKobo: NAIRA(5_000_000) });
     await driveToOffer(e);

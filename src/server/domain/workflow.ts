@@ -40,6 +40,7 @@ import { activeCalculator, calculatorUsableForApproval, findCalculator } from ".
 import { currentCleanDocuments, PACK } from "./documents";
 import { isInitiatorRole, type InitiatorRole } from "./roles";
 import { routeForAmount } from "./routing";
+import { pricingSettingsAt } from "./pricing";
 import { CREDIT_APPROVAL_STAGES, REASON_REQUIRED, STAGE_LABELS, allowedActions, type Stage, type TaskAction } from "./stages";
 
 export interface ActionResult {
@@ -362,6 +363,7 @@ async function finaliseVersionForSubmission(tx: Tx, ctx: Ctx, app: AppRow): Prom
     directors: directors.map((d: { full_name: string; bvn_enc: string }) => ({ fullName: d.full_name, hasBvn: !!d.bvn_enc })),
     currentDocumentCategories: [...new Set(docs.map((d) => d.category))],
     now: ctx.now,
+    maxTenorMonths: Math.min(6, (await pricingSettingsAt(tx, ctx.now)).maxTenorMonths),
   });
   if (version.data.requestedAmountKobo !== null && !errors.requestedAmountKobo) {
     try {
@@ -536,6 +538,13 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
       const calc = findCalculator(`${assessment.calculator_id}@${assessment.calculator_version}`);
       if (!calc || !calculatorUsableForApproval(calc) || (config.isProduction && !assessment.production_validated)) {
         throw gate("Credit approval is blocked: the bank's APR workbook rules are not configured and validated for production.");
+      }
+      if (calc.usesPricingSettings) {
+        const current = await pricingSettingsAt(tx, ctx.now);
+        const used = (assessment.outputs as { pricing?: { settings?: { id: string; version: number } } }).pricing?.settings;
+        if (!used || used.id !== current.id) {
+          throw gate(`WakeelBoost pricing settings changed since this assessment (v${used?.version ?? "?"} → v${current.version}). Recalculate the assessment under the current settings before approval.`);
+        }
       }
       if (!input.invoiceLogged) throw gate('Confirm "Logged invoice on invoice portal" before approval.');
       if (!input.invoiceDialogConfirmed) throw gate('Confirm the "Do not forget to log invoice" reminder before approval.');

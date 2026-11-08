@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { db } from "@/server/db";
-import { NAIRA } from "@/server/money";
+import { NAIRA, formatKobo } from "@/server/money";
 import { listDocuments, readDocumentForActor, signDocumentLink, uploadDocument, verifyDocumentLink } from "@/server/domain/documents";
 import { renderOffer, validateTemplate, DEV_OFFER_TEMPLATE } from "@/server/domain/offer";
 import { devIllustrativeCalculator } from "@/server/domain/apr/dev-illustrative";
@@ -188,8 +188,12 @@ describe("APR / DSR calculator", () => {
     for (const c of fx.cases) {
       it(`${fx.calculator} fixture: ${c.name}`, () => {
         const calc = listCalculators().find((x) => `${x.id}@${x.version}` === fx.calculator)!;
-        const r = calc.calculate(c.inputs);
-        if (fx.format === "workbook") {
+        const r = calc.calculate(c.inputs, fx.settings ? { pricing: { ...fx.settings, effectiveFrom: new Date(fx.settings.effectiveFrom) } } : undefined);
+        if (fx.format === "pricing") {
+          const p = (r.outputs as { pricing: { turnover: Record<string, unknown>; facility: Record<string, unknown>; capacity: Record<string, unknown> } }).pricing;
+          const flat = { ...p.turnover, ...p.facility, ...p.capacity };
+          for (const [k, v] of Object.entries(c.expected)) expect(flat[k], k).toBe(v);
+        } else if (fx.format === "workbook") {
           // Bank workbook values (naira doubles): APR to 4 dp of a percent, money to the kobo.
           const w = c.workbook;
           expect(Math.abs(Number(r.aprPercent) - w.apr * 100)).toBeLessThanOrEqual(0.00005 + 1e-9);
@@ -232,13 +236,16 @@ describe("APR / DSR calculator", () => {
     let mails = (await outbox("ASSIGNMENT")).filter((m) => m.application_id === id);
     expect(mails.at(-1).body_text).toContain("APR: assessment pending");
     await approveFirstReview(id);
-    const a = (await db.query("SELECT apr_percent, dsr_percent FROM credit_assessments WHERE application_id = $1", [id])).rows[0];
+    const a = (await db.query("SELECT apr_percent, dsr_percent, outputs FROM credit_assessments WHERE application_id = $1", [id])).rows[0];
     await act(id, "APPROVE");
     mails = (await outbox("ASSIGNMENT")).filter((m) => m.application_id === id);
     const later = mails.slice(-2); // second review + unit head
+    const pr = a.outputs.pricing;
     for (const m of later) {
-      expect(m.body_text).toContain(`APR: ${a.apr_percent}%`);
-      expect(m.body_text).toContain(`DSR: ${a.dsr_percent}%`);
+      expect(m.body_text).toContain(`Assessed monthly turnover: ${formatKobo(pr.turnover.monthlyTurnoverUsedKobo)}`);
+      expect(m.body_text).toContain(`Proposed monthly repayment: ${formatKobo(pr.facility.monthlyRepaymentKobo)}`);
+      expect(m.body_text).toContain(`DSR: ${pr.capacity.totalDsrPercent}% against the 10% threshold - within threshold`);
+      expect(m.body_text).toContain(`APR (disclosure): ${a.apr_percent}%`);
       expect(m.body_text).toContain("Halima Yusuf");
       expect(m.body_text).toMatch(/\/requests\/[0-9a-f-]+\?task=/);
     }

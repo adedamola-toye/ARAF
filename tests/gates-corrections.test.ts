@@ -57,14 +57,19 @@ describe("first credit review gates (server enforced)", () => {
     const other = await ctxFor("co2@altbank.ng");
     await expect(recordAssessment(other, id, {})).rejects.toThrow(/assigned first credit reviewer/);
   });
-  it("production blocks credit approval while the APR calculator is not bank-validated", async () => {
+  it("production blocks credit approval when the assessment used a calculator that is not production-validated", async () => {
     const id = await atFirstReview();
-    await prepareFirstReview(id);
-    process.env.APP_ENV = "production";
+    const t = await openTaskOf(id);
+    const ctx = await ctxFor(t.email!);
+    for (let i = 1; i <= 3; i++) await uploadDocument(ctx, { applicationId: id, category: "CREDIT_REPORT", filename: `r${i}.pdf`, data: makePdf(`r${i}`) });
+    process.env.APR_CALCULATOR = "altbank-apr-2024@1.0"; // workbook-only calculator: DSR unconfirmed, not production-validated
     try {
-      await expect(act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true })).rejects.toThrow(/APR workbook rules are not configured/);
+      await recordAssessment(ctx, id, { facilityType: "MURABAHA", amountApprovedKobo: NAIRA(1_000_000), markupRatePercent: "36", rateType: "FIXED", frequency: "Monthly", tenorMonths: 6, takafulPercent: "0", stampDutyPercent: "0.125", adminFeePercent: "0", averageMonthlyInflowKobo: NAIRA(3_000_000), existingMonthlyObligationsKobo: 0 });
+      process.env.APP_ENV = "production";
+      await expect(act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true })).rejects.toThrow(/not configured and validated for production/);
     } finally {
       process.env.APP_ENV = "test";
+      process.env.APR_CALCULATOR = "wakeelboost-pricing@2026.1";
     }
   });
 });

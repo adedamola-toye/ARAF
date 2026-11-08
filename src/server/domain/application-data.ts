@@ -85,6 +85,8 @@ export interface SubmissionCheckInput {
   directors: { fullName: string; hasBvn: boolean }[];
   currentDocumentCategories: string[];
   now: Date;
+  /** Configured WakeelBoost maximum tenor (1–6). */
+  maxTenorMonths: number;
 }
 
 /**
@@ -106,7 +108,7 @@ export function validateForSubmission(i: SubmissionCheckInput): Record<string, s
   if (d.requestedAmountKobo === null) e.requestedAmountKobo = "Requested amount is required.";
   if (!d.daoCode) e.daoCode = "DAO code is required.";
   if (!d.posSerial) e.posSerial = "POS serial number is required.";
-  if (!d.tenorMonths || d.tenorMonths < 1 || d.tenorMonths > 60) e.tenorMonths = "Tenor must be between 1 and 60 months.";
+  if (!d.tenorMonths || !Number.isInteger(d.tenorMonths) || d.tenorMonths < 1 || d.tenorMonths > i.maxTenorMonths) e.tenorMonths = `Tenor must be a whole number of months from 1 to ${i.maxTenorMonths}.`;
   if (d.items.length === 0) e.items = "Add at least one item to finance.";
   else if (d.items.some((it) => !it.description || it.quantity < 1 || it.unitCostKobo < 1))
     e.items = "Each item needs a description, quantity of at least 1 and a unit cost.";

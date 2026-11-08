@@ -47,11 +47,11 @@ describe("bank DOCX offer letters per applicant type", () => {
     expect(body).toContain("Halima Yusuf");
     expect(body).toContain("22212345678");
     expect(body).toContain("N400,000.00 (Four Hundred Thousand Naira Only)");
-    expect(body).toMatch(/Mark Up rate \(b\):\s*\(18%\)/); // 36% p.a. × 6/12
-    expect(body).toContain("N472,000.00 (Four Hundred and Seventy-Two Thousand Naira Only)");
-    expect(body).toMatch(/Annual Percentage Rate:\s*\(62\.\d\d%\)/);
+    expect(body).toMatch(/Mark Up rate \(b\):\s*\(15%\)/); // 6 months → 15% flat band
+    expect(body).toContain("N460,000.00 (Four Hundred and Sixty Thousand Naira Only)");
+    expect(body).toMatch(/Annual Percentage Rate:\s*\(51\.86%\)/);
     expect(body).toContain("To finance 10 Bags of rice (50kg) and 10 Cartons of noodles");
-    expect(body).toMatch(/Equal monthly payment of N78,666\.67/);
+    expect(body).toMatch(/Equal monthly payment of N76,666\.67/);
     expect(body).toContain("Tunde Adeyemi");
     expect(body).toContain("Head, Payment & Collection");
     expect(body).not.toMatch(/\{\{|JOSEPH|AYOOLA/);

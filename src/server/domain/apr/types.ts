@@ -8,7 +8,7 @@
 export interface CalculatorField {
   key: string;
   label: string;
-  kind: "money" | "percent" | "integer" | "select";
+  kind: "money" | "percent" | "integer" | "select" | "text";
   help?: string;
   /** For kind "select". */
   options?: { value: string; label: string }[];
@@ -20,13 +20,19 @@ export interface CalculatorField {
   defaultFrom?: "assetCost" | "tenorMonths" | "requestedAmount";
 }
 
+export interface CalculatorContext {
+  pricing?: import("../pricing").PricingSettings;
+}
+
 export interface CalculatorResult {
   aprPercent: string; // fixed 4dp string
   dsrPercent: string; // fixed 4dp string
   markupKobo: number;
   costPlusMarkupKobo: number;
   /** Additional named outputs shown to every reviewer. */
-  outputs: Record<string, string | number>;
+  outputs: Record<string, unknown>;
+  thresholdResult?: "WITHIN_THRESHOLD" | "EXCEEDS_THRESHOLD";
+  pricingSettingsId?: string;
 }
 
 export interface AprCalculator {
@@ -38,5 +44,7 @@ export interface AprCalculator {
   validationNote?: string;
   fields: CalculatorField[];
   /** Pure, deterministic calculation. Money inputs are integer kobo; percent inputs are strings. */
-  calculate(inputs: Record<string, string | number>): CalculatorResult;
+  calculate(inputs: Record<string, string | number>, context?: CalculatorContext): CalculatorResult;
+  /** True when the calculator needs the pricing settings in force (context.pricing). */
+  usesPricingSettings?: boolean;
 }

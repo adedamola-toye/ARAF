@@ -139,20 +139,37 @@ export async function prepareFirstReview(appId: string, now = new Date()) {
   }
   const app = await appRow(appId);
   const v = (await db.query("SELECT data FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0].data;
-  const assetCost = v.items.reduce((s: number, i: { quantity: number; unitCostKobo: number }) => s + i.quantity * i.unitCostKobo, 0);
   return recordAssessment(ctx, appId, {
-    facilityType: "MURABAHA",
-    amountApprovedKobo: Number(app.requested_amount_kobo),
-    markupRatePercent: "36",
-    rateType: "FIXED",
-    frequency: "Monthly",
+    annualTurnoverKobo: Number(app.requested_amount_kobo) * 24, // monthly turnover = 2× principal → within the 10% threshold
+    principalKobo: Number(app.requested_amount_kobo),
     tenorMonths: v.tenorMonths,
+    existingObligationsKobo: 0,
+    facilityType: "MURABAHA",
     takafulPercent: "0",
     stampDutyPercent: "0.125",
-    adminFeePercent: "0",
-    averageMonthlyInflowKobo: Math.max(assetCost, 100_000),
-    existingMonthlyObligationsKobo: 0,
   });
+}
+
+/** Bank acceptance case: ₦50m over 6 months, verified monthly turnover ₦77.5m (annual ₦930,238,000). */
+export const ACCEPTANCE_INPUTS = {
+  annualTurnoverKobo: 93_023_800_000,
+  verifiedMonthlyTurnoverKobo: 7_750_000_000,
+  monthlyTurnoverOverrideReason: "Statement review verified a monthly turnover of N77,500,000 (rounded basis used by Credit)",
+  principalKobo: 5_000_000_000,
+  tenorMonths: 6,
+  existingObligationsKobo: 0,
+  facilityType: "MURABAHA",
+  takafulPercent: "0",
+  stampDutyPercent: "0.125",
+};
+
+export async function recordAcceptanceAssessment(appId: string, now = new Date()) {
+  const t = await openTaskOf(appId);
+  const ctx = await ctxFor(t.email!, now);
+  for (let i = 1; i <= 3; i++) {
+    await uploadDocument(ctx, { applicationId: appId, category: "CREDIT_REPORT", filename: `credit-report-${i}.pdf`, data: makePdf(`Credit bureau report ${i}`) });
+  }
+  return recordAssessment(ctx, appId, ACCEPTANCE_INPUTS);
 }
 
 export async function approveFirstReview(appId: string, now = new Date()) {

@@ -122,7 +122,7 @@ export const config = {
     return int("CLOSURE_MAX_ATTACHMENT_BYTES", 10 * 1024 * 1024);
   },
   get aprCalculator() {
-    return str("APR_CALCULATOR", "altbank-apr-2024@1.0");
+    return str("APR_CALCULATOR", "wakeelboost-pricing@2026.1");
   },
   get workerPollMs() {
     return int("WORKER_POLL_MS", 5000);

@@ -7,6 +7,18 @@ import { STAGE_LABELS, REQUIRED_ACTION, type Stage } from "../domain/stages";
 export interface AssessmentSummary {
   aprPercent: string;
   dsrPercent: string;
+  pricing?: {
+    turnoverUsedKobo: number;
+    turnoverBasis: string;
+    monthlyRepaymentKobo: number;
+    totalDsrPercent: string;
+    thresholdPercent: string;
+    result: string;
+    excessKobo: number;
+    flatMarkupRatePercent: string;
+    tenorMonths: number;
+    explanation: string;
+  };
 }
 
 export function caseLink(applicationId: string, taskId?: string) {
@@ -23,9 +35,18 @@ export function assignmentEmail(p: {
   assessment: AssessmentSummary | null;
   assignedAt: Date;
 }) {
-  const assessmentLines = p.assessment
-    ? [`APR: ${p.assessment.aprPercent}%`, `DSR: ${p.assessment.dsrPercent}%`]
-    : ["APR: assessment pending", "DSR: assessment pending"];
+  const a = p.assessment;
+  const assessmentLines = !a
+    ? ["Assessment: pending (turnover, monthly repayment, DSR and APR will follow the first credit review)", "APR: assessment pending", "DSR: assessment pending"]
+    : a.pricing
+      ? [
+          `Assessed monthly turnover: ${formatKobo(a.pricing.turnoverUsedKobo)} (${a.pricing.turnoverBasis === "VERIFIED_MONTHLY" ? "verified monthly figure" : "annual turnover ÷ 12"})`,
+          `Proposed monthly repayment: ${formatKobo(a.pricing.monthlyRepaymentKobo)} (flat markup ${a.pricing.flatMarkupRatePercent}% over ${a.pricing.tenorMonths} months)`,
+          `DSR: ${a.pricing.totalDsrPercent}% against the ${a.pricing.thresholdPercent}% threshold - ${a.pricing.result === "EXCEEDS_THRESHOLD" ? `EXCEEDS THRESHOLD by ${formatKobo(a.pricing.excessKobo)} per month (flagged for review)` : "within threshold"}`,
+          `APR (disclosure): ${a.aprPercent}%`,
+          a.pricing.explanation,
+        ]
+      : [`APR: ${a.aprPercent}%`, `DSR: ${a.dsrPercent}%`];
   return {
     subject: `WakeelBoost ${p.ref}: ${STAGE_LABELS[p.stage]} assigned to you`,
     text: [

@@ -7,7 +7,7 @@ import { decryptField } from "../crypto";
 import { forbidden, gate, notFound, invalid } from "../errors";
 import { formatKobo } from "../money";
 import { formatDateOnly, lagosDate } from "../time";
-import { latestAssessment } from "./assessment";
+import { approvedAssessment } from "./assessment";
 import { storeGeneratedDocument } from "./documents";
 import { objectStore } from "../storage";
 import { nairaInWords } from "../words";
@@ -159,11 +159,11 @@ export interface OfferData {
 export function offerDocxValues(o: OfferData): { values: Record<string, string>; loops: Record<string, Record<string, string>[]> } {
   const inp = o.assessment.inputs;
   const out = o.assessment.outputs;
-  const L = Number(inp.amountApprovedKobo ?? inp.assetCostKobo ?? o.data.requestedAmountKobo ?? 0);
+  const L = Number(out.amountApprovedKobo ?? inp.amountApprovedKobo ?? inp.assetCostKobo ?? o.data.requestedAmountKobo ?? 0);
   const markup = Number(o.assessment.markup_kobo);
   const cpm = Number(o.assessment.cost_plus_markup_kobo);
   const ft = String(inp.facilityType ?? "MURABAHA");
-  const freq = String(inp.frequency ?? "Monthly");
+  const freq = String(out.frequency ?? inp.frequency ?? "Monthly");
   const limited = o.app.applicant_type === "LIMITED";
   const [first, ...rest] = o.directors;
   const values: Record<string, string> = {
@@ -179,12 +179,13 @@ export function offerDocxValues(o: OfferData): { values: Record<string, string>;
     cost_price: N(L),
     cost_price_words: nairaInWords(L),
     markup: N(markup),
-    markup_rate_tenor: L ? pctText(((markup / L) * 100).toFixed(2)) : "0%",
-    markup_rate_annual: pctText(String(inp.markupRatePercent ?? "")),
+    // Flat markup for the whole tenor (exact configured rate when the WakeelBoost calculator was used)
+    markup_rate_tenor: out.flatMarkupRatePercent !== undefined ? pctText(String(out.flatMarkupRatePercent)) : L ? pctText(((markup / L) * 100).toFixed(2)) : "0%",
+    markup_rate_annual: inp.markupRatePercent !== undefined ? pctText(String(inp.markupRatePercent)) : "",
     cost_plus_markup: N(cpm),
     cost_plus_markup_words: nairaInWords(cpm),
     apr: pctText(Number(o.assessment.apr_percent).toFixed(2)),
-    tenor_months: String(o.data.tenorMonths ?? inp.tenorMonths ?? ""),
+    tenor_months: String(inp.tenorMonths ?? o.data.tenorMonths ?? ""),
     financed_items: itemsText(o.data.items),
     asset_cost: N(assetCostKobo(o.data.items)),
     instalment_frequency: freq === "Bullet" ? "bullet" : freq.toLowerCase(),
@@ -220,8 +221,8 @@ export async function generateOffer(ctx: Ctx, appId: string) {
     if (config.isProduction && !tpl.production_approved) throw gate("The active offer template is not approved for production use.");
     const version = (await tx.query("SELECT * FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0];
     const directors = (await tx.query("SELECT * FROM application_directors WHERE version_id = $1 ORDER BY position", [version.id])).rows;
-    const assessment = await latestAssessment(tx, appId);
-    if (!assessment) throw gate("No valid credit assessment exists for this request.");
+    const assessment = await approvedAssessment(tx, appId);
+    if (!assessment) throw gate("No approved credit assessment exists for this request.");
     const data = version.data as DraftData;
     const bvn = version.bvn_enc ? decryptField(version.bvn_enc) : null;
     const tin = version.tin_enc ? decryptField(version.tin_enc) : null;

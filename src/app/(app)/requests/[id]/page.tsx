@@ -18,6 +18,14 @@ import { maskWithLast4 } from "@/server/mask";
 import { config } from "@/server/config";
 import { StageChip, OutcomeChip } from "@/components/Status";
 import { activeTemplate } from "@/server/domain/offer";
+import { PricingAssessment, ThresholdChip, pricingOf } from "@/components/PricingAssessment";
+import { e4ToPercent, pricingSettingsAt } from "@/server/domain/pricing";
+
+/** The booked schedule uses a different frequency from the monthly assessment → label as monthly equivalent. */
+function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: unknown } | null }) {
+  const tenor = Number((c.assessment?.inputs as { tenorMonths?: number } | undefined)?.tenorMonths ?? 0);
+  return c.instalments.length > 0 && c.instalments.length !== tenor;
+}
 import { UploadPanel } from "@/components/UploadPanel";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
@@ -264,7 +272,18 @@ function Overview({ c, data }: { c: Case; data: DraftData | null }) {
   const name = (id: string | null) => (id ? c.people[id] ?? "—" : "—");
   return (
     <div className="stack">
-      {c.assessment && (
+      {c.assessment && pricingOf(c.assessment.outputs) && (() => {
+        const p = pricingOf(c.assessment.outputs)!.pricing;
+        return (
+          <div className="metric-grid" aria-label="Credit assessment summary">
+            <div className="metric"><div className="k">Turnover used / month</div><div className="v">{formatKobo(p.turnover.monthlyTurnoverUsedKobo)}</div></div>
+            <div className="metric"><div className="k">Monthly repayment{monthlyEquivalent(c) ? " (equiv.)" : ""}</div><div className="v">{formatKobo(p.facility.monthlyRepaymentKobo)}</div></div>
+            <div className="metric"><div className="k">Total DSR (threshold {p.capacity.thresholdPercent}%)</div><div className="v">{p.capacity.totalDsrPercent}%</div><ThresholdChip result={p.capacity.result} excessKobo={p.capacity.excessKobo} /></div>
+            <div className="metric"><div className="k">Flat markup · APR</div><div className="v">{p.facility.flatMarkupRatePercent}% · {Number(c.assessment.apr_percent).toFixed(2)}%</div></div>
+          </div>
+        );
+      })()}
+      {c.assessment && !pricingOf(c.assessment.outputs) && (
         <div className="metric-grid" aria-label="Credit assessment summary">
           <div className="metric"><div className="k">APR</div><div className="v">{c.assessment.apr_percent}%</div></div>
           <div className="metric"><div className="k">DSR</div><div className="v">{c.assessment.dsr_percent}%</div></div>
@@ -558,18 +577,23 @@ function Assessment({ c }: { c: Case }) {
               <h2>{a.superseded_at ? "Superseded assessment" : "Current assessment"}</h2>
               <span className={`badge ${a.superseded_at ? "" : "badge-green"}`}>{a.calculator_id}@{a.calculator_version} · application v{versionNo}</span>
             </div>
+            {pricingOf(a.outputs) ? (
+              <PricingAssessment outputs={a.outputs} monthlyEquivalent={monthlyEquivalent(c)} />
+            ) : (
             <div className="metric-grid" style={{ marginBottom: 12 }}>
               <div className="metric"><div className="k">APR</div><div className="v">{a.apr_percent}%</div></div>
               <div className="metric"><div className="k">DSR</div><div className="v">{a.dsr_percent}%</div></div>
               <div className="metric"><div className="k">Mark-up</div><div className="v">{formatKobo(a.markup_kobo)}</div></div>
               <div className="metric"><div className="k">Cost plus mark-up</div><div className="v">{formatKobo(a.cost_plus_markup_kobo)}</div></div>
             </div>
+            )}
             {calc?.validationNote && (
               <p className="blocked" style={{ margin: "0 0 12px" }}>
                 <AlertTriangle {...ic} />
                 {calc.validationNote}
               </p>
             )}
+            {!pricingOf(a.outputs) && (
             <div className="grid-2">
               <div>
                 <h3>Inputs</h3>
@@ -588,6 +612,7 @@ function Assessment({ c }: { c: Case }) {
                 </tbody></table>
               </div>
             </div>
+            )}
             <p className="small muted" style={{ margin: "8px 0 0" }}>
               Assessor: {a.assessor_name} · started {formatLagos(a.started_at)} · saved {formatLagos(a.created_at)}
             </p>
@@ -715,6 +740,9 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
   const assessmentCurrent = !!c.assessment && c.assessment.version_id === app.current_version_id;
   const openCorrection = c.corrections.filter((x: { resolved_at: Date | null }) => !x.resolved_at).at(-1);
   const calc = activeCalculator();
+  const settings = await pricingSettingsAt(db, new Date());
+  const usedSettings = c.assessment ? pricingOf(c.assessment.outputs)?.pricing.settings : undefined;
+  const stale = calc.usesPricingSettings && usedSettings && usedSettings.id !== settings.id ? { used: usedSettings.version } : null;
   const isDo1 = stage === "DISBURSEMENT_CHECK";
   const isDo2 = stage === "DISBURSEMENT_BOOKING";
 
@@ -738,7 +766,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION": {
       const vals = (k: string, defaultFrom?: string, defaultValue?: string) => {
-        const prev = c.assessment?.inputs as Record<string, string | number> | undefined;
+        const prev = c.assessment && c.assessment.calculator_id === calc.id ? (c.assessment.inputs as Record<string, string | number>) : undefined;
         if (prev && prev[k] !== undefined) return k.endsWith("Kobo") ? koboToNairaString(Number(prev[k])) : String(prev[k]);
         if (defaultFrom === "assetCost" && data) return koboToNairaString(assetCostKobo(data.items));
         if (defaultFrom === "requestedAmount" && app.requested_amount_kobo) return koboToNairaString(Number(app.requested_amount_kobo));
@@ -748,10 +776,23 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(
         <ul key="cl" className="checklist">
           <Check ok={reports >= 3}>Three credit reports uploaded ({reports}/3)</Check>
-          <Check ok={assessmentCurrent}>APR with DSR saved for application v{c.versions.find((v: { id: string }) => v.id === app.current_version_id)?.version_no ?? "—"}{c.assessment && assessmentCurrent ? `: APR ${c.assessment.apr_percent}%, DSR ${c.assessment.dsr_percent}%` : ""}</Check>
+          <Check ok={assessmentCurrent && !stale}>DSR and pricing assessment saved for application v{c.versions.find((v: { id: string }) => v.id === app.current_version_id)?.version_no ?? "—"}{c.assessment && assessmentCurrent && pricingOf(c.assessment.outputs) ? `: Total DSR ${pricingOf(c.assessment.outputs)!.pricing.capacity.totalDsrPercent}%` : ""}</Check>
           {stage === "FIRST_CREDIT_REVIEW" && <Check ok={false}>“Logged invoice on invoice portal” confirmed at approval</Check>}
         </ul>,
       );
+      if (stale && c.assessment)
+        body.push(
+          <Blocked key="stale">
+            Pricing settings changed since this assessment (used v{stale.used}; now v{settings.version}: 1–2 months {e4ToPercent(settings.shortRateE4)}%, 3–{settings.maxTenorMonths} months {e4ToPercent(settings.longRateE4)}%, maximum tenor {settings.maxTenorMonths}). Recalculate before approval.
+          </Blocked>,
+        );
+      if (c.assessment && pricingOf(c.assessment.outputs))
+        body.push(
+          <details key="res" open>
+            <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Saved assessment</summary>
+            <div style={{ marginTop: 8 }}><PricingAssessment outputs={c.assessment.outputs} compact /></div>
+          </details>,
+        );
       body.push(
         <details key="up" open={reports < 3}>
           <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Credit reports ({reports}/3)</summary>
@@ -762,22 +803,31 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       );
       body.push(
         <details key="calc" open={!assessmentCurrent}>
-          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>APR / DSR calculator · {calculatorKey(calc)}</summary>
+          <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>DSR and pricing calculator · {calculatorKey(calc)}</summary>
           <div style={{ marginTop: 8 }} className="stack">
             {!calc.productionValidated && (
               <Blocked>
                 {calc.validationNote ?? "This calculator is not validated for production."} {config.isProduction ? "Credit approval is blocked in production." : "Approvals are allowed in this development environment only."}
               </Blocked>
             )}
+            {calc.usesPricingSettings && (
+              <p className="small muted" style={{ margin: 0 }}>
+                Applies pricing settings v{settings.version}: 1–2 months {e4ToPercent(settings.shortRateE4)}% flat, 3–{settings.maxTenorMonths} months {e4ToPercent(settings.longRateE4)}% flat, applied once for the tenor; DSR threshold {e4ToPercent(settings.thresholdE4)}%. Leave the verified monthly turnover blank to use annual ÷ 12.
+              </p>
+            )}
             <AssessmentForm
               applicationId={app.id}
               calculatorLabel={calc.label}
-              fields={calc.fields.map((f) => ({ key: f.key, label: f.label, kind: f.kind, options: f.options, optional: f.optional, value: vals(f.key, f.defaultFrom, f.defaultValue) }))}
+              fields={calc.fields.map((f) =>
+                calc.usesPricingSettings && f.key === "tenorMonths"
+                  ? { key: f.key, label: f.label, kind: "select", options: Array.from({ length: settings.maxTenorMonths }, (_, i) => ({ value: String(i + 1), label: `${i + 1} month${i ? "s" : ""} · ${i + 1 >= 3 ? e4ToPercent(settings.longRateE4) : e4ToPercent(settings.shortRateE4)}% flat` })), value: vals(f.key, f.defaultFrom, f.defaultValue) }
+                  : { key: f.key, label: f.label, kind: f.kind, options: f.options, optional: f.optional, value: vals(f.key, f.defaultFrom, f.defaultValue) },
+              )}
             />
           </div>
         </details>,
       );
-      if (stage === "FIRST_CREDIT_REVIEW") body.push(<FirstReviewApprove key="ap" hidden={hidden} ready={reports >= 3 && assessmentCurrent} doneHref={doneHref} />);
+      if (stage === "FIRST_CREDIT_REVIEW") body.push(<FirstReviewApprove key="ap" hidden={hidden} ready={reports >= 3 && assessmentCurrent && !stale} doneHref={doneHref} />);
       else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${STAGE_LABELS[(openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW"]}`} doneHref={doneHref} />);
       break;
     }
@@ -785,7 +835,13 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
     case "UNIT_HEAD_REVIEW":
     case "DIVISIONAL_HEAD_REVIEW":
       body.push(
-        c.assessment ? (
+        c.assessment && pricingOf(c.assessment.outputs) ? (
+          <div key="a" className="stack" style={{ gap: 8 }}>
+            <PricingAssessment outputs={c.assessment.outputs} compact />
+            <p className="small" style={{ margin: 0 }}>{pricingOf(c.assessment.outputs)!.explanation}</p>
+            <div className="small muted">APR (disclosure) {Number(c.assessment.apr_percent).toFixed(2)}% · {c.assessment.calculator_id}@{c.assessment.calculator_version} · assessed by {c.assessment.assessor_name} · full detail in Assessment</div>
+          </div>
+        ) : c.assessment ? (
           <div key="a" className="highlight small">
             APR <strong>{c.assessment.apr_percent}%</strong> · DSR <strong>{c.assessment.dsr_percent}%</strong> · Cost plus mark-up {formatKobo(c.assessment.cost_plus_markup_kobo)}
             <div className="muted">{c.assessment.calculator_id}@{c.assessment.calculator_version} · assessed by {c.assessment.assessor_name}</div>
@@ -813,11 +869,12 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
         <div key="terms" className="summary-box small">
           <p className="eyebrow">Approved terms</p>
           <table className="kv"><tbody>
-            <tr><th>Facility amount</th><td className="tnum">{formatKobo(app.requested_amount_kobo)}</td></tr>
-            {c.assessment && <tr><th>Mark-up</th><td className="tnum">{formatKobo(c.assessment.markup_kobo)} ({String((c.assessment.inputs as Record<string, unknown>).markupRatePercent ?? "")}% p.a.)</td></tr>}
+            <tr><th>Facility amount (principal)</th><td className="tnum">{formatKobo(Number((c.assessment?.outputs as { amountApprovedKobo?: number } | undefined)?.amountApprovedKobo ?? app.requested_amount_kobo))}</td></tr>
+            {c.assessment && <tr><th>Mark-up</th><td className="tnum">{formatKobo(c.assessment.markup_kobo)} ({(c.assessment.outputs as { flatMarkupRatePercent?: string }).flatMarkupRatePercent !== undefined ? `${(c.assessment.outputs as { flatMarkupRatePercent?: string }).flatMarkupRatePercent}% flat for the tenor` : `${String((c.assessment.inputs as Record<string, unknown>).markupRatePercent ?? "")}% p.a.`})</td></tr>}
+            {c.assessment && pricingOf(c.assessment.outputs) && <tr><th>Monthly repayment · Total DSR</th><td className="tnum">{formatKobo(pricingOf(c.assessment.outputs)!.pricing.facility.monthlyRepaymentKobo)} · {pricingOf(c.assessment.outputs)!.pricing.capacity.totalDsrPercent}%</td></tr>}
             {c.assessment && <tr><th>Cost plus mark-up</th><td className="tnum">{formatKobo(c.assessment.cost_plus_markup_kobo)}</td></tr>}
             {c.assessment && <tr><th>APR</th><td className="tnum">{c.assessment.apr_percent}%</td></tr>}
-            <tr><th>Tenor</th><td>{data?.tenorMonths ?? "—"} months</td></tr>
+            <tr><th>Tenor</th><td>{(c.assessment?.inputs as { tenorMonths?: number } | undefined)?.tenorMonths ?? data?.tenorMonths ?? "—"} months</td></tr>
           </tbody></table>
         </div>,
       );

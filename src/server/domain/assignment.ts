@@ -7,7 +7,32 @@ import { assignmentEmail, simpleEmail } from "../notify/templates";
 import type { Role } from "./roles";
 import { REQUIRED_ACTION, STAGE_LABELS, type Stage } from "./stages";
 import { getRoute } from "./routing";
-import { latestAssessment } from "./assessment";
+import { latestAssessment, type AssessmentRow } from "./assessment";
+import type { AssessmentSummary } from "../notify/templates";
+import type { PricingResult } from "./pricing";
+
+export function assessmentSummary(a: AssessmentRow): AssessmentSummary {
+  const o = a.outputs as { pricing?: PricingResult; explanation?: string };
+  const p = o.pricing;
+  return {
+    aprPercent: a.apr_percent,
+    dsrPercent: a.dsr_percent,
+    pricing: p
+      ? {
+          turnoverUsedKobo: p.turnover.monthlyTurnoverUsedKobo,
+          turnoverBasis: p.turnover.basis,
+          monthlyRepaymentKobo: p.facility.monthlyRepaymentKobo,
+          totalDsrPercent: p.capacity.totalDsrPercent,
+          thresholdPercent: p.capacity.thresholdPercent,
+          result: p.capacity.result,
+          excessKobo: p.capacity.excessKobo,
+          flatMarkupRatePercent: p.facility.flatMarkupRatePercent,
+          tenorMonths: p.facility.tenorMonths,
+          explanation: o.explanation ?? "",
+        }
+      : undefined,
+  };
+}
 
 export interface AppRow {
   id: string;
@@ -211,7 +236,7 @@ export async function notifyAssignment(tx: Tx, ctx: Ctx, app: AppRow, taskId: st
     stage,
     customerName: app.customer_name ?? "",
     amountKobo: amount,
-    assessment: a ? { aprPercent: a.apr_percent, dsrPercent: a.dsr_percent } : null,
+    assessment: a ? assessmentSummary(a) : null,
     assignedAt: ctx.now,
   });
   await enqueueEmail(tx, ctx.now, {
