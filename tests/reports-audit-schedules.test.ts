@@ -6,7 +6,7 @@ import { exportReport, reportFilterSchema, reportScope, runReport } from "@/serv
 import { grantRole, updateMonthlySchedule } from "@/server/domain/admin";
 import { sendReminder } from "@/server/domain/workflow";
 import { currentMonthlyPeriod, currentWeeklyPeriod, runMonthlyReport, runWeeklyDigest } from "@/server/jobs/schedules";
-import { act, createSubmittedCase, ctxFor, driveToClosed, driveToOffer, openTaskOf } from "@/server/demo/scenario";
+import { act, createSubmittedCase, ctxFor, driveToOffer, openTaskOf } from "@/server/demo/scenario";
 import { addDaysToDateString, fromLagos, lagosDate } from "@/server/time";
 import { audits, key, outbox, resetDb, staffId } from "./helpers";
 

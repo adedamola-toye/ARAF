@@ -129,8 +129,16 @@ export const config = {
   },
 };
 
+/** Development keys published in .env.example; refused when APP_ENV=production. */
+const DEV_KEYS = new Set([
+  "ZGV2LW9ubHktZmllbGQta2V5LWNoYW5nZS1tZS0zMmI=",
+  "ZGV2LW9ubHktaG1hYy1rZXktY2hhbmdlLW1lLTMyYnk=",
+  "ZGV2LW9ubHktc3RvcmFnZS1rZXktY2hhbmdlLW1lLTM=",
+]);
+
 function keyFrom(name: string): Buffer {
   const raw = str(name);
+  if (process.env.APP_ENV === "production" && DEV_KEYS.has(raw)) throw new Error(`${name} is the published development key; set a real secret in production`);
   const buf = Buffer.from(raw, "base64");
   if (buf.length !== 32) throw new Error(`${name} must be 32 bytes, base64 encoded`);
   return buf;

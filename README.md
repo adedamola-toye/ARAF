@@ -1,0 +1,128 @@
+# WakeelBoost Work Desk
+
+Internal Alternative Bank workbench for **WakeelBoost merchant stock financing**: initiation, business
+endorsement, three credit routes, offer pack, disbursement booking, closure and repayment prompts.
+It includes OTP sign-in, case-scoped document access and an append-only audit trail.
+
+Stack: **Next.js 15 (App Router) + TypeScript**, **PostgreSQL 16** (plain SQL migrations), private
+encrypted object storage (local adapter for development, S3/SSE-KMS in production), and a durable
+Postgres-backed **background worker** for email, schedules and quarantine scans. Workflow rules live in
+the server-side domain module `src/server/domain/` (see [docs/WORKFLOW.md](docs/WORKFLOW.md)).
+
+> All data in development is **synthetic**. No real customers, BVNs or staff.
+
+## Quick start (development)
+
+Prerequisites: Node 20.11+ and PostgreSQL 16. You can start PostgreSQL with `docker compose up -d postgres`;
+the compose file also creates `wakeel_test`.
+
+```bash
+cp .env.example .env          # development defaults
+npm install
+npm run db:reset              # migrate + seed synthetic staff, groups, template and demo cases
+npm run dev:all               # Next.js on :3000 + background worker
+```
+
+To run the two processes separately, use `npm run dev` and `npm run worker`.
+
+Open http://localhost:3000, choose a sign-in option, enter a demo email, then read the one-time
+code at **http://localhost:3000/dev/mailbox**. Assignment, reminder, closure and digest emails also appear
+there once the worker delivers them. This page does not exist in production.
+
+### Demo accounts (all `@altbank.ng`, synthetic)
+
+| Email | Roles |
+|---|---|
+| superadmin | Super Admin |
+| reports | Reporting Admin |
+| rm.ade | Relationship Manager (South) |
+| anm.north / anm.south | Agent Network Manager (North / South) |
+| mo.chi | Merchant Officer **and** RM (demonstrates workspace switching) |
+| rbe.lagos / rbe.abuja | Regional Business Executive |
+| mo.lead | Merchant Officer Lead |
+| anm.lead.north / anm.lead.south | North / South ANM Lead |
+| co1 / co2 / co3 | Credit Officers 1–3 |
+| lead1 / lead2 | Credit Leads 1–2 |
+| unit.head / div.head | Unit Head / Divisional Head |
+| do1 / do2 | Disbursement Officers 1–2 |
+| legal.officer / shariah.officer | Legal / Shariah closure reviewers |
+
+The seed adds five cases at different stages, from endorsement through a fully closed booking, so every
+queue has work in it. `new.officer@altbank.ng` exists only in the bank directory, so you can use it to
+try provisioning.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `npm run migrate` | Apply pending SQL migrations (`migrations/*.sql`) |
+| `npm run db:reset` | Drop, migrate and seed the dev database (refused in production) |
+| `npm run seed` | Seed reference data (+ demo cases when empty; `--no-cases` to skip) |
+| `npm run demo:routes` | Drive one synthetic case through each credit route end to end and print every handoff |
+| `npm test` | Vitest suite against `TEST_DATABASE_URL` (schema is recreated) |
+| `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
+| `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
+
+The test suite has 102 tests. It covers:
+
+- **Routing:** boundary amounts, all three routes end to end, every endorsement path, random eligibility and separation of duties, and unstaffed stages with admin resolution.
+- **Workflow rules:** correction and rejection routing, material-change invalidation, the three-report, APR and invoice gates, the production APR block, and the pack, insurance and CRMS gates.
+- **Disbursement and closure:** duplicate-disbursement prevention, closure dedupe and retry, vendor confirmation and repayment prompts.
+- **Documents and offers:** offer rendering for each entity type, APR fixtures and propagation into emails, and scoped document access with version retention.
+- **Platform:** OTP and idle expiry for every role (polling does not extend sessions), deep-link safety, report exports, audit metadata, reminders, and digest scheduling.
+
+## Architecture
+
+```
+src/server/domain/   workflow rules (workflow.ts), routing, assignment/eligibility, access, documents,
+                     assessment + apr/ (versioned calculators), offer templates, admin, views
+src/server/auth/     OTP (hashed, rate limited, non-enumerating), DB sessions with 5-minute idle timeout
+src/server/jobs/     outbox delivery with retries, weekly/monthly schedules, worker tick
+src/server/storage/  private object store adapters + upload type sniffing + malware scanner adapters
+src/app/             Next.js pages, server actions and route handlers (thin; call the domain module)
+migrations/          SQL schema (append-only audit and immutable decisions enforced by triggers)
+```
+
+Key guarantees:
+
+- **Transactions.** Each approval and the next task commit atomically. One open task per case is enforced by a unique index. Actions are guarded by idempotency keys, row locks and `lock_version`.
+- **Assignment.** Random second-reviewer assignment uses a CSPRNG and is stored once, together with the eligible pool.
+- **Money and time.** Money is integer kobo (BigInt where multiplied). Timestamps are UTC, displayed in Africa/Lagos.
+- **Sensitive data.** BVN and TIN are AES-256-GCM encrypted and shown masked, with an audited reveal. They never appear in emails, exports or audit payloads.
+- **Documents.** Uploads are validated by content, quarantined and scanned. Every view or download needs a live session and a 5-minute HMAC link bound to user and session, and access is re-checked each time. Versions are never deleted.
+- **Sessions.** The 5-minute inactivity timeout is enforced server-side for every user. Background polling (`/api/session/status`) and worker jobs never extend a session. On timeout the UI is hidden and a new OTP is required.
+
+## Production configuration
+
+Set `APP_ENV=production`. Then:
+
+- **Development adapters are refused.** The local file store, dev mailbox, dev scanner and published dev encryption keys all throw at use.
+- **Secrets.** Generate `FIELD_ENCRYPTION_KEY`, `APP_HMAC_KEY` and `STORAGE_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep them in the bank's secret manager. Rotating the field key requires re-encryption. Values are versioned (`v1:`).
+- **Storage.** Use `STORAGE_DRIVER=s3` with a private bucket (block public access), `S3_KMS_KEY_ID` for SSE-KMS, and IAM limited to the bucket.
+- **Scanning.** Use `SCANNER_DRIVER=clamd` (or replace the adapter with the bank's scanning service).
+- **Email.** Use `MAIL_DRIVER=smtp` with the bank-approved relay. Set `CLOSURE_MAX_ATTACHMENT_BYTES` to the relay's limit; larger packs go out as an authenticated link.
+- **Network.** Set `TRUSTED_PROXY_HOPS` to the number of reverse proxies so the audit records the real client IP. Set `COOKIE_SECURE=true` (HTTPS only).
+- **Directory.** Load the bank directory export into `bank_directory` (provisioning and recipient groups validate against it). Then create the first Super Admin with a one-off SQL insert; there is no public registration.
+- **Processes.** Run `npm run migrate`, then `npm run build && npm start`, and at least one `npm run worker`. Several workers are safe because they use `SKIP LOCKED` and advisory locks.
+- **Retention.** `RETENTION_YEARS` sets `retention_until` on closure or rejection. `RETENTION_PURGE_ENABLED=true` lets the worker purge blobs after that date (the metadata and audit stay).
+
+## Unavailable production inputs (development adapters in use)
+
+| Input | Status in this build | To go live |
+|---|---|---|
+| **APR workbook** | `dev-illustrative@0.1` calculator (`productionValidated: false`), clearly labelled in the UI. **Production credit approval is blocked** until a validated calculator is configured. It does not use the 15% illustrative portfolio return. | Implement the workbook as a new `AprCalculator`, add workbook fixture rows under `tests/fixtures/apr/` (see its README), set `APR_CALCULATOR`. |
+| **Offer letter template** | "DEVELOPMENT SAMPLE" template, not bank-approved. **Production offer generation is blocked** for non-approved templates. | Super Admin → Offer templates: paste the bank's template (placeholders listed on the page), tick *bank-approved*, activate. |
+| **Brand colours / logo** | Provisional tokens in `src/app/globals.css` from the yellow Wakeel POS reference; text wordmark in `src/components/Brand.tsx`. | Replace tokens and wordmark with approved values and asset. |
+| **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |
+| **Bank directory** | Seeded `bank_directory` table. | Scheduled import from the HR/AD directory. |
+| **Email channel, malware scanning, object storage** | Dev mailbox, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
+
+## Design decisions to confirm with the product owner
+
+- **Business endorsers** can also return a request for correction, in addition to endorse and reject.
+- **Credit Officer 3 at pack review** can return the pack to the initiator.
+- **Lead final review** (Routes 2 and 3) offers Proceed and Reject only, as specified.
+- **Reminders** are allowed once an assignment is older than 6 hours, and at most once per 6 hours for the same assignment.
+- **Weekly digest** reports the past week's disbursements and the coming Monday–Sunday repayments. It is skipped for initiators with nothing to report.
+- **Material change** requires a fresh credit review and keeps the business endorsement. The second reviewer is kept if still eligible (no re-drawing).
+- **Reporting Admins** with a region on their assignment see only that region. Monthly recipients holding only ANM Lead roles get regional summaries.
