@@ -11,6 +11,18 @@ import { latestAssessment, type AssessmentRow } from "./assessment";
 import type { AssessmentSummary } from "../notify/templates";
 import type { PricingResult } from "./pricing";
 
+/** Attach the first reviewer's DSR exception justification (if the approval used one). */
+async function withException(tx: Tx, appId: string, s: AssessmentSummary): Promise<AssessmentSummary> {
+  if (!s.pricing || s.pricing.result !== "EXCEEDS_THRESHOLD") return s;
+  const d = (
+    await tx.query<{ reason: string | null }>(
+      `SELECT reason FROM decisions WHERE application_id = $1 AND stage = 'FIRST_CREDIT_REVIEW' AND action = 'APPROVE' AND invalidated_at IS NULL ORDER BY seq DESC LIMIT 1`,
+      [appId],
+    )
+  ).rows[0];
+  return d?.reason ? { ...s, pricing: { ...s.pricing, dsrException: d.reason.replace(/^DSR exception: /, "") } } : s;
+}
+
 export function assessmentSummary(a: AssessmentRow): AssessmentSummary {
   const o = a.outputs as { pricing?: PricingResult; explanation?: string };
   const p = o.pricing;
@@ -29,6 +41,8 @@ export function assessmentSummary(a: AssessmentRow): AssessmentSummary {
           flatMarkupRatePercent: p.facility.flatMarkupRatePercent,
           tenorMonths: p.facility.tenorMonths,
           explanation: o.explanation ?? "",
+          repaymentFrequency: p.facility.repaymentFrequency,
+          instalmentKobo: p.facility.instalmentKobo,
         }
       : undefined,
   };
@@ -236,7 +250,7 @@ export async function notifyAssignment(tx: Tx, ctx: Ctx, app: AppRow, taskId: st
     stage,
     customerName: app.customer_name ?? "",
     amountKobo: amount,
-    assessment: a ? assessmentSummary(a) : null,
+    assessment: a ? await withException(tx, app.id, assessmentSummary(a)) : null,
     assignedAt: ctx.now,
   });
   await enqueueEmail(tx, ctx.now, {

@@ -85,7 +85,9 @@ export function ReasonButton({ hidden, action, label, danger, doneHref }: { hidd
  * First credit review approval. The server enforces the three-report, assessment and invoice
  * gates; the UI shows the exact "Do not forget to log invoice" dialog with Cancel and Confirm.
  */
-export function FirstReviewApprove({ hidden, ready, doneHref }: { hidden: Hidden; ready: boolean; doneHref: string }) {
+export function FirstReviewApprove({ hidden, ready, doneHref, dsrExceeds = false, dsrEvidence = false, dsrSummary }: { hidden: Hidden; ready: boolean; doneHref: string; dsrExceeds?: boolean; dsrEvidence?: boolean; dsrSummary?: string }) {
+  const [justification, setJustification] = useState("");
+  const exceptionOk = !dsrExceeds || (dsrEvidence && justification.trim().length >= 10);
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement | null>(null);
   const confirmed = useRef<HTMLInputElement>(null);
@@ -96,6 +98,15 @@ export function FirstReviewApprove({ hidden, ready, doneHref }: { hidden: Hidden
         <>
           <Hiddens h={{ ...hidden, action: "APPROVE" }} />
           <input ref={confirmed} type="hidden" name="invoiceDialogConfirmed" value="false" />
+          {dsrExceeds && (
+            <div className="field">
+              <label htmlFor="dsr-just">DSR exception justification (required: Total DSR exceeds 10%)</label>
+              <textarea id="dsr-just" name="dsrExceptionJustification" value={justification} onChange={(e) => setJustification(e.target.value)} minLength={10} placeholder="Why approval is justified despite the threshold, and what the evidence shows" aria-describedby="dsr-just-hint" />
+              <span id="dsr-just-hint" className="hint">
+                {dsrSummary} {dsrEvidence ? "Evidence uploaded." : "Upload the evidence (for example a second bank statement) as “DSR exception evidence” first."}
+              </span>
+            </div>
+          )}
           <label className="toggle">
             <input type="checkbox" name="invoiceLogged" checked={invoiceLogged} onChange={(e) => setInvoiceLogged(e.target.checked)} />
             Logged invoice on invoice portal
@@ -104,8 +115,8 @@ export function FirstReviewApprove({ hidden, ready, doneHref }: { hidden: Hidden
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!ready}
-            aria-describedby={!ready ? "approve-blocked" : undefined}
+            disabled={!ready || !exceptionOk}
+            aria-describedby={!ready || !exceptionOk ? "approve-blocked" : undefined}
             onClick={(e) => {
               form.current = e.currentTarget.form;
               if (confirmed.current) confirmed.current.value = "false";
@@ -114,10 +125,14 @@ export function FirstReviewApprove({ hidden, ready, doneHref }: { hidden: Hidden
           >
             Approve
           </button>
-          {!ready && (
+          {(!ready || !exceptionOk) && (
             <p id="approve-blocked" className="blocked" style={{ margin: 0 }}>
               <AlertTriangle className="icon" aria-hidden="true" />
-              Approval is blocked until three credit reports are uploaded and the APR / DSR assessment is saved for the current version.
+              {!ready
+                ? "Approval is blocked until three credit reports are uploaded and the DSR and pricing assessment is saved under the current settings."
+                : !dsrEvidence
+                  ? "Total DSR exceeds the 10% threshold: upload DSR exception evidence (e.g. a second statement) and write a justification, or recalculate within the threshold."
+                  : "Total DSR exceeds the 10% threshold: write a justification of at least 10 characters."}
             </p>
           )}
           <dialog ref={dialog} className="modal" aria-labelledby="invoice-dialog-title" aria-describedby="invoice-dialog-desc">

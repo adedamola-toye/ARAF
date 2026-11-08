@@ -181,11 +181,11 @@ export function PricingSettingsForm({ current }: { current: { maxTenorMonths: nu
           <input id="ps-max" name="maxTenorMonths" type="number" min={1} max={6} step={1} defaultValue={current.maxTenorMonths} required />
         </div>
         <div className="field">
-          <label htmlFor="ps-short">1–2 months flat rate (%)</label>
+          <label htmlFor="ps-short">1–3 months flat rate (%)</label>
           <input id="ps-short" name="shortRatePercent" defaultValue={current.shortRatePercent} inputMode="decimal" required />
         </div>
         <div className="field">
-          <label htmlFor="ps-long">3 months and above flat rate (%)</label>
+          <label htmlFor="ps-long">4 months and above flat rate (%)</label>
           <input id="ps-long" name="longRatePercent" defaultValue={current.longRatePercent} inputMode="decimal" required />
         </div>
         <div className="field">
@@ -199,6 +199,19 @@ export function PricingSettingsForm({ current }: { current: { maxTenorMonths: nu
       </div>
       <p className="small muted" style={{ margin: 0 }}>Changes apply prospectively. Approved facilities and saved assessments keep the settings they were priced under; drafts priced under older settings are flagged for recalculation.</p>
       <div><SubmitButton className="btn btn-dark">Save new settings version</SubmitButton></div>
+    </ActionForm>
+  );
+}
+
+export function SignatoryForm({ current }: { current: { name: string; title: string } }) {
+  return (
+    <ActionForm action={A.signatoryAction}>
+      <div className="grid-3">
+        <div className="field"><label htmlFor="sg-name">Second signatory name</label><input id="sg-name" name="name" defaultValue={current.name} required /></div>
+        <div className="field"><label htmlFor="sg-title">Title</label><input id="sg-title" name="title" defaultValue={current.title} required /></div>
+        <div className="field"><label htmlFor="sg-reason">Reason</label><input id="sg-reason" name="reason" required minLength={5} /></div>
+      </div>
+      <div><SubmitButton className="btn btn-dark">Save signatory</SubmitButton></div>
     </ActionForm>
   );
 }

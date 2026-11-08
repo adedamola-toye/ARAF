@@ -19,7 +19,7 @@ import { config } from "@/server/config";
 import { StageChip, OutcomeChip } from "@/components/Status";
 import { activeTemplate } from "@/server/domain/offer";
 import { PricingAssessment, ThresholdChip, pricingOf } from "@/components/PricingAssessment";
-import { e4ToPercent, pricingSettingsAt } from "@/server/domain/pricing";
+import { bandLabels, e4ToPercent, pricingSettingsAt } from "@/server/domain/pricing";
 
 /** The booked schedule uses a different frequency from the monthly assessment → label as monthly equivalent. */
 function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: unknown } | null }) {
@@ -783,7 +783,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       if (stale && c.assessment)
         body.push(
           <Blocked key="stale">
-            Pricing settings changed since this assessment (used v{stale.used}; now v{settings.version}: 1–2 months {e4ToPercent(settings.shortRateE4)}%, 3–{settings.maxTenorMonths} months {e4ToPercent(settings.longRateE4)}%, maximum tenor {settings.maxTenorMonths}). Recalculate before approval.
+            Pricing settings changed since this assessment (used v{stale.used}; now v{settings.version}: {bandLabels(settings).short} {e4ToPercent(settings.shortRateE4)}%, {bandLabels(settings).long} {e4ToPercent(settings.longRateE4)}%, maximum tenor {settings.maxTenorMonths} months). Recalculate before approval.
           </Blocked>,
         );
       if (c.assessment && pricingOf(c.assessment.outputs))
@@ -797,7 +797,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
         <details key="up" open={reports < 3}>
           <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Credit reports ({reports}/3)</summary>
           <div style={{ marginTop: 8 }}>
-            <UploadPanel compact applicationId={app.id} title="Upload credit report" categories={[{ code: "CREDIT_REPORT", label: "Credit report" }, { code: "SUPPORTING", label: "Other supporting document" }]} />
+            <UploadPanel compact applicationId={app.id} title="Upload credit report or DSR evidence" categories={[{ code: "CREDIT_REPORT", label: "Credit report" }, { code: "DSR_EXCEPTION_EVIDENCE", label: CATEGORY_LABEL.DSR_EXCEPTION_EVIDENCE }, { code: "SUPPORTING", label: "Other supporting document" }]} />
           </div>
         </details>,
       );
@@ -812,7 +812,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
             )}
             {calc.usesPricingSettings && (
               <p className="small muted" style={{ margin: 0 }}>
-                Applies pricing settings v{settings.version}: 1–2 months {e4ToPercent(settings.shortRateE4)}% flat, 3–{settings.maxTenorMonths} months {e4ToPercent(settings.longRateE4)}% flat, applied once for the tenor; DSR threshold {e4ToPercent(settings.thresholdE4)}%. Leave the verified monthly turnover blank to use annual ÷ 12.
+                Applies pricing settings v{settings.version}: {bandLabels(settings).short} {e4ToPercent(settings.shortRateE4)}% flat, {bandLabels(settings).long} {e4ToPercent(settings.longRateE4)}% flat, applied once for the tenor; principal up to ₦50,000,000 (single obligation limit); DSR threshold {e4ToPercent(settings.thresholdE4)}%. Leave the verified monthly turnover blank to use annual ÷ 12.
               </p>
             )}
             <AssessmentForm
@@ -820,14 +820,27 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
               calculatorLabel={calc.label}
               fields={calc.fields.map((f) =>
                 calc.usesPricingSettings && f.key === "tenorMonths"
-                  ? { key: f.key, label: f.label, kind: "select", options: Array.from({ length: settings.maxTenorMonths }, (_, i) => ({ value: String(i + 1), label: `${i + 1} month${i ? "s" : ""} · ${i + 1 >= 3 ? e4ToPercent(settings.longRateE4) : e4ToPercent(settings.shortRateE4)}% flat` })), value: vals(f.key, f.defaultFrom, f.defaultValue) }
+                  ? { key: f.key, label: f.label, kind: "select", options: Array.from({ length: settings.maxTenorMonths }, (_, i) => ({ value: String(i + 1), label: `${i + 1} month${i ? "s" : ""} · ${i + 1 >= settings.longBandFromMonths ? e4ToPercent(settings.longRateE4) : e4ToPercent(settings.shortRateE4)}% flat` })), value: vals(f.key, f.defaultFrom, f.defaultValue) }
                   : { key: f.key, label: f.label, kind: f.kind, options: f.options, optional: f.optional, value: vals(f.key, f.defaultFrom, f.defaultValue) },
               )}
             />
           </div>
         </details>,
       );
-      if (stage === "FIRST_CREDIT_REVIEW") body.push(<FirstReviewApprove key="ap" hidden={hidden} ready={reports >= 3 && assessmentCurrent && !stale} doneHref={doneHref} />);
+      if (stage === "FIRST_CREDIT_REVIEW") {
+        const pr = c.assessment ? pricingOf(c.assessment.outputs)?.pricing : null;
+        body.push(
+          <FirstReviewApprove
+            key="ap"
+            hidden={hidden}
+            ready={reports >= 3 && assessmentCurrent && !stale}
+            doneHref={doneHref}
+            dsrExceeds={pr?.capacity.result === "EXCEEDS_THRESHOLD"}
+            dsrEvidence={has("DSR_EXCEPTION_EVIDENCE")}
+            dsrSummary={pr ? `Total DSR ${pr.capacity.totalDsrPercent}% exceeds the ${pr.capacity.thresholdPercent}% threshold by ${formatKobo(pr.capacity.excessKobo)} per month.` : undefined}
+          />,
+        );
+      }
       else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${STAGE_LABELS[(openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW"]}`} doneHref={doneHref} />);
       break;
     }
@@ -839,6 +852,15 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
           <div key="a" className="stack" style={{ gap: 8 }}>
             <PricingAssessment outputs={c.assessment.outputs} compact />
             <p className="small" style={{ margin: 0 }}>{pricingOf(c.assessment.outputs)!.explanation}</p>
+            {(() => {
+              const ex = c.decisions.filter((d: { stage: string; action: string; invalidated_at: Date | null; reason: string | null }) => d.stage === "FIRST_CREDIT_REVIEW" && d.action === "APPROVE" && !d.invalidated_at && d.reason?.startsWith("DSR exception:")).at(-1);
+              return ex ? (
+                <p className="blocked" style={{ margin: 0 }}>
+                  <AlertTriangle className="icon" aria-hidden="true" />
+                  <span>Approved at first credit review with a DSR exception by {ex.actor_name}: {String(ex.reason).replace(/^DSR exception: /, "")}. Evidence is in Documents (DSR exception evidence).</span>
+                </p>
+              ) : null;
+            })()}
             <div className="small muted">APR (disclosure) {Number(c.assessment.apr_percent).toFixed(2)}% · {c.assessment.calculator_id}@{c.assessment.calculator_version} · assessed by {c.assessment.assessor_name} · full detail in Assessment</div>
           </div>
         ) : c.assessment ? (

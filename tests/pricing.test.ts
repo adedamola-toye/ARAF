@@ -4,11 +4,15 @@ import { NAIRA, formatKobo } from "@/server/money";
 import { calculatePricing, dsrExplanation, pricingSettingsAt, updatePricingSettings, type PricingSettings } from "@/server/domain/pricing";
 import { parseCalculatorForm, recordAssessment, approvedAssessment } from "@/server/domain/assessment";
 import { generateOffer } from "@/server/domain/offer";
-import { createDraft, saveDraft, submitApplication } from "@/server/domain/workflow";
-import { ACCEPTANCE_INPUTS, act, appRow, approveFirstReview, createSubmittedCase, ctxFor, openTaskOf, recordAcceptanceAssessment, prepareFirstReview } from "@/server/demo/scenario";
+import { createDraft, performTaskAction, saveDraft, submitApplication } from "@/server/domain/workflow";
+import { uploadDocument } from "@/server/domain/documents";
+import { updateSecondSignatory } from "@/server/domain/signatory";
+import { listDocuments, readDocumentForActor } from "@/server/domain/documents";
+import JSZip from "jszip";
+import { ACCEPTANCE_INPUTS, act, appRow, approveFirstReview, createSubmittedCase, ctxFor, driveToOffer, makePdf, openTaskOf, preparePack, recordAcceptanceAssessment, prepareFirstReview } from "@/server/demo/scenario";
 import { audits, key, outbox, resetDb } from "./helpers";
 
-const S: PricingSettings = { id: "s1", version: 1, maxTenorMonths: 6, shortRateE4: 100_000, longRateE4: 150_000, thresholdE4: 100_000, effectiveFrom: new Date("2020-01-01") };
+const S: PricingSettings = { id: "s1", version: 2, maxTenorMonths: 6, shortRateE4: 100_000, longRateE4: 150_000, thresholdE4: 100_000, longBandFromMonths: 4, effectiveFrom: new Date("2020-01-01") };
 const base = { annualTurnoverKobo: 120_000_000_000, principalKobo: 1_000_000_000, tenorMonths: 3, existingObligationsKobo: 0 };
 
 beforeEach(async () => {
@@ -49,14 +53,23 @@ describe("acceptance case (bank instruction)", () => {
     expect(a.threshold_result).toBe("EXCEEDS_THRESHOLD");
     expect(a.dsr_percent).toBe("12.3656");
     expect(a.pricing_settings_id).toBe(a.outputs.pricing.settings.id);
-    expect(a.outputs.pricing.settings).toMatchObject({ version: 1, shortRatePercent: "10", longRatePercent: "15", maxTenorMonths: 6 });
+    expect(a.outputs.pricing.settings).toMatchObject({ version: 2, shortRatePercent: "10", longRatePercent: "15", maxTenorMonths: 6, longBandFromMonths: 4, shortBandLabel: "1–3 months", longBandLabel: "4–6 months" });
     expect(a.assessor_id).toBe((await openTaskOf(id)).assignee_id);
     const ev = (await audits("ASSESSMENT_RECORDED")).at(-1);
     expect(ev.details).toMatchObject({ annualTurnoverKobo: 93_023_800_000, derivedMonthlyTurnover: "77519833.333333", verifiedMonthlyTurnoverKobo: 7_750_000_000, turnoverBasis: "VERIFIED_MONTHLY", thresholdResult: "EXCEEDS_THRESHOLD" });
     expect(ev.details.overrideReason).toMatch(/77,500,000/);
-    // Exceeding the threshold does not block approval; it is flagged for review under the existing rules.
-    await act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true });
+    // Above the threshold, approval needs a justification backed by evidence (e.g. a second statement).
+    const t = await openTaskOf(id);
+    const ctx = await ctxFor(t.email!);
+    await expect(act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true })).rejects.toThrow(/exceeds the 10% turnover threshold/);
+    await expect(act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true, dsrExceptionJustification: "Second statement shows additional inflows" })).rejects.toThrow(/DSR exception evidence/);
+    await uploadDocument(ctx, { applicationId: id, category: "DSR_EXCEPTION_EVIDENCE", filename: "second-statement.pdf", data: makePdf("Second bank statement") });
+    await act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true, dsrExceptionJustification: "Second statement (Zenith) shows N95m average monthly inflows; repayment covered" });
+    const dec = (await db.query("SELECT reason FROM decisions WHERE application_id = $1 AND stage = 'FIRST_CREDIT_REVIEW'", [id])).rows[0];
+    expect(dec.reason).toMatch(/^DSR exception: Second statement/);
+    expect((await audits("DSR_EXCEPTION_APPROVED")).length).toBe(1);
     const mail = (await outbox("ASSIGNMENT")).filter((m) => m.application_id === id).at(-1);
+    expect(mail.body_text).toContain("DSR exception approved at first credit review: Second statement (Zenith)");
     expect(mail.body_text).toContain("Assessed monthly turnover: ₦77,500,000.00 (verified monthly figure)");
     expect(mail.body_text).toContain("Proposed monthly repayment: ₦9,583,333.33 (flat markup 15% over 6 months)");
     expect(mail.body_text).toContain("DSR: 12.37% against the 10% threshold - EXCEEDS THRESHOLD by ₦1,833,333.33 per month (flagged for review)");
@@ -67,8 +80,9 @@ describe("pricing bands and tenor", () => {
   it.each([
     [1, "10"],
     [2, "10"],
-    [3, "15"],
+    [3, "10"], // exactly 3 months is in the lower band (bank clarification)
     [4, "15"],
+    [5, "15"],
     [6, "15"],
   ])("%i month(s) → %s%% flat, regardless of amount", (tenor, rate) => {
     for (const principalKobo of [100, NAIRA(9_999_999), NAIRA(10_000_000), NAIRA(50_000_000)]) {
@@ -93,10 +107,10 @@ describe("pricing bands and tenor", () => {
     expect(() => calculatePricing({ ...base, verifiedMonthlyTurnoverKobo: 1_000, overrideReason: "" }, S)).toThrow();
   });
   it("the assessment form requires an explicit obligations figure (0 when none)", () => {
-    expect(() => parseCalculatorForm({ annualTurnoverKobo: "1,200,000", principalKobo: "100,000", tenorMonths: "3", existingObligationsKobo: "", facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" })).toThrow(
+    expect(() => parseCalculatorForm({ annualTurnoverKobo: "1,200,000", principalKobo: "100,000", tenorMonths: "3", existingObligationsKobo: "", repaymentFrequency: "MONTHLY", facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" })).toThrow(
       /Check the assessment inputs/,
     );
-    const ok = parseCalculatorForm({ annualTurnoverKobo: "1,200,000", principalKobo: "100,000", tenorMonths: "3", existingObligationsKobo: "0", facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" });
+    const ok = parseCalculatorForm({ annualTurnoverKobo: "1,200,000", principalKobo: "100,000", tenorMonths: "3", existingObligationsKobo: "0", repaymentFrequency: "MONTHLY", facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" });
     expect(ok.existingObligationsKobo).toBe(0);
     expect(ok.verifiedMonthlyTurnoverKobo).toBeUndefined();
   });
@@ -153,12 +167,16 @@ describe("turnover override", () => {
     expect(rows.length).toBe(2);
     expect(rows.filter((x) => x.superseded_at === null).length).toBe(1);
   });
-  it("only the assigned first reviewer may assess; principal cannot exceed the requested amount", async () => {
+  it("only the assigned first reviewer may assess; principal ≤ ₦50m and within the request's credit route", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
     await act(id, "ENDORSE");
     await expect(recordAssessment(await ctxFor("co2@altbank.ng"), id, ACCEPTANCE_INPUTS)).rejects.toThrow(/assigned first credit reviewer/);
     const ctx = await ctxFor((await openTaskOf(id)).email!);
-    await expect(recordAssessment(ctx, id, { ...ACCEPTANCE_INPUTS, principalKobo: NAIRA(1_000_001) })).rejects.toMatchObject({ fields: { principalKobo: expect.stringMatching(/cannot exceed the requested amount/) } });
+    // Above the requested amount is fine within the same route (Route 1 up to ₦5m)
+    const ok = await recordAssessment(ctx, id, { ...ACCEPTANCE_INPUTS, principalKobo: NAIRA(5_000_000) });
+    expect((ok.outputs as { amountApprovedKobo: number }).amountApprovedKobo).toBe(NAIRA(5_000_000));
+    await expect(recordAssessment(ctx, id, { ...ACCEPTANCE_INPUTS, principalKobo: NAIRA(5_000_000) + 1 })).rejects.toMatchObject({ fields: { principalKobo: expect.stringMatching(/Route 2.*Route 1.*amend the amount/) } });
+    await expect(recordAssessment(ctx, id, { ...ACCEPTANCE_INPUTS, principalKobo: NAIRA(50_000_000) + 1 })).rejects.toMatchObject({ fields: { principalKobo: expect.stringMatching(/single obligation limit/) } });
   });
 });
 
@@ -175,12 +193,13 @@ describe("Super Admin pricing settings", () => {
     // Direct database writes cannot bypass the ceiling or rewrite history.
     await expect(db.query("INSERT INTO pricing_settings (version, max_tenor_months, short_rate_e4, long_rate_e4, effective_from, reason) VALUES (99, 7, 100000, 150000, now(), 'bypass')")).rejects.toThrow(/check constraint/);
     await expect(db.query("UPDATE pricing_settings SET long_rate_e4 = 1")).rejects.toThrow(/append-only/);
-    const v2 = await updatePricingSettings(sa, { maxTenorMonths: 4, shortRatePercent: "12", longRatePercent: "17.5", reason: "Board pricing review Q4" });
-    expect(v2.version).toBe(2);
+    const v3 = await updatePricingSettings(sa, { maxTenorMonths: 4, shortRatePercent: "12", longRatePercent: "17.5", reason: "Board pricing review Q4" });
+    expect(v3.version).toBe(3);
+    expect(v3.longBandFromMonths).toBe(4); // band boundary carried forward
     const ev = (await audits("PRICING_SETTINGS_CHANGED")).at(-1);
     expect(ev.outcome).toBe("SUCCESS");
     expect(ev.reason).toBe("Board pricing review Q4");
-    expect(ev.details).toMatchObject({ old: { version: 1, maxTenorMonths: 6, shortRate: "10", longRate: "15" }, new: { version: 2, maxTenorMonths: 4, shortRate: "12", longRate: "17.5" } });
+    expect(ev.details).toMatchObject({ old: { version: 2, maxTenorMonths: 6, shortRate: "10", longRate: "15" }, new: { version: 3, maxTenorMonths: 4, shortRate: "12", longRate: "17.5" } });
     expect(ev.details.effectiveFrom).toBeDefined();
     expect((await pricingSettingsAt(db, new Date(now.getTime() + 1000))).maxTenorMonths).toBe(4);
   });
@@ -207,7 +226,7 @@ describe("Super Admin pricing settings", () => {
     const offerAudit = (await audits("OFFER_GENERATED")).at(-1);
     expect(offerAudit.details.assessmentId).toBe(snap!.id);
     // B: approval blocked until recalculated under v2, which then prices at 20%
-    await expect(act(b, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true })).rejects.toThrow(/pricing settings changed since this assessment \(v1 → v2\)/i);
+    await expect(act(b, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true })).rejects.toThrow(/pricing settings changed since this assessment \(v2 → v3\)/i);
     const ctxB = await ctxFor((await openTaskOf(b)).email!);
     const re = await recordAssessment(ctxB, b, { annualTurnoverKobo: NAIRA(48_000_000), principalKobo: NAIRA(2_000_000), tenorMonths: 6, existingObligationsKobo: 0, facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" });
     expect((re.outputs as { flatMarkupRatePercent: string }).flatMarkupRatePercent).toBe("20");
@@ -223,5 +242,79 @@ describe("Super Admin pricing settings", () => {
     await saveDraft(rm, id, { data: { tenorMonths: 6 } });
     const err = await submitApplication(rm, id, key()).catch((e) => e);
     expect(err.fields.tenorMonths).toMatch(/from 1 to 4/);
+  });
+});
+
+describe("weekly repayment", () => {
+  it("4 weekly instalments a month; DSR uses the monthly equivalent; APR on a weekly basis", () => {
+    const m = calculatePricing({ ...base, tenorMonths: 3 }, S);
+    const w = calculatePricing({ ...base, tenorMonths: 3, repaymentFrequency: "WEEKLY" }, S);
+    expect(w.facility.numberOfInstalments).toBe(12);
+    expect(formatKobo(w.facility.instalmentKobo)).toBe("₦916,666.67"); // ₦11m ÷ 12
+    expect(w.facility.monthlyRepaymentKobo).toBe(m.facility.monthlyRepaymentKobo);
+    expect(w.capacity.totalDsrPercent4).toBe(m.capacity.totalDsrPercent4);
+  });
+  it("weekly instalments flow to the offer letter", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(400_000) });
+    await act(id, "ENDORSE");
+    const ctx = await ctxFor((await openTaskOf(id)).email!);
+    for (let i = 1; i <= 3; i++) await uploadDocument(ctx, { applicationId: id, category: "CREDIT_REPORT", filename: `r${i}.pdf`, data: makePdf("r") });
+    const r = await recordAssessment(ctx, id, { annualTurnoverKobo: NAIRA(24_000_000), principalKobo: NAIRA(400_000), tenorMonths: 3, existingObligationsKobo: 0, repaymentFrequency: "WEEKLY", facilityType: "MURABAHA", takafulPercent: "0.75", stampDutyPercent: "0.125" });
+    expect(r.aprPercent).toBe("80.3077"); // 96 × (10% + 0.75% + 0.125%) ÷ 13
+    await act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true });
+    await act(id, "APPROVE");
+    await act(id, "APPROVE");
+    await act(id, "APPROVE");
+    await preparePack(id);
+    const offer = (await listDocuments(db, id)).find((d) => d.category === "GENERATED_OFFER")!;
+    const { data } = await readDocumentForActor(await ctxFor("rm.ade@altbank.ng"), offer.id, "download");
+    const xml = await (await JSZip.loadAsync(data)).file("word/document.xml")!.async("string");
+    const text = xml.replace(/<[^>]+>/g, "");
+    expect(text).toContain("Equal weekly payment of N36,666.67"); // ₦440,000 ÷ 12, as in the bank's sample letter
+    expect(text).toContain("N440,000.00 (Four Hundred and Forty Thousand Naira Only)");
+    expect(text).toMatch(/\(10%\)/);
+  });
+});
+
+describe("approved principal and booking", () => {
+  it("disbursement is checked against the approved principal from the assessment", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
+    await act(id, "ENDORSE");
+    const ctx = await ctxFor((await openTaskOf(id)).email!);
+    for (let i = 1; i <= 3; i++) await uploadDocument(ctx, { applicationId: id, category: "CREDIT_REPORT", filename: `r${i}.pdf`, data: makePdf("r") });
+    await recordAssessment(ctx, id, { annualTurnoverKobo: NAIRA(24_000_000), principalKobo: NAIRA(800_000), tenorMonths: 6, existingObligationsKobo: 0, repaymentFrequency: "MONTHLY", facilityType: "MURABAHA", takafulPercent: "0", stampDutyPercent: "0.125" });
+    await act(id, "APPROVE", { invoiceLogged: true, invoiceDialogConfirmed: true });
+    await act(id, "APPROVE");
+    await act(id, "APPROVE");
+    await act(id, "APPROVE");
+    await preparePack(id);
+    await act(id, "SUBMIT_PACK");
+    await uploadDocument(await ctxFor("co3@altbank.ng"), { applicationId: id, category: "INSURANCE_EVIDENCE", filename: "i.pdf", data: makePdf("i") });
+    await act(id, "FORWARD");
+    await act(id, "OKAY", { crmsLogged: true });
+    const t = await openTaskOf(id);
+    const book = (amount: number) =>
+      performTaskAction(ctxFor_(t.email!), { taskId: t.id, action: "DISBURSED", idempotencyKey: key(), booking: { amountKobo: amount, disbursedOn: "2026-11-01", transactionRef: `TX${amount}`, schedule: [{ dueDate: "2026-12-01", amountKobo: 100 }] } });
+    const ctxFor_ = (e: string) => ({ ...ctx, actor: { ...ctx.actor!, staffId: t.assignee_id!, email: e } });
+    await expect(book(NAIRA(800_000) + 1)).rejects.toMatchObject({ fields: { amount: expect.stringMatching(/₦800,000\.00/) } });
+    await book(NAIRA(800_000));
+    expect((await db.query("SELECT approved_amount_kobo FROM disbursements WHERE application_id = $1", [id])).rows[0].approved_amount_kobo).toBe(String(NAIRA(800_000)));
+  });
+});
+
+describe("second signatory", () => {
+  it("is configurable by the Super Admin only, audited, and printed on Individual/Enterprise letters", async () => {
+    await expect(updateSecondSignatory(await ctxFor("co1@altbank.ng"), { name: "X Y", title: "Head", reason: "change" })).rejects.toThrow(/Only the Super Admin/);
+    await updateSecondSignatory(await ctxFor("superadmin@altbank.ng"), { name: "Ada Signatory", title: "Head, Payment & Collection", reason: "Signatory confirmed by Operations" });
+    const ev = (await audits("OFFER_SIGNATORY_CHANGED")).filter((e) => e.outcome === "SUCCESS").at(-1);
+    expect(ev.details).toMatchObject({ old: { version: 1, name: "" }, new: { version: 2, name: "Ada Signatory" } });
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
+    await driveToOffer(id);
+    await preparePack(id);
+    const offer = (await listDocuments(db, id)).find((d) => d.category === "GENERATED_OFFER")!;
+    const { data } = await readDocumentForActor(await ctxFor("rm.ade@altbank.ng"), offer.id, "download");
+    const text = (await (await JSZip.loadAsync(data)).file("word/document.xml")!.async("string")).replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+    expect(text).toContain("Ada Signatory");
+    expect(text).toContain("Head, Payment & Collection");
   });
 });

@@ -121,6 +121,7 @@ export async function taskActionAction(_p: ActionState, fd: FormData): Promise<A
       invoiceLogged: fd.get("invoiceLogged") === "on" || fd.get("invoiceLogged") === "true",
       invoiceDialogConfirmed: fd.get("invoiceDialogConfirmed") === "true",
       crmsLogged: fd.get("crmsLogged") === "on" || fd.get("crmsLogged") === "true",
+      dsrExceptionJustification: str(fd, "dsrExceptionJustification") || null,
       booking,
     });
     return { ok: true, message: r.message, nonce: Date.now() };

@@ -1,8 +1,12 @@
 /**
  * WakeelBoost DSR and facility pricing (flat markup by tenor band).
  *
- * Rules (bank instruction):
- *   Pricing band          1–2 months: short rate (seeded 10%) · 3 months up to the configured maximum (≤ 6): long rate (seeded 15%)
+ * Rules (bank instruction, clarified):
+ *   Pricing band          1–3 months: short rate (seeded 10%) · 4 months up to the configured maximum (≤ 6): long rate (seeded 15%).
+ *                         Only the period matters; the amount never changes the band. The boundary is stored per settings version.
+ *   Principal             ≤ ₦50,000,000 (single obligation limit)
+ *   Repayment             monthly, or weekly when needed (4 weekly instalments per month: instalment = total ÷ (4 × tenor));
+ *                         DSR always uses the monthly equivalent = total ÷ tenor
  *   Markup                = principal × flat rate (applied once for the whole tenor; the amount does not change the band)
  *   Total repayment       = principal + markup
  *   Monthly repayment     = total repayment ÷ tenor (monthly equivalent)
@@ -25,7 +29,10 @@ import { formatKobo, parsePercentE4 } from "../money";
 import { holdsRole } from "./access";
 
 export const ABSOLUTE_MAX_TENOR = 6;
-export const LONG_BAND_FROM_MONTHS = 3;
+/** Single obligation limit: ₦50,000,000. */
+export const SINGLE_OBLIGATION_LIMIT_KOBO = 5_000_000_000;
+export const WEEKS_PER_MONTH = 4;
+export type RepaymentFrequency = "MONTHLY" | "WEEKLY";
 
 export interface PricingSettings {
   id: string;
@@ -34,6 +41,8 @@ export interface PricingSettings {
   shortRateE4: number; // percent × 10^4
   longRateE4: number;
   thresholdE4: number;
+  /** First tenor (months) of the long band; tenors below it use the short rate. */
+  longBandFromMonths: number;
   effectiveFrom: Date;
 }
 
@@ -44,6 +53,7 @@ export interface PricingInput {
   principalKobo: number;
   tenorMonths: number;
   existingObligationsKobo: number;
+  repaymentFrequency?: RepaymentFrequency;
 }
 
 export interface PricingResult {
@@ -64,8 +74,12 @@ export interface PricingResult {
     flatMarkupRatePercent: string; // e.g. "15"
     markupKobo: number;
     totalRepaymentKobo: number;
-    monthlyRepaymentKobo: number;
+    monthlyRepaymentKobo: number; // monthly equivalent when weekly
     monthlyRepaymentExact: string;
+    repaymentFrequency: RepaymentFrequency;
+    numberOfInstalments: number;
+    instalmentKobo: number; // the actual periodic instalment (weekly or monthly)
+    instalmentExact: string;
   };
   capacity: {
     existingObligationsKobo: number;
@@ -78,9 +92,10 @@ export interface PricingResult {
     thresholdAmountKobo: number;
     result: "WITHIN_THRESHOLD" | "EXCEEDS_THRESHOLD";
     excessKobo: number;
-    maxAffordablePrincipalKobo: number;
+    maxAffordablePrincipalKobo: number; // affordability only
+    maxPrincipalWithinLimitKobo: number; // also capped by the ₦50m single obligation limit (applied separately)
   };
-  settings: { id: string; version: number; maxTenorMonths: number; shortRatePercent: string; longRatePercent: string; thresholdPercent: string; effectiveFrom: string };
+  settings: { id: string; version: number; maxTenorMonths: number; shortRatePercent: string; longRatePercent: string; thresholdPercent: string; longBandFromMonths: number; shortBandLabel: string; longBandLabel: string; effectiveFrom: string };
 }
 
 const M6 = 1_000_000n;
@@ -98,8 +113,16 @@ function fixed(num: bigint, den: bigint, dp: number) {
   return `${neg ? "-" : ""}${a.slice(0, -dp)}.${a.slice(-dp)}`;
 }
 
+export function bandLabels(s: Pick<PricingSettings, "longBandFromMonths" | "maxTenorMonths">) {
+  const b = s.longBandFromMonths;
+  const short = b - 1 <= 1 ? "1 month" : `1–${b - 1} months`;
+  const long = b > s.maxTenorMonths ? `${b}+ months (above the maximum tenor)` : b === s.maxTenorMonths ? `${b} months` : `${b}–${s.maxTenorMonths} months`;
+  return { short, long };
+}
+
 export function bandFor(tenor: number, s: PricingSettings) {
-  return tenor >= LONG_BAND_FROM_MONTHS ? { band: "LONG" as const, rateE4: s.longRateE4, label: `${LONG_BAND_FROM_MONTHS}–${s.maxTenorMonths} months` } : { band: "SHORT" as const, rateE4: s.shortRateE4, label: "1–2 months" };
+  const l = bandLabels(s);
+  return tenor >= s.longBandFromMonths ? { band: "LONG" as const, rateE4: s.longRateE4, label: l.long } : { band: "SHORT" as const, rateE4: s.shortRateE4, label: l.short };
 }
 
 export function validatePricingInput(i: PricingInput, s: PricingSettings): Record<string, string> {
@@ -111,6 +134,8 @@ export function validatePricingInput(i: PricingInput, s: PricingSettings): Recor
     if (!i.overrideReason || i.overrideReason.trim().length < 5) e.overrideReason = "Give a reason for using a verified monthly turnover figure.";
   }
   if (!int(i.principalKobo) || i.principalKobo <= 0) e.principalKobo = "Principal must be greater than zero.";
+  else if (i.principalKobo > SINGLE_OBLIGATION_LIMIT_KOBO) e.principalKobo = "Principal cannot exceed ₦50,000,000.00, the single obligation limit.";
+  if (i.repaymentFrequency !== undefined && i.repaymentFrequency !== "MONTHLY" && i.repaymentFrequency !== "WEEKLY") e.repaymentFrequency = "Repayment is monthly or weekly.";
   if (!int(i.tenorMonths) || i.tenorMonths < 1 || i.tenorMonths > Math.min(ABSOLUTE_MAX_TENOR, s.maxTenorMonths)) {
     e.tenorMonths = `Tenor must be a whole number of months from 1 to ${Math.min(ABSOLUTE_MAX_TENOR, s.maxTenorMonths)}.`;
   }
@@ -144,7 +169,11 @@ export function calculatePricing(i: PricingInput, s: PricingSettings): PricingRe
   const within = dsrNum * M6 <= thr * dsrDen; // exact comparison, unrounded
   const excessNum = obligationsAndRepaymentNum * Mden - thr * T * Mnum; // / (1e6 × T × Mden)
   const maxNum = (thr * Mnum - O * M6 * Mden) * T; // / (Mden × (1e6 + r))
-  const maxPrincipal = maxNum > 0n ? maxNum / (Mden * (M6 + r)) : 0n; // floor
+  const maxPrincipal = maxNum > 0n ? maxNum / (Mden * (M6 + r)) : 0n; // floor (affordability only)
+  const limit = BigInt(SINGLE_OBLIGATION_LIMIT_KOBO);
+  const freq: RepaymentFrequency = i.repaymentFrequency ?? "MONTHLY";
+  const perMonth = freq === "WEEKLY" ? BigInt(WEEKS_PER_MONTH) : 1n;
+  const instalments = T * perMonth;
 
   return {
     turnover: {
@@ -166,6 +195,10 @@ export function calculatePricing(i: PricingInput, s: PricingSettings): PricingRe
       totalRepaymentKobo: Number(roundHalfUp(totalNum, M6)),
       monthlyRepaymentKobo: Number(roundHalfUp(monthlyNum, M6 * T)),
       monthlyRepaymentExact: fixed(monthlyNum, M6 * T * 100n, 6),
+      repaymentFrequency: freq,
+      numberOfInstalments: Number(instalments),
+      instalmentKobo: Number(roundHalfUp(totalNum, M6 * instalments)),
+      instalmentExact: fixed(totalNum, M6 * instalments * 100n, 6),
     },
     capacity: {
       existingObligationsKobo: i.existingObligationsKobo,
@@ -179,6 +212,7 @@ export function calculatePricing(i: PricingInput, s: PricingSettings): PricingRe
       result: within ? "WITHIN_THRESHOLD" : "EXCEEDS_THRESHOLD",
       excessKobo: within ? 0 : Number(roundHalfUp(excessNum, M6 * T * Mden)),
       maxAffordablePrincipalKobo: Number(maxPrincipal),
+      maxPrincipalWithinLimitKobo: Number(maxPrincipal > limit ? limit : maxPrincipal),
     },
     settings: {
       id: s.id,
@@ -187,6 +221,9 @@ export function calculatePricing(i: PricingInput, s: PricingSettings): PricingRe
       shortRatePercent: e4ToPercent(s.shortRateE4),
       longRatePercent: e4ToPercent(s.longRateE4),
       thresholdPercent: e4ToPercent(s.thresholdE4),
+      longBandFromMonths: s.longBandFromMonths,
+      shortBandLabel: bandLabels(s).short,
+      longBandLabel: bandLabels(s).long,
       effectiveFrom: s.effectiveFrom.toISOString(),
     },
   };
@@ -209,6 +246,7 @@ interface SettingsRow {
   short_rate_e4: number;
   long_rate_e4: number;
   threshold_e4: number;
+  long_band_from_months: number;
   effective_from: Date;
 }
 const toSettings = (r: SettingsRow): PricingSettings => ({
@@ -218,6 +256,7 @@ const toSettings = (r: SettingsRow): PricingSettings => ({
   shortRateE4: r.short_rate_e4,
   longRateE4: r.long_rate_e4,
   thresholdE4: r.threshold_e4,
+  longBandFromMonths: r.long_band_from_months,
   effectiveFrom: new Date(r.effective_from),
 });
 
@@ -251,8 +290,8 @@ export async function updatePricingSettings(ctx: Ctx, p: { maxTenorMonths: numbe
       if (!Number.isInteger(p.maxTenorMonths) || p.maxTenorMonths < 1 || p.maxTenorMonths > ABSOLUTE_MAX_TENOR) errors.maxTenorMonths = `Maximum tenor must be a whole number from 1 to ${ABSOLUTE_MAX_TENOR} months.`;
       const s = parsePercentE4(p.shortRatePercent);
       const l = parsePercentE4(p.longRatePercent);
-      if (s === null || s <= 0 || s > 1_000_000) errors.shortRatePercent = "Enter the 1–2 month flat rate as a percentage greater than 0.";
-      if (l === null || l <= 0 || l > 1_000_000) errors.longRatePercent = "Enter the 3-month-and-above flat rate as a percentage greater than 0.";
+      if (s === null || s <= 0 || s > 1_000_000) errors.shortRatePercent = "Enter the short-band flat rate as a percentage greater than 0.";
+      if (l === null || l <= 0 || l > 1_000_000) errors.longRatePercent = "Enter the long-band flat rate as a percentage greater than 0.";
       if (!p.reason || p.reason.trim().length < 5) errors.reason = "Give a reason for the change.";
       const effective = p.effectiveFrom ?? ctx.now;
       if (effective.getTime() < ctx.now.getTime() - 60_000) errors.effectiveFrom = "Changes apply prospectively: the effective time cannot be in the past.";
@@ -261,9 +300,9 @@ export async function updatePricingSettings(ctx: Ctx, p: { maxTenorMonths: numbe
       const prev = await pricingSettingsAt(tx, effective);
       const latest = (await tx.query<{ max: number }>("SELECT max(version) AS max FROM pricing_settings")).rows[0].max;
       const r = await tx.query<SettingsRow>(
-        `INSERT INTO pricing_settings (version, max_tenor_months, short_rate_e4, long_rate_e4, effective_from, reason, created_by, created_at, previous_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-        [latest + 1, p.maxTenorMonths, s, l, effective, p.reason.trim(), actor.staffId, ctx.now, prev.id],
+        `INSERT INTO pricing_settings (version, max_tenor_months, short_rate_e4, long_rate_e4, long_band_from_months, effective_from, reason, created_by, created_at, previous_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [latest + 1, p.maxTenorMonths, s, l, prev.longBandFromMonths, effective, p.reason.trim(), actor.staffId, ctx.now, prev.id],
       );
       await audit(tx, ctx, {
         action: "PRICING_SETTINGS_CHANGED",

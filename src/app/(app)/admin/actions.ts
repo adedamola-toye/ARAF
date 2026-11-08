@@ -20,6 +20,7 @@ import {
 import { retryOutbox } from "@/server/jobs/outbox";
 import { auditOutsideTx } from "@/server/audit";
 import { updatePricingSettings } from "@/server/domain/pricing";
+import { updateSecondSignatory } from "@/server/domain/signatory";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 type Op = (fd: FormData, ctx: Awaited<ReturnType<typeof requireUser>>["ctx"]) => Promise<string | void>;
@@ -107,3 +108,7 @@ export async function pricingSettingsAction(_p: ActionState, fd: FormData): Prom
     return toActionError(e);
   }
 }
+export const signatoryAction = async (_p: ActionState, fd: FormData) =>
+  run(fd, async (f, ctx) => {
+    await updateSecondSignatory(ctx, { name: s(f, "name"), title: s(f, "title"), reason: s(f, "reason") });
+  }, "Signatory saved. It applies to offer letters generated from now on; letters already generated are unchanged.");

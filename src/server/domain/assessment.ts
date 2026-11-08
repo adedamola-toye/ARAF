@@ -5,7 +5,8 @@ import { audit } from "../audit";
 import { invalid, forbidden, notFound } from "../errors";
 import { activeCalculator, calculatorKey } from "./apr/registry";
 import { formatKobo, parseNairaToKobo, parsePercentE4 } from "../money";
-import { pricingSettingsAt, type PricingResult } from "./pricing";
+import { pricingSettingsAt, SINGLE_OBLIGATION_LIMIT_KOBO, type PricingResult } from "./pricing";
+import { routeForAmount } from "./routing";
 import type { CalculatorResult } from "./apr/types";
 
 /** Audit summary of a WakeelBoost pricing assessment: both turnover figures, the basis used and the result. */
@@ -116,9 +117,16 @@ export async function recordAssessment(ctx: Ctx, appId: string, inputs: Record<s
     const calc = activeCalculator();
     const pricing = calc.usesPricingSettings ? await pricingSettingsAt(tx, ctx.now) : undefined;
     if (calc.usesPricingSettings) {
+      // Principal is capped at the ₦50m single obligation limit (calculator). It may differ from the requested
+      // amount, but only within the same credit route: a different route needs the initiator to amend the request.
       const principal = Number(inputs.principalKobo);
-      if (Number.isSafeInteger(principal) && principal > Number(app.requested_amount_kobo)) {
-        throw invalid("Check the assessment inputs.", { principalKobo: `Principal cannot exceed the requested amount (${formatKobo(Number(app.requested_amount_kobo))}); the credit route was set on that amount.` });
+      if (Number.isSafeInteger(principal) && principal > 0 && principal <= SINGLE_OBLIGATION_LIMIT_KOBO && app.route) {
+        const r = routeForAmount(principal).route;
+        if (r !== app.route) {
+          throw invalid("Check the assessment inputs.", {
+            principalKobo: `A principal of ${formatKobo(principal)} falls in credit Route ${r}, but this request is on Route ${app.route} (requested ${formatKobo(Number(app.requested_amount_kobo))}). Return the request to the initiator to amend the amount so it is re-routed.`,
+          });
+        }
       }
     }
     const result = calc.calculate(inputs, { pricing });

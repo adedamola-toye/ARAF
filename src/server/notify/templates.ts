@@ -18,6 +18,9 @@ export interface AssessmentSummary {
     flatMarkupRatePercent: string;
     tenorMonths: number;
     explanation: string;
+    repaymentFrequency?: string;
+    instalmentKobo?: number;
+    dsrException?: string | null;
   };
 }
 
@@ -41,8 +44,9 @@ export function assignmentEmail(p: {
     : a.pricing
       ? [
           `Assessed monthly turnover: ${formatKobo(a.pricing.turnoverUsedKobo)} (${a.pricing.turnoverBasis === "VERIFIED_MONTHLY" ? "verified monthly figure" : "annual turnover ÷ 12"})`,
-          `Proposed monthly repayment: ${formatKobo(a.pricing.monthlyRepaymentKobo)} (flat markup ${a.pricing.flatMarkupRatePercent}% over ${a.pricing.tenorMonths} months)`,
+          `Proposed monthly repayment: ${formatKobo(a.pricing.monthlyRepaymentKobo)}${a.pricing.repaymentFrequency === "WEEKLY" ? ` (monthly equivalent of weekly instalments of ${formatKobo(a.pricing.instalmentKobo ?? 0)})` : ""} (flat markup ${a.pricing.flatMarkupRatePercent}% over ${a.pricing.tenorMonths} months)`,
           `DSR: ${a.pricing.totalDsrPercent}% against the ${a.pricing.thresholdPercent}% threshold - ${a.pricing.result === "EXCEEDS_THRESHOLD" ? `EXCEEDS THRESHOLD by ${formatKobo(a.pricing.excessKobo)} per month (flagged for review)` : "within threshold"}`,
+          ...(a.pricing.dsrException ? [`DSR exception approved at first credit review: ${a.pricing.dsrException}`] : []),
           `APR (disclosure): ${a.aprPercent}%`,
           a.pricing.explanation,
         ]

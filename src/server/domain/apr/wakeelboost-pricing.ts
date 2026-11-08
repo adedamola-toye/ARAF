@@ -23,6 +23,7 @@ export const wakeelboostPricingCalculator: AprCalculator = {
     { key: "principalKobo", label: "Requested facility principal", kind: "money", defaultFrom: "requestedAmount" },
     { key: "tenorMonths", label: "Facility tenor (months)", kind: "integer", defaultFrom: "tenorMonths" },
     { key: "existingObligationsKobo", label: "Verified existing monthly repayment obligations (enter 0 if none)", kind: "money" },
+    { key: "repaymentFrequency", label: "Repayment frequency", kind: "select", defaultValue: "MONTHLY", options: [{ value: "MONTHLY", label: "Monthly" }, { value: "WEEKLY", label: "Weekly (4 instalments a month)" }] },
     { key: "facilityType", label: "Facility type (APR disclosure)", kind: "select", defaultValue: "MURABAHA", options: [{ value: "MURABAHA", label: "Murabaha" }, { value: "IJARAH", label: "Ijarah" }] },
     { key: "takafulPercent", label: "Takaful contribution % (APR disclosure)", kind: "percent", defaultValue: "0" },
     { key: "stampDutyPercent", label: "Stamp duty % (APR disclosure)", kind: "percent", defaultValue: "0.125" },
@@ -41,6 +42,7 @@ export const wakeelboostPricingCalculator: AprCalculator = {
         principalKobo: num("principalKobo"),
         tenorMonths: tenor,
         existingObligationsKobo: num("existingObligationsKobo"),
+        repaymentFrequency: (String(inputs.repaymentFrequency ?? "MONTHLY") as "MONTHLY" | "WEEKLY"),
       },
       context.pricing,
     );
@@ -49,10 +51,15 @@ export const wakeelboostPricingCalculator: AprCalculator = {
     const tak = parsePercentE4(String(inputs.takafulPercent ?? "0"));
     const stamp = parsePercentE4(String(inputs.stampDutyPercent ?? "0"));
     if (tak === null || stamp === null) throw invalid("Enter Takaful and stamp duty as percentages.");
-    // APR (workbook formula, monthly): c/L = flat markup + takaful% + stamp%  →  APR = 24 (c/L) / (T + 1)
+    // APR (workbook formula APR = 2nc / L(N+1)): c/L = flat markup + takaful% + stamp%.
+    //   Monthly: n = 12, N = T        → APR = 24 (c/L) / (T + 1)
+    //   Weekly:  n = 48, N = 4T (4 instalments a month) → APR = 96 (c/L) / (4T + 1)
     const rateE4 = BigInt(Math.round(Number(r.facility.flatMarkupRatePercent) * 10_000));
     const sum = rateE4 + BigInt(tak) + BigInt(stamp);
-    const aprE4 = (2n * 24n * sum + BigInt(tenor + 1)) / (2n * BigInt(tenor + 1));
+    const weekly = r.facility.repaymentFrequency === "WEEKLY";
+    const n = weekly ? 48n : 12n;
+    const N = BigInt(r.facility.numberOfInstalments);
+    const aprE4 = (2n * 2n * n * sum + (N + 1n)) / (2n * (N + 1n));
     const pct4 = (v: bigint) => `${v / 10000n}.${(v % 10000n).toString().padStart(4, "0")}`;
     const P = BigInt(r.facility.principalKobo);
     const takafulKobo = Number((2n * P * BigInt(tak) + 1_000_000n) / 2_000_000n);
@@ -67,12 +74,12 @@ export const wakeelboostPricingCalculator: AprCalculator = {
       outputs: {
         pricing: r,
         explanation: dsrExplanation({ ...r.capacity }),
-        apr: { aprPercent: pct4(aprE4), formula: "APR = 2nc / L(N+1), monthly payments", facilityType: ft, takafulKobo, stampDutyKobo: stampKobo, costOfFacilityKobo: r.facility.markupKobo + takafulKobo + stampKobo },
+        apr: { aprPercent: pct4(aprE4), formula: weekly ? "APR = 2nc / L(N+1), weekly payments (n = 48, N = 4 × tenor)" : "APR = 2nc / L(N+1), monthly payments (n = 12, N = tenor)", facilityType: ft, takafulKobo, stampDutyKobo: stampKobo, costOfFacilityKobo: r.facility.markupKobo + takafulKobo + stampKobo },
         // Normalised fields used by offer letters and notifications
         amountApprovedKobo: r.facility.principalKobo,
         flatMarkupRatePercent: r.facility.flatMarkupRatePercent,
-        periodicInstalmentKobo: r.facility.monthlyRepaymentKobo,
-        frequency: "Monthly",
+        periodicInstalmentKobo: r.facility.instalmentKobo,
+        frequency: weekly ? "Weekly" : "Monthly",
       },
     };
   },

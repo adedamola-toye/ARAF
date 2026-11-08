@@ -35,7 +35,7 @@ import {
 } from "./application-data";
 import { type AppRow, chooseAssignee, openTask, type Chosen } from "./assignment";
 import { holdsRole } from "./access";
-import { latestAssessment } from "./assessment";
+import { approvedAssessment, latestAssessment } from "./assessment";
 import { activeCalculator, calculatorUsableForApproval, findCalculator } from "./apr/registry";
 import { currentCleanDocuments, PACK } from "./documents";
 import { isInitiatorRole, type InitiatorRole } from "./roles";
@@ -456,6 +456,8 @@ export interface TaskActionInput {
   expectedLockVersion?: number | null;
   invoiceLogged?: boolean;
   invoiceDialogConfirmed?: boolean;
+  /** Required when the assessment's Total DSR exceeds the threshold (first credit review approval). */
+  dsrExceptionJustification?: string | null;
   crmsLogged?: boolean;
   booking?: BookingInput;
 }
@@ -546,10 +548,38 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
           throw gate(`WakeelBoost pricing settings changed since this assessment (v${used?.version ?? "?"} → v${current.version}). Recalculate the assessment under the current settings before approval.`);
         }
       }
+      // DSR must be within the 10% threshold, unless the reviewer records a justification backed by evidence
+      // (e.g. a second bank statement uploaded as "DSR exception evidence").
+      let dsrException: string | null = null;
+      if ((assessment as { threshold_result?: string | null }).threshold_result === "EXCEEDS_THRESHOLD") {
+        const justification = (input.dsrExceptionJustification ?? "").trim();
+        if (justification.length < 10) {
+          throw gate("Total DSR exceeds the 10% turnover threshold. Approval needs a written justification (at least 10 characters) supported by evidence, or recalculate within the threshold.");
+        }
+        const evidence = docs.filter((d) => d.category === "DSR_EXCEPTION_EVIDENCE");
+        if (!evidence.length) throw gate('Total DSR exceeds the 10% threshold. Upload the supporting evidence (for example a second bank statement) as "DSR exception evidence" before approving.');
+        dsrException = justification;
+      }
       if (!input.invoiceLogged) throw gate('Confirm "Logged invoice on invoice portal" before approval.');
       if (!input.invoiceDialogConfirmed) throw gate('Confirm the "Do not forget to log invoice" reminder before approval.');
-      await recordDecision(tx, ctx, app, task, a, reason, assessment.id);
-      await completeTask(tx, ctx, task, a, { invoiceLogged: true, invoiceDialogConfirmed: true, attestedAt: ctx.now.toISOString(), assessmentId: assessment.id });
+      await recordDecision(tx, ctx, app, task, a, dsrException ? `DSR exception: ${dsrException}` : reason, assessment.id);
+      await completeTask(tx, ctx, task, a, {
+        invoiceLogged: true,
+        invoiceDialogConfirmed: true,
+        attestedAt: ctx.now.toISOString(),
+        assessmentId: assessment.id,
+        ...(dsrException ? { dsrException: { justification: dsrException, evidenceDocumentIds: docs.filter((d) => d.category === "DSR_EXCEPTION_EVIDENCE").map((d) => d.id) } } : {}),
+      });
+      if (dsrException) {
+        await audit(tx, ctx, {
+          action: "DSR_EXCEPTION_APPROVED",
+          actorRole: task.assignee_role,
+          applicationId: app.id,
+          stage: task.stage,
+          reason: dsrException,
+          details: { assessmentId: assessment.id, totalDsr: assessment.dsr_percent, evidence: docs.filter((d) => d.category === "DSR_EXCEPTION_EVIDENCE").map((d) => ({ id: d.id, version: d.version_no })) },
+        });
+      }
       const chosen = await chooseAssignee(tx, app, "SECOND_CREDIT_REVIEW", { preferred: app.second_reviewer_id, random: true });
       app.second_reviewer_id = chosen.staffId;
       await moveTo(tx, ctx, app, "SECOND_CREDIT_REVIEW", chosen);
@@ -845,7 +875,9 @@ export function validateBooking(b: BookingInput | undefined, approvedKobo: numbe
 async function book(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, booking: BookingInput | undefined): Promise<string> {
   const existing = await tx.query("SELECT 1 FROM disbursements WHERE application_id = $1", [app.id]);
   if (existing.rowCount) throw conflict("This request has already been disbursed.");
-  const approved = Number(app.requested_amount_kobo);
+  // Approved amount = principal of the assessment the credit approvals were based on.
+  const approvedSnap = await approvedAssessment(tx, app.id);
+  const approved = Number((approvedSnap?.outputs as { amountApprovedKobo?: number } | undefined)?.amountApprovedKobo ?? app.requested_amount_kobo);
   const b = validateBooking(booking, approved);
   const dup = await tx.query("SELECT 1 FROM disbursements WHERE transaction_ref = $1", [b.transactionRef]);
   if (dup.rowCount) throw conflict("This transaction reference is already recorded against another booking.");

@@ -12,6 +12,7 @@ import { storeGeneratedDocument } from "./documents";
 import { objectStore } from "../storage";
 import { nairaInWords } from "../words";
 import { docxToPdf, renderDocx } from "./offer-docx";
+import { currentSecondSignatory } from "./signatory";
 import { holdsRole } from "./access";
 import { assetCostKobo, type ApplicantType, type DraftData } from "./application-data";
 
@@ -151,7 +152,7 @@ export interface OfferData {
   tin: string | null;
   directors: { fullName: string; bvn: string }[];
   assessment: { inputs: Record<string, unknown>; outputs: Record<string, unknown>; apr_percent: string; markup_kobo: string | number; cost_plus_markup_kobo: string | number };
-  people: { initiatorName: string; initiatorTitle: string; endorserName: string; endorserTitle: string };
+  people: { initiatorName: string; initiatorTitle: string; endorserName: string; endorserTitle: string; secondSignatoryName?: string; secondSignatoryTitle?: string };
   now: Date;
 }
 
@@ -199,8 +200,8 @@ export function offerDocxValues(o: OfferData): { values: Record<string, string>;
     // Corporate letter: RM + business endorser. Individual/Enterprise letters: endorser + Head, Payment & Collection.
     signatory_1_name: limited ? o.people.initiatorName : o.people.endorserName,
     signatory_1_title: limited ? o.people.initiatorTitle : o.people.endorserTitle,
-    signatory_2_name: limited ? o.people.endorserName : "",
-    signatory_2_title: limited ? o.people.endorserTitle : "Head, Payment & Collection",
+    signatory_2_name: limited ? o.people.endorserName : (o.people.secondSignatoryName ?? ""),
+    signatory_2_title: limited ? o.people.endorserTitle : (o.people.secondSignatoryTitle || "Head, Payment & Collection"),
   };
   return { values, loops: { directors_rest: rest.map((d, i) => ({ director_index: String(i + 2), director_name: d.fullName, director_bvn: d.bvn })) } };
 }
@@ -232,6 +233,7 @@ export async function generateOffer(ctx: Ctx, appId: string) {
     let pdf: { id: string; version: number } | null = null;
     if (tpl.format === "DOCX") {
       const ppl = (await tx.query("SELECT id, full_name FROM staff WHERE id = ANY($1::uuid[])", [[app.initiator_id, app.endorser_id].filter(Boolean)])).rows;
+      const sig = await currentSecondSignatory(tx);
       const nameOf = (id: string | null) => ppl.find((p: { id: string }) => p.id === id)?.full_name ?? "";
       const endorserRole = app.initiator_role === "RM" ? "Regional Business Executive" : app.initiator_role === "MERCHANT_OFFICER" ? "Merchant Officer Lead" : "ANM Lead";
       const initiatorTitle = app.initiator_role === "RM" ? "Relationship Manager" : app.initiator_role === "ANM" ? "Agent Network Manager" : "Merchant Officer";
@@ -242,7 +244,7 @@ export async function generateOffer(ctx: Ctx, appId: string) {
         tin,
         directors: dirs,
         assessment: assessment as unknown as OfferData["assessment"],
-        people: { initiatorName: nameOf(app.initiator_id), initiatorTitle, endorserName: nameOf(app.endorser_id), endorserTitle: endorserRole },
+        people: { initiatorName: nameOf(app.initiator_id), initiatorTitle, endorserName: nameOf(app.endorser_id), endorserTitle: endorserRole, secondSignatoryName: sig.name, secondSignatoryTitle: sig.title },
         now: ctx.now,
       });
       const template = await objectStore().get(tpl.storage_key);

@@ -31,14 +31,15 @@ export function PricingAssessment({ outputs, monthlyEquivalent = false, compact 
   const p = pricingOf(outputs);
   if (!p) return null;
   const { turnover: t, facility: f, capacity: c, settings: s } = p.pricing;
-  const repaymentLabel = `Proposed monthly repayment${monthlyEquivalent ? " (monthly equivalent)" : ""}`;
+  const weekly = f.repaymentFrequency === "WEEKLY";
+  const repaymentLabel = `Proposed monthly repayment${monthlyEquivalent || weekly ? " (monthly equivalent)" : ""}`;
   if (compact)
     return (
       <div className="stack" style={{ gap: 8 }}>
         <table className="kv">
           <tbody>
             <tr><th>Turnover used</th><td className="tnum">{formatKobo(t.monthlyTurnoverUsedKobo)} / month <span className="muted small">({t.basis === "VERIFIED_MONTHLY" ? "verified monthly" : "annual ÷ 12"})</span></td></tr>
-            <tr><th>{repaymentLabel}</th><td className="tnum">{formatKobo(f.monthlyRepaymentKobo)}</td></tr>
+            <tr><th>{repaymentLabel}</th><td className="tnum">{formatKobo(f.monthlyRepaymentKobo)}{weekly && <div className="small muted">weekly {formatKobo(f.instalmentKobo)} × {f.numberOfInstalments}</div>}</td></tr>
             <tr><th>Total DSR</th><td className="tnum"><strong>{c.totalDsrPercent}%</strong> <span className="muted small">threshold {c.thresholdPercent}%</span></td></tr>
             <tr><th>Flat markup</th><td className="tnum">{f.flatMarkupRatePercent}% · {formatKobo(f.markupKobo)}</td></tr>
           </tbody>
@@ -73,6 +74,7 @@ export function PricingAssessment({ outputs, monthlyEquivalent = false, compact 
             <tr><th>Flat markup ({f.bandLabel} band, applied once for the tenor)</th><td className="tnum">{f.flatMarkupRatePercent}% · {formatKobo(f.markupKobo)}</td></tr>
             <tr><th>Total repayment (principal + markup)</th><td className="tnum">{formatKobo(f.totalRepaymentKobo)}</td></tr>
             <tr><th>{repaymentLabel}</th><td className="tnum"><strong>{formatKobo(f.monthlyRepaymentKobo)}</strong></td></tr>
+            {weekly && <tr><th>Weekly instalment</th><td className="tnum">{formatKobo(f.instalmentKobo)} × {f.numberOfInstalments} weeks (4 per month)</td></tr>}
           </tbody>
         </table>
       </section>
@@ -87,7 +89,13 @@ export function PricingAssessment({ outputs, monthlyEquivalent = false, compact 
             <tr><th>Result</th><td><ThresholdChip result={c.result} excessKobo={c.excessKobo} /></td></tr>
             <tr>
               <th>Indicative maximum affordable principal</th>
-              <td className="tnum">{formatKobo(c.maxAffordablePrincipalKobo)}<div className="small muted">At {f.flatMarkupRatePercent}% over {f.tenorMonths} months, rounded down to the kobo. Product and approval limits apply separately.</div></td>
+              <td className="tnum">
+                {formatKobo(c.maxAffordablePrincipalKobo)}
+                <div className="small muted">At {f.flatMarkupRatePercent}% over {f.tenorMonths} months, rounded down to the kobo.</div>
+                {c.maxPrincipalWithinLimitKobo !== undefined && c.maxPrincipalWithinLimitKobo < c.maxAffordablePrincipalKobo && (
+                  <div className="small">Within the ₦50,000,000 single obligation limit: <strong>{formatKobo(c.maxPrincipalWithinLimitKobo)}</strong></div>
+                )}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -95,7 +103,7 @@ export function PricingAssessment({ outputs, monthlyEquivalent = false, compact 
           {c.result === "EXCEEDS_THRESHOLD" && <AlertTriangle className="icon" aria-hidden="true" />}
           {p.explanation}
         </p>
-        {c.result === "EXCEEDS_THRESHOLD" && <p className="small muted" style={{ margin: "6px 0 0" }}>Flagged for review. Approval and exceptions follow the existing credit approval rules.</p>}
+        {c.result === "EXCEEDS_THRESHOLD" && <p className="small muted" style={{ margin: "6px 0 0" }}>Outside the threshold: approval needs a written justification backed by evidence (for example a second bank statement), or a recalculation within the threshold.</p>}
       </section>
       {p.apr && (
         <section aria-labelledby="apr-h">
@@ -110,7 +118,7 @@ export function PricingAssessment({ outputs, monthlyEquivalent = false, compact 
         </section>
       )}
       <p className="small muted" style={{ margin: 0 }}>
-        Pricing settings v{s.version}: 1–2 months {s.shortRatePercent}%, 3–{s.maxTenorMonths} months {s.longRatePercent}%, maximum tenor {s.maxTenorMonths} months, threshold {s.thresholdPercent}% · effective {formatLagos(s.effectiveFrom)}
+        Pricing settings v{s.version}: {s.shortBandLabel ?? "1–2 months"} {s.shortRatePercent}%, {s.longBandLabel ?? `3–${s.maxTenorMonths} months`} {s.longRatePercent}%, maximum tenor {s.maxTenorMonths} months, threshold {s.thresholdPercent}% · effective {formatLagos(s.effectiveFrom)}
       </p>
     </div>
   );

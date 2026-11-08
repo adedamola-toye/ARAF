@@ -24,6 +24,7 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "CONSENT_FORM", label: "Consent form", multiple: false },
   { code: "RENT_RECEIPT", label: "Recent rent receipt", multiple: false },
   { code: "CREDIT_REPORT", label: "Credit report", multiple: true },
+  { code: "DSR_EXCEPTION_EVIDENCE", label: "DSR exception evidence (e.g. second bank statement)", multiple: true },
   { code: "GENERATED_OFFER", label: "Generated offer letter (editable Word)", multiple: false },
   { code: "GENERATED_OFFER_PDF", label: "Generated offer letter (PDF copy)", multiple: false },
   { code: "SIGNED_OFFER", label: "Signed offer letter", multiple: false },
@@ -43,8 +44,8 @@ export const PACK = ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INS
 export const UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   DRAFT: INITIAL,
   INITIATOR_CORRECTION: INITIAL,
-  FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "SUPPORTING"],
-  CREDIT_CORRECTION: ["CREDIT_REPORT", "SUPPORTING"],
+  FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
+  CREDIT_CORRECTION: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
   OFFER_PREPARATION: [...PACK, "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
   DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "SUPPORTING"],

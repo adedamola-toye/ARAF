@@ -6,7 +6,8 @@ import { APPLICANT_TYPE_LABELS, type ApplicantType } from "@/server/domain/appli
 import { formatLagos } from "@/server/time";
 import { config } from "@/server/config";
 import { PageHeader } from "@/components/PageHeader";
-import { ActivateTemplateButton, ApproveTemplateButton, UploadTemplateForm } from "../AdminForms";
+import { ActivateTemplateButton, ApproveTemplateButton, SignatoryForm, UploadTemplateForm } from "../AdminForms";
+import { currentSecondSignatory, signatoryHistory } from "@/server/domain/signatory";
 
 export const metadata = { title: "Offer templates" };
 
@@ -20,6 +21,8 @@ export default async function Templates() {
     )
   ).rows;
   const types: ApplicantType[] = ["INDIVIDUAL", "ENTERPRISE", "LIMITED"];
+  const sig = await currentSecondSignatory(db);
+  const sigHistory = await signatoryHistory(db);
   return (
     <>
       <PageHeader
@@ -72,6 +75,21 @@ export default async function Templates() {
             ))}
           </tbody>
         </table>
+      </div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <h2>Second signatory (Individual and Enterprise letters)</h2>
+        <p className="small muted">
+          Printed beside the business endorser above a blank signature line; letters are signed by hand. Corporate letters use the initiator and the business endorser.
+          {!sig.name && <strong> No name is set yet: letters print the title only.</strong>}
+        </p>
+        <SignatoryForm current={{ name: sig.name, title: sig.title }} />
+        {sigHistory.length > 0 && (
+          <ul className="small muted" style={{ margin: "12px 0 0", paddingLeft: 18 }}>
+            {sigHistory.map((h) => (
+              <li key={h.id}>v{h.version}: {h.name || "(no name)"}, {h.title} · {h.created_by_name ?? "system"} {formatLagos(h.created_at)} · {h.reason}</li>
+            ))}
+          </ul>
+        )}
       </div>
       <div className="card">
         <h2>Upload a new template version</h2>
