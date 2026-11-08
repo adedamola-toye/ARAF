@@ -303,11 +303,22 @@ describe("approved principal and booking", () => {
 });
 
 describe("second signatory", () => {
+  it("defaults to the bank-confirmed signatory, Omoseni Ademowo, on Individual letters", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
+    await driveToOffer(id);
+    await preparePack(id);
+    const offer = (await listDocuments(db, id)).find((d) => d.category === "GENERATED_OFFER")!;
+    const { data } = await readDocumentForActor(await ctxFor("rm.ade@altbank.ng"), offer.id, "download");
+    const text = (await (await JSZip.loadAsync(data)).file("word/document.xml")!.async("string")).replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+    expect(text).toContain("Omoseni Ademowo");
+    expect(text).toContain("Head, Payment & Collection");
+  });
+
   it("is configurable by the Super Admin only, audited, and printed on Individual/Enterprise letters", async () => {
     await expect(updateSecondSignatory(await ctxFor("co1@altbank.ng"), { name: "X Y", title: "Head", reason: "change" })).rejects.toThrow(/Only the Super Admin/);
     await updateSecondSignatory(await ctxFor("superadmin@altbank.ng"), { name: "Ada Signatory", title: "Head, Payment & Collection", reason: "Signatory confirmed by Operations" });
     const ev = (await audits("OFFER_SIGNATORY_CHANGED")).filter((e) => e.outcome === "SUCCESS").at(-1);
-    expect(ev.details).toMatchObject({ old: { version: 1, name: "" }, new: { version: 2, name: "Ada Signatory" } });
+    expect(ev.details).toMatchObject({ old: { version: 2, name: "Omoseni Ademowo" }, new: { version: 3, name: "Ada Signatory" } });
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
     await driveToOffer(id);
     await preparePack(id);
