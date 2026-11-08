@@ -141,10 +141,15 @@ export async function prepareFirstReview(appId: string, now = new Date()) {
   const v = (await db.query("SELECT data FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0].data;
   const assetCost = v.items.reduce((s: number, i: { quantity: number; unitCostKobo: number }) => s + i.quantity * i.unitCostKobo, 0);
   return recordAssessment(ctx, appId, {
-    assetCostKobo: assetCost,
-    equityContributionKobo: 0,
-    markupRatePercent: "12.5",
+    facilityType: "MURABAHA",
+    amountApprovedKobo: Number(app.requested_amount_kobo),
+    markupRatePercent: "36",
+    rateType: "FIXED",
+    frequency: "Monthly",
     tenorMonths: v.tenorMonths,
+    takafulPercent: "0",
+    stampDutyPercent: "0.125",
+    adminFeePercent: "0",
     averageMonthlyInflowKobo: Math.max(assetCost, 100_000),
     existingMonthlyObligationsKobo: 0,
   });

@@ -179,13 +179,40 @@ describe("APR / DSR calculator", () => {
       it(`${fx.calculator} fixture: ${c.name}`, () => {
         const calc = listCalculators().find((x) => `${x.id}@${x.version}` === fx.calculator)!;
         const r = calc.calculate(c.inputs);
-        expect(r.aprPercent).toBe(c.expected.aprPercent);
-        expect(r.dsrPercent).toBe(c.expected.dsrPercent);
-        expect(r.markupKobo).toBe(c.expected.markupKobo);
-        expect(r.costPlusMarkupKobo).toBe(c.expected.costPlusMarkupKobo);
+        if (fx.format === "workbook") {
+          // Bank workbook values (naira doubles): APR to 4 dp of a percent, money to the kobo.
+          const w = c.workbook;
+          expect(Math.abs(Number(r.aprPercent) - w.apr * 100)).toBeLessThanOrEqual(0.00005 + 1e-9);
+          expect(r.aprPercent).toBe((Math.round(w.apr * 1e6) / 1e4).toFixed(4));
+          const kobo = (n: number) => Math.round(n * 100);
+          expect(Math.abs(r.markupKobo - kobo(w.totalMarkup))).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(r.outputs.costOfFacilityKobo) - kobo(w.costOfFacility))).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(r.outputs.takafulKobo) - kobo(w.takaful))).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(r.outputs.stampDutyKobo) - kobo(w.stampDuty))).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(r.outputs.periodicInstalmentKobo) - kobo(w.periodicInstallment))).toBeLessThanOrEqual(1);
+          expect(Math.abs(r.costPlusMarkupKobo - kobo(w.totalPayment))).toBeLessThanOrEqual(1);
+          expect(r.outputs.totalNumberOfPayments).toBe(w.totalPayments);
+        } else {
+          expect(r.aprPercent).toBe(c.expected.aprPercent);
+          expect(r.dsrPercent).toBe(c.expected.dsrPercent);
+          expect(r.markupKobo).toBe(c.expected.markupKobo);
+          expect(r.costPlusMarkupKobo).toBe(c.expected.costPlusMarkupKobo);
+        }
       });
     }
   }
+  it("bank calculator: DSR, refusals and documented workbook limits", () => {
+    const calc = listCalculators().find((x) => x.id === "altbank-apr-2024")!;
+    const base = { facilityType: "MURABAHA", amountApprovedKobo: 300_000_000, markupRatePercent: "36", rateType: "FIXED", frequency: "Monthly", tenorMonths: 6, takafulPercent: "0", stampDutyPercent: "0.125", adminFeePercent: "0", averageMonthlyInflowKobo: 200_000_000, existingMonthlyObligationsKobo: 10_000_000 };
+    const r = calc.calculate(base);
+    // instalment = 3m × (1 + 0.36 × 6/12) / 6 = 590,000 naira; DSR = (100,000 + 590,000) / 2,000,000
+    expect(r.outputs.periodicInstalmentKobo).toBe(59_000_000);
+    expect(r.dsrPercent).toBe("34.5000");
+    expect(() => calc.calculate({ ...base, tenorMonths: 72 })).toThrow(/60 months/);
+    expect(() => calc.calculate({ ...base, frequency: "Quarterly", tenorMonths: 7 })).toThrow(/cannot be paid/);
+    expect(() => calc.calculate({ ...base, facilityType: "OVERDRAFT" })).toThrow(/Murabaha or Ijarah/);
+    expect(calc.productionValidated).toBe(false); // DSR definition awaiting bank confirmation
+  });
   it("the development calculator is not production validated", () => {
     expect(devIllustrativeCalculator.productionValidated).toBe(false);
   });

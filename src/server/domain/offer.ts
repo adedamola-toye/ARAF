@@ -10,7 +10,7 @@ import { formatDateOnly, lagosDate } from "../time";
 import { latestAssessment } from "./assessment";
 import { storeGeneratedDocument } from "./documents";
 import { holdsRole } from "./access";
-import type { ApplicantType, DraftData } from "./application-data";
+import { assetCostKobo, type ApplicantType, type DraftData } from "./application-data";
 
 /**
  * Offer template placeholders. Templates are bank-owned HTML with these tokens:
@@ -144,7 +144,7 @@ export async function generateOffer(ctx: Ctx, appId: string) {
       markupKobo: Number(assessment.markup_kobo),
       markupRate: String((assessment.inputs as Record<string, unknown>).markupRatePercent ?? ""),
       costPlusMarkupKobo: Number(assessment.cost_plus_markup_kobo),
-      assetCostKobo: Number((assessment.inputs as Record<string, unknown>).assetCostKobo ?? 0),
+      assetCostKobo: Number((assessment.inputs as Record<string, unknown>).assetCostKobo ?? assetCostKobo(data.items)),
       ref: app.ref,
       offerDate: formatDateOnly(lagosDate(ctx.now)),
     });

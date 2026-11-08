@@ -47,3 +47,16 @@ export function parsePercentToBp(input: string | number): number | null {
   // basis points = percent * 100 => fourDp / 100
   return Number((fourDp + 50n) / 100n);
 }
+
+/** Parse a percentage with up to 4 decimals ("0.125", "36") into percent × 10^4 (1250, 360000). Exact. */
+export function parsePercentE4(input: string | number): number | null {
+  const s = String(input).trim();
+  if (!/^\d{1,3}(\.\d{1,4})?$/.test(s)) return null;
+  const [i, f = ""] = s.split(".");
+  return Number(BigInt(i) * 10000n + BigInt(f.padEnd(4, "0")));
+}
+
+/** Round a non-negative rational num/den to the nearest integer, half-up, exactly. */
+export function divRoundHalfUp(num: bigint, den: bigint): bigint {
+  return (2n * num + den) / (2n * den);
+}

@@ -4,7 +4,7 @@ import type { Ctx } from "../context";
 import { audit } from "../audit";
 import { invalid, forbidden, notFound } from "../errors";
 import { activeCalculator, calculatorKey } from "./apr/registry";
-import { parseNairaToKobo, parsePercentToBp } from "../money";
+import { parseNairaToKobo, parsePercentE4 } from "../money";
 
 export interface AssessmentRow {
   id: string;
@@ -42,12 +42,15 @@ export function parseCalculatorForm(raw: Record<string, string>): Record<string,
   const errors: Record<string, string> = {};
   for (const f of calc.fields) {
     const v = (raw[f.key] ?? "").trim();
-    if (f.kind === "money") {
+    if (f.kind === "select") {
+      if (!f.options?.some((o) => o.value === v)) errors[f.key] = `${f.label}: choose an option.`;
+      else out[f.key] = v;
+    } else if (f.kind === "money") {
       const k = v === "" ? 0 : parseNairaToKobo(v);
       if (k === null) errors[f.key] = `${f.label}: enter a naira amount.`;
       else out[f.key] = k;
     } else if (f.kind === "percent") {
-      if (parsePercentToBp(v) === null) errors[f.key] = `${f.label}: enter a percentage.`;
+      if (parsePercentE4(v) === null) errors[f.key] = `${f.label}: enter a percentage (up to 4 decimal places).`;
       else out[f.key] = v;
     } else {
       const n = Number.parseInt(v, 10);

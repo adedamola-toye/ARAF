@@ -1,0 +1,1303 @@
+{
+ "calculator": "altbank-apr-2024@1.0",
+ "format": "workbook",
+ "source": "Recalculated in LibreOffice from the bank workbook 'APR Model - ALTBANK v.1 2024' (Data / Amortization Schedule / APR Output sheets) by setting Data!D5:D17 for each row. Values are the workbook's own outputs in naira.",
+ "cases": [
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 1.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 100,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285713,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 0.18125,
+    "totalMarkup": 0.18,
+    "takaful": 0.0,
+    "stampDuty": 0.00125,
+    "periodicInstallment": 0.19666666666666666,
+    "totalPayment": 1.18,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 1.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 100,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153845,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 0.31124999999999997,
+    "totalMarkup": 0.3,
+    "takaful": 0.01,
+    "stampDuty": 0.00125,
+    "periodicInstallment": 0.10833333333333334,
+    "totalPayment": 1.3,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 1.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 100,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.29160478076848134,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 0.12150199198686723,
+    "totalMarkup": 0.12025199198686723,
+    "takaful": 0.0,
+    "stampDuty": 0.00125,
+    "periodicInstallment": 0.12447244355409638,
+    "totalPayment": 1.1202519919868672,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 1.00",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 100,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 0.33625,
+    "totalMarkup": 0.33,
+    "takaful": 0.005,
+    "stampDuty": 0.00125,
+    "periodicInstallment": 0.3325,
+    "totalPayment": 1.33,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 250,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 25000000,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153844,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 77812.49999999999,
+    "totalMarkup": 74999.99999999999,
+    "takaful": 2500.0,
+    "stampDuty": 312.5,
+    "periodicInstallment": 27083.333333333332,
+    "totalPayment": 325000.0,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 1,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 100000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285714,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 181250.0,
+    "totalMarkup": 180000.0,
+    "takaful": 0.0,
+    "stampDuty": 1250.0,
+    "periodicInstallment": 196666.66666666666,
+    "totalPayment": 1180000.0,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 1,000,000.00",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 100000000,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 336250.0,
+    "totalMarkup": 330000.0,
+    "takaful": 5000.0,
+    "stampDuty": 1250.0,
+    "periodicInstallment": 332500.0,
+    "totalPayment": 1330000.0,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 4,999,999.99",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 499999999,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2916047807684813,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 607509.9587193162,
+    "totalMarkup": 601259.9587318162,
+    "takaful": 0.0,
+    "stampDuty": 6249.9999875,
+    "periodicInstallment": 622362.2165257576,
+    "totalPayment": 5601259.948731816,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 5,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285714,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 906250.0,
+    "totalMarkup": 900000.0,
+    "takaful": 0.0,
+    "stampDuty": 6250.0,
+    "periodicInstallment": 983333.3333333334,
+    "totalPayment": 5900000.0,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 5,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000000,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153845,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 1556249.9999999998,
+    "totalMarkup": 1499999.9999999998,
+    "takaful": 50000.0,
+    "stampDuty": 6250.0,
+    "periodicInstallment": 541666.6666666666,
+    "totalPayment": 6500000.0,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 5,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000000,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.29160478076848134,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 607509.9599343361,
+    "totalMarkup": 601259.9599343361,
+    "takaful": 0.0,
+    "stampDuty": 6250.0,
+    "periodicInstallment": 622362.217770482,
+    "totalPayment": 5601259.959934336,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 5,000,000.00",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 500000000,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 1681250.0,
+    "totalMarkup": 1650000.0,
+    "takaful": 25000.0,
+    "stampDuty": 6250.0,
+    "periodicInstallment": 1662500.0,
+    "totalPayment": 6650000.0,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 5,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000001,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285713,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 906250.0018124998,
+    "totalMarkup": 900000.0017999999,
+    "takaful": 0.0,
+    "stampDuty": 6250.0000125,
+    "periodicInstallment": 983333.3352999999,
+    "totalPayment": 5900000.0117999995,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 5,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000001,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153846,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 1556250.0031124998,
+    "totalMarkup": 1500000.0029999998,
+    "takaful": 50000.0001,
+    "stampDuty": 6250.0000125,
+    "periodicInstallment": 541666.66775,
+    "totalPayment": 6500000.012999999,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 5,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 500000001,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2916047807684814,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 607509.9611493561,
+    "totalMarkup": 601259.9611368561,
+    "takaful": 0.0,
+    "stampDuty": 6250.0000125,
+    "periodicInstallment": 622362.2190152062,
+    "totalPayment": 5601259.971136856,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 5,000,000.01",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 500000001,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 1681250.0033624999,
+    "totalMarkup": 1650000.0033,
+    "takaful": 25000.00005,
+    "stampDuty": 6250.0000125,
+    "periodicInstallment": 1662500.003325,
+    "totalPayment": 6650000.0133,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 12,345,678.90",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 1234567890,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2916047807684814,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 1500024.578780236,
+    "totalMarkup": 1484592.4801552359,
+    "takaful": 0.0,
+    "stampDuty": 15432.098625,
+    "periodicInstallment": 1536696.8200172489,
+    "totalPayment": 13830271.380155236,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 20,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285714,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 3625000.0,
+    "totalMarkup": 3600000.0,
+    "takaful": 0.0,
+    "stampDuty": 25000.0,
+    "periodicInstallment": 3933333.3333333335,
+    "totalPayment": 23600000.0,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 20,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000000,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153845,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 6224999.999999999,
+    "totalMarkup": 5999999.999999999,
+    "takaful": 200000.0,
+    "stampDuty": 25000.0,
+    "periodicInstallment": 2166666.6666666665,
+    "totalPayment": 26000000.0,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 20,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000000,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.29160478076848134,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 2430039.8397373445,
+    "totalMarkup": 2405039.8397373445,
+    "takaful": 0.0,
+    "stampDuty": 25000.0,
+    "periodicInstallment": 2489448.871081928,
+    "totalPayment": 22405039.839737345,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 20,000,000.00",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 2000000000,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 6725000.0,
+    "totalMarkup": 6600000.0,
+    "takaful": 100000.0,
+    "stampDuty": 25000.0,
+    "periodicInstallment": 6650000.0,
+    "totalPayment": 26600000.0,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 20,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000001,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285713,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 3625000.0018125004,
+    "totalMarkup": 3600000.0018,
+    "takaful": 0.0,
+    "stampDuty": 25000.000012500004,
+    "periodicInstallment": 3933333.3353000004,
+    "totalPayment": 23600000.011800002,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 20,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000001,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153845,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 6225000.0031125,
+    "totalMarkup": 6000000.003,
+    "takaful": 200000.00010000003,
+    "stampDuty": 25000.000012500004,
+    "periodicInstallment": 2166666.6677500005,
+    "totalPayment": 26000000.013,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 20,000,000.01",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 2000000001,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.29160478076848134,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 2430039.8409523647,
+    "totalMarkup": 2405039.8409398645,
+    "takaful": 0.0,
+    "stampDuty": 25000.000012500004,
+    "periodicInstallment": 2489448.872326652,
+    "totalPayment": 22405039.850939866,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 20,000,000.01",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 2000000001,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 6725000.003362501,
+    "totalMarkup": 6600000.003300001,
+    "takaful": 100000.00005000002,
+    "stampDuty": 25000.000012500004,
+    "periodicInstallment": 6650000.003325001,
+    "totalPayment": 26600000.0133,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 35,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 3500000000,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.29160478076848134,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 4252569.719540353,
+    "totalMarkup": 4208819.719540353,
+    "takaful": 0.0,
+    "stampDuty": 43750.0,
+    "periodicInstallment": 4356535.524393373,
+    "totalPayment": 39208819.71954035,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 6m @36% takaful 0% NGN 50,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 5000000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 6,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6214285714285714,
+    "aprText": "Annual Percentage Rate (APR):     62.14%",
+    "costOfFacility": 9062500.0,
+    "totalMarkup": 9000000.0,
+    "takaful": 0.0,
+    "stampDuty": 62500.0,
+    "periodicInstallment": 9833333.333333334,
+    "totalPayment": 59000000.0,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 12m @30% takaful 1% NGN 50,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 5000000000,
+    "markupRatePercent": "30",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "1",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.5746153846153846,
+    "aprText": "Annual Percentage Rate (APR):     57.46%",
+    "costOfFacility": 15562500.0,
+    "totalMarkup": 15000000.0,
+    "takaful": 500000.0,
+    "stampDuty": 62500.0,
+    "periodicInstallment": 5416666.666666667,
+    "totalPayment": 65000000.0,
+    "totalPayments": 12.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 9m @28% takaful 0% NGN 50,000,000.00",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 5000000000,
+    "markupRatePercent": "28",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 9,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2916047807684813,
+    "aprText": "Annual Percentage Rate (APR):     29.16%",
+    "costOfFacility": 6075099.59934336,
+    "totalMarkup": 6012599.59934336,
+    "takaful": 0.0,
+    "stampDuty": 62500.0,
+    "periodicInstallment": 6223622.1777048195,
+    "totalPayment": 56012599.59934336,
+    "totalPayments": 9.0
+   }
+  },
+  {
+   "name": "IJARAH FIXED Quarterly 12m @33% takaful 0.5% NGN 50,000,000.00",
+   "inputs": {
+    "facilityType": "IJARAH",
+    "amountApprovedKobo": 5000000000,
+    "markupRatePercent": "33",
+    "rateType": "FIXED",
+    "frequency": "Quarterly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.5",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.538,
+    "aprText": "Annual Percentage Rate (APR):     53.80%",
+    "costOfFacility": 16812500.0,
+    "totalMarkup": 16500000.0,
+    "takaful": 250000.0,
+    "stampDuty": 62500.0,
+    "periodicInstallment": 16625000.0,
+    "totalPayment": 66500000.0,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Bi-monthly 12m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Bi-monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6192857142857143,
+    "aprText": "Annual Percentage Rate (APR):     61.93%",
+    "costOfFacility": 1083750.0,
+    "totalMarkup": 1080000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 679999.9999999999,
+    "totalPayment": 4080000.0,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Bi-monthly 12m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Bi-monthly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2628367115103842,
+    "aprText": "Annual Percentage Rate (APR):     26.28%",
+    "costOfFacility": 1149910.6895186382,
+    "totalMarkup": 1084285.6851436382,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 1430714.3641906064,
+    "totalPayment": 8584286.185143638,
+    "totalPayments": 6.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Termly 12m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Termly",
+    "tenorMonths": 12,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.541875,
+    "aprText": "Annual Percentage Rate (APR):     54.19%",
+    "costOfFacility": 1083750.0,
+    "totalMarkup": 1080000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 1359999.9999999998,
+    "totalPayment": 4080000.0,
+    "totalPayments": 3.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Termly 12m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Termly",
+    "tenorMonths": 12,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2592758132084771,
+    "aprText": "Annual Percentage Rate (APR):     25.93%",
+    "costOfFacility": 1296379.1524676564,
+    "totalMarkup": 1230754.1480926564,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 2910251.549364219,
+    "totalPayment": 8730754.648092657,
+    "totalPayments": 3.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Bi-annually 24m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Bi-annually",
+    "tenorMonths": 24,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.577,
+    "aprText": "Annual Percentage Rate (APR):     57.70%",
+    "costOfFacility": 2163750.0,
+    "totalMarkup": 2160000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 1290000.0,
+    "totalPayment": 5160000.0,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Bi-annually 24m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Bi-annually",
+    "tenorMonths": 24,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.26055019617820757,
+    "aprText": "Annual Percentage Rate (APR):     26.06%",
+    "costOfFacility": 2442658.2520145685,
+    "totalMarkup": 2377033.2476395685,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 2469258.4369098917,
+    "totalPayment": 9877033.747639569,
+    "totalPayments": 4.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Annually 36m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Annually",
+    "tenorMonths": 36,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.540625,
+    "aprText": "Annual Percentage Rate (APR):     54.06%",
+    "costOfFacility": 3243750.0,
+    "totalMarkup": 3240000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 2080000.0,
+    "totalPayment": 6240000.0,
+    "totalPayments": 3.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Annually 36m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Annually",
+    "tenorMonths": 36,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2614525095298602,
+    "aprText": "Annual Percentage Rate (APR):     26.15%",
+    "costOfFacility": 3921787.904400413,
+    "totalMarkup": 3856162.900025413,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 3785387.8000084707,
+    "totalPayment": 11356163.400025412,
+    "totalPayments": 3.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Bullet 3m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Bullet",
+    "tenorMonths": 3,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.365,
+    "aprText": "Annual Percentage Rate (APR):     36.50%",
+    "costOfFacility": 273750.0,
+    "totalMarkup": 270000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 3270000.0000000005,
+    "totalPayment": 3270000.0,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Bullet 3m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Bullet",
+    "tenorMonths": 3,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.27499999999999997,
+    "aprText": "Annual Percentage Rate (APR):     27.50%",
+    "costOfFacility": 515625.03437499993,
+    "totalMarkup": 450000.02999999997,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 7950000.53,
+    "totalPayment": 7950000.53,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Bullet 12m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Bullet",
+    "tenorMonths": 12,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.36125,
+    "aprText": "Annual Percentage Rate (APR):     36.13%",
+    "costOfFacility": 1083750.0,
+    "totalMarkup": 1080000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 4079999.9999999995,
+    "totalPayment": 4080000.0,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Bullet 12m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Bullet",
+    "tenorMonths": 12,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.24875,
+    "aprText": "Annual Percentage Rate (APR):     24.88%",
+    "costOfFacility": 1865625.124375,
+    "totalMarkup": 1800000.1199999999,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 9300000.62,
+    "totalPayment": 9300000.62,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 1m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 1,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.375,
+    "aprText": "Annual Percentage Rate (APR):     37.50%",
+    "costOfFacility": 93750.0,
+    "totalMarkup": 90000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 3090000.0,
+    "totalPayment": 3090000.0,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 1m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 1,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.345,
+    "aprText": "Annual Percentage Rate (APR):     34.50%",
+    "costOfFacility": 215625.014375,
+    "totalMarkup": 150000.01,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 7650000.51,
+    "totalPayment": 7650000.51,
+    "totalPayments": 1.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 60m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 60,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.708688524590164,
+    "aprText": "Annual Percentage Rate (APR):     70.87%",
+    "costOfFacility": 5403750.0,
+    "totalMarkup": 5400000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 140000.0,
+    "totalPayment": 8400000.0,
+    "totalPayments": 60.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 60m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 60,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.289112635887887,
+    "aprText": "Annual Percentage Rate (APR):     28.91%",
+    "costOfFacility": 5511209.98902682,
+    "totalMarkup": 5445584.984651821,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 215759.75807753042,
+    "totalPayment": 12945585.48465182,
+    "totalPayments": 60.0
+   }
+  },
+  {
+   "name": "MURABAHA FIXED Monthly 24m NGN 3,000,000",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 300000000,
+    "markupRatePercent": "36",
+    "rateType": "FIXED",
+    "frequency": "Monthly",
+    "tenorMonths": 24,
+    "takafulPercent": "0",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.6924,
+    "aprText": "Annual Percentage Rate (APR):     69.24%",
+    "costOfFacility": 2163750.0,
+    "totalMarkup": 2160000.0,
+    "takaful": 0.0,
+    "stampDuty": 3750.0,
+    "periodicInstallment": 215000.0,
+    "totalPayment": 5160000.0,
+    "totalPayments": 24.0
+   }
+  },
+  {
+   "name": "MURABAHA REDUCING Monthly 24m NGN 7,500,000.50",
+   "inputs": {
+    "facilityType": "MURABAHA",
+    "amountApprovedKobo": 750000050,
+    "markupRatePercent": "24",
+    "rateType": "REDUCING",
+    "frequency": "Monthly",
+    "tenorMonths": 24,
+    "takafulPercent": "0.75",
+    "stampDutyPercent": "0.125",
+    "adminFeePercent": "0",
+    "averageMonthlyInflowKobo": 100000000,
+    "existingMonthlyObligationsKobo": 0
+   },
+   "workbook": {
+    "apr": 0.2665500807148776,
+    "aprText": "Annual Percentage Rate (APR):     26.66%",
+    "costOfFacility": 2082422.6444131483,
+    "totalMarkup": 2016797.6400381483,
+    "takaful": 56250.003749999996,
+    "stampDuty": 9375.000625,
+    "periodicInstallment": 396533.2558349228,
+    "totalPayment": 9516798.140038148,
+    "totalPayments": 24.0
+   }
+  }
+ ]
+}

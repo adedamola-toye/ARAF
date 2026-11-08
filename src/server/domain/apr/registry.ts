@@ -1,9 +1,10 @@
 import type { AprCalculator } from "./types";
 import { devIllustrativeCalculator } from "./dev-illustrative";
+import { altbankApr2024Calculator } from "./altbank-2024";
 import { config } from "../../config";
 
-/** Register the bank-validated calculator here once the APR workbook is implemented. */
-const CALCULATORS: AprCalculator[] = [devIllustrativeCalculator];
+/** Registered calculators. altbank-apr-2024 implements the bank workbook; dev-illustrative is kept for history. */
+const CALCULATORS: AprCalculator[] = [altbankApr2024Calculator, devIllustrativeCalculator];
 
 export function calculatorKey(c: AprCalculator) {
   return `${c.id}@${c.version}`;
