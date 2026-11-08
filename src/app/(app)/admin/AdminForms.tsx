@@ -140,3 +140,34 @@ export function RetryButton({ id }: { id: string }) {
     </ActionForm>
   );
 }
+
+export function UploadTemplateForm() {
+  return (
+    <ActionForm action={A.uploadTemplateAction} resetOnSuccess encType="multipart/form-data">
+      <div className="grid-3">
+        <div className="field">
+          <label htmlFor="ut-type">Applicant type</label>
+          <select id="ut-type" name="applicantType" required defaultValue="">
+            <option value="" disabled>Choose…</option>
+            <option value="INDIVIDUAL">Individual</option>
+            <option value="ENTERPRISE">Enterprise</option>
+            <option value="LIMITED">Limited (Corporate)</option>
+          </select>
+        </div>
+        <div className="field"><label htmlFor="ut-name">Template name</label><input id="ut-name" name="name" required placeholder="Murabaha Individual Offer" /></div>
+        <div className="field"><label htmlFor="ut-notes">Notes / approval reference</label><input id="ut-notes" name="notes" /></div>
+      </div>
+      <div className="field"><label htmlFor="ut-file">Word template (.docx with placeholders)</label><input id="ut-file" type="file" name="file" accept=".docx" required /></div>
+      <label className="check"><input type="checkbox" name="productionApproved" /> This version is approved by the bank for production offers</label>
+      <div><SubmitButton className="btn btn-dark">Upload new version</SubmitButton></div>
+    </ActionForm>
+  );
+}
+export function ApproveTemplateButton({ templateId }: { templateId: string }) {
+  return (
+    <ActionForm action={A.approveTemplateAction} className="row">
+      <input type="hidden" name="templateId" value={templateId} />
+      <SubmitButton className="btn btn-sm">Approve for production</SubmitButton>
+    </ActionForm>
+  );
+}

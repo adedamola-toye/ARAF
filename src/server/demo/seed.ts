@@ -2,7 +2,11 @@
  * SYNTHETIC development data. Every person, customer and identifier here is fictitious.
  */
 import type { Db } from "../db";
-import { DEV_OFFER_TEMPLATE } from "../domain/offer";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { objectStore } from "../storage";
+import { DOCX_MIME } from "../domain/offer";
 import type { Role } from "../domain/roles";
 
 export interface DemoStaff {
@@ -75,12 +79,30 @@ export async function seedReferenceData(q: Db) {
     for (const e of emails) await q.query("INSERT INTO recipient_group_members (group_code, email) VALUES ($1,$2) ON CONFLICT DO NOTHING", [g, e]);
   }
   const tpl = await q.query("SELECT 1 FROM offer_templates");
-  if (!tpl.rowCount) {
+  if (!tpl.rowCount) await seedOfferTemplates(q);
+  return ids;
+}
+
+/**
+ * The bank's Murabaha offer letters (Individual / Enterprise / Corporate, 9-1-24) converted to
+ * placeholder templates by scripts/build-offer-templates.py. Seeded ACTIVE but NOT production
+ * approved: the Super Admin approves each after reviewing a generated letter.
+ */
+export const BANK_OFFER_TEMPLATES = [
+  { type: "INDIVIDUAL", file: "murabaha-individual.docx", source: "Murabaha-Individual-Offer-9-1-24.docx" },
+  { type: "ENTERPRISE", file: "murabaha-enterprise.docx", source: "Murabaha-Enterprise-Offer-9-1-24.docx" },
+  { type: "LIMITED", file: "murabaha-limited.docx", source: "Murabaha-Corporate-Offer-9-1-24.docx" },
+] as const;
+
+export async function seedOfferTemplates(q: Db) {
+  for (const t of BANK_OFFER_TEMPLATES) {
+    const data = await readFile(path.resolve(process.cwd(), "templates/offers", t.file));
+    const key = `templates/offer/${randomUUID()}.docx`;
+    await objectStore().put(key, data, DOCX_MIME);
     await q.query(
-      `INSERT INTO offer_templates (name, version, body_html, status, production_approved, notes, activated_at)
-       VALUES ('WakeelBoost Offer (DEV SAMPLE)', 1, $1, 'ACTIVE', false, 'Development sample. Replace with the bank-approved offer template.', now())`,
-      [DEV_OFFER_TEMPLATE],
+      `INSERT INTO offer_templates (name, version, format, applicant_type, storage_key, source_filename, status, production_approved, notes, activated_at)
+       VALUES ($1, 1, 'DOCX', $2, $3, $4, 'ACTIVE', false, $5, now())`,
+      [`Murabaha ${t.type === "LIMITED" ? "Corporate" : t.type.charAt(0) + t.type.slice(1).toLowerCase()} Offer`, t.type, key, t.source, "Bank letter 9-1-24 with WakeelBoost placeholders. Approve after reviewing a generated letter."],
     );
   }
-  return ids;
 }

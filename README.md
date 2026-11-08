@@ -63,7 +63,7 @@ try provisioning.
 | `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
 | `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
 
-The test suite has 151 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
+The test suite has 164 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
 
 - **Routing:** boundary amounts, all three routes end to end, every endorsement path, random eligibility and separation of duties, and unstaffed stages with admin resolution.
 - **Workflow rules:** correction and rejection routing, material-change invalidation, the three-report, APR and invoice gates, the production APR block, and the pack, insurance and CRMS gates.
@@ -111,7 +111,7 @@ Set `APP_ENV=production`. Then:
 | Input | Status in this build | To go live |
 |---|---|---|
 | **APR workbook** | **Implemented** as `altbank-apr-2024@1.0` from "APR Model - ALTBANK v.1 2024" (`src/server/domain/apr/altbank-2024.ts`). It matches the bank's workbook on 48 rows recalculated in LibreOffice (`scripts/apr-workbook-fixtures.py`). **DSR is not defined in the workbook.** The DSR used is (existing monthly obligations + monthly-equivalent instalment) / average monthly inflow, and production credit approval stays blocked until the bank confirms it. | Confirm or supply the DSR definition, then set `productionValidated: true`. |
-| **Offer letter template** | "DEVELOPMENT SAMPLE" template, not bank-approved. **Production offer generation is blocked** for non-approved templates. | Super Admin → Offer templates: paste the bank's template (placeholders listed on the page), tick *bank-approved*, activate. |
+| **Offer letter templates** | **Implemented** from the bank's Murabaha Individual / Enterprise / Corporate letters (9-1-24). One Word template per applicant type, with an editable .docx generated per case plus a PDF copy for preview. The sample customer data and the scanned signatures were removed (see docs/OFFER_TEMPLATES.md). Seeded as **awaiting bank approval**: production offer generation is blocked until the Super Admin approves each template. | Review a generated letter of each type, then Super Admin → Offer templates → Approve for production. |
 | **Brand / typeface** | Golden Yellow #FFC900 and Deep Graphite #1C1D20 tokens (`src/app/globals.css`), "Wakeel" text wordmark, dark theme by default. Century Gothic is used where installed; it is a licensed font and is not bundled. | Supply a licensed Century Gothic web font (add an `@font-face` in `globals.css`) and the approved logo asset if wanted. |
 | **Merchant photograph** | Local copy of the image from the official Wakeel page (`public/images/wakeel-merchant-*.jpg`), taken from the accepted landing reference. | Confirm the bank's usage rights for internal use. |
 | **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |

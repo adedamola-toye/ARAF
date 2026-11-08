@@ -10,6 +10,13 @@ import { listCalculators } from "@/server/domain/apr/registry";
 import { sniffAllowedType } from "@/server/storage/scanner";
 import { act, approveFirstReview, createSubmittedCase, ctxFor, driveToOffer, makePdf, openTaskOf, preparePack } from "@/server/demo/scenario";
 import { draftDataSchema } from "@/server/domain/application-data";
+import JSZip from "jszip";
+
+async function docxText(buf: Buffer) {
+  const z = await JSZip.loadAsync(buf);
+  const xml = await z.file("word/document.xml")!.async("string");
+  return xml.replace(/<w:tab\/>/g, "\t").replace(/<\/w:p>/g, "\n").replace(/<[^>]+>/g, "").replace(/&amp;/g, "&");
+}
 import { audits, outbox, resetDb } from "./helpers";
 
 beforeEach(async () => {
@@ -147,10 +154,13 @@ describe("offer generation per entity type", () => {
     const offer = (await listDocuments(db, id)).find((d) => d.category === "GENERATED_OFFER")!;
     expect(offer.generated).toBe(true);
     expect(offer.template_version).toBe(1);
+    expect(offer.mime_type).toMatch(/wordprocessingml/);
     const { data } = await readDocumentForActor(await ctxFor("anm.north@altbank.ng"), offer.id, "download");
-    const html = data.toString();
-    expect(html).toContain("Kano Fresh Foods Ltd");
-    expect(html.match(/class="director"/g)).toHaveLength(3);
+    const text = await docxText(data);
+    expect(text).toContain("Kano Fresh Foods Ltd");
+    expect(text).toMatch(/1\. Director One BVN: 22200000001/);
+    expect(text).toMatch(/2\. Director Two BVN: 22200000002/);
+    expect(text).toMatch(/3\. Director Three BVN: 22200000003/);
   });
   it("production refuses an offer template that is not bank-approved", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });

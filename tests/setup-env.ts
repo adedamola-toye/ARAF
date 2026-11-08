@@ -7,3 +7,4 @@ process.env.STORAGE_LOCAL_DIR = ".data/test-objects";
 process.env.MAIL_DRIVER = "dev";
 process.env.SCANNER_DRIVER = "dev";
 process.env.APR_CALCULATOR = "altbank-apr-2024@1.0";
+process.env.OFFER_PDF_CONVERTER = "none";

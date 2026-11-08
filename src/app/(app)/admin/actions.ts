@@ -4,6 +4,8 @@ import { requireUser } from "../../_lib/auth";
 import { toActionError, type ActionState } from "../../_lib/action";
 import {
   activateTemplate,
+  approveTemplate,
+  createDocxTemplateVersion,
   addGroupMember,
   adminAssignTask,
   createTemplateVersion,
@@ -68,3 +70,22 @@ export const retryOutboxAction = async (_p: ActionState, fd: FormData) =>
     await retryOutbox(s(f, "outboxId"));
     await auditOutsideTx(ctx, { action: "EMAIL_RETRY_REQUESTED", actorRole: "SUPER_ADMIN", details: { outboxId: s(f, "outboxId") } });
   }, "Message re-queued.");
+export async function uploadTemplateAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose the .docx template file." };
+  try {
+    await createDocxTemplateVersion(ctx, {
+      name: s(fd, "name"),
+      applicantType: s(fd, "applicantType"),
+      filename: file.name,
+      data: Buffer.from(await file.arrayBuffer()),
+      productionApproved: fd.get("productionApproved") === "on",
+      notes: s(fd, "notes"),
+    });
+    return { ok: true, message: "Template version saved as draft. Activate it to use it for new offers.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+export const approveTemplateAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => approveTemplate(ctx, s(f, "templateId")), "Template approved for production offers.");

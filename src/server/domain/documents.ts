@@ -24,7 +24,8 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "CONSENT_FORM", label: "Consent form", multiple: false },
   { code: "RENT_RECEIPT", label: "Recent rent receipt", multiple: false },
   { code: "CREDIT_REPORT", label: "Credit report", multiple: true },
-  { code: "GENERATED_OFFER", label: "Generated offer letter (system)", multiple: false },
+  { code: "GENERATED_OFFER", label: "Generated offer letter (editable Word)", multiple: false },
+  { code: "GENERATED_OFFER_PDF", label: "Generated offer letter (PDF copy)", multiple: false },
   { code: "SIGNED_OFFER", label: "Signed offer letter", multiple: false },
   { code: "KYC", label: "KYC documents", multiple: true },
   { code: "PRE_DISBURSEMENT", label: "Pre-disbursement document", multiple: false },
@@ -164,7 +165,7 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
   if (input.data.length > config.maxUploadBytes) throw invalid(`The file exceeds the ${Math.round(config.maxUploadBytes / 1048576)} MB limit.`);
   const mime = sniffAllowedType(filename, input.data);
   if (!mime) throw invalid(`Unsupported or mismatched file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}.`);
-  if (input.category === "GENERATED_OFFER") throw forbidden("Generated offers are produced by the system.");
+  if (input.category === "GENERATED_OFFER" || input.category === "GENERATED_OFFER_PDF") throw forbidden("Generated offers are produced by the system.");
 
   const quarantineKey = `quarantine/${input.applicationId}/${randomUUID()}`;
   await objectStore().put(quarantineKey, input.data, mime);

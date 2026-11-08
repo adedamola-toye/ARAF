@@ -17,6 +17,7 @@ import { formatDateOnly, formatDuration, formatLagos, lagosDate } from "@/server
 import { maskWithLast4 } from "@/server/mask";
 import { config } from "@/server/config";
 import { StageChip, OutcomeChip } from "@/components/Status";
+import { activeTemplate } from "@/server/domain/offer";
 import { UploadPanel } from "@/components/UploadPanel";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
@@ -803,8 +804,9 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit without field changes" primary={false} doneHref={doneHref} />);
       break;
     case "OFFER_PREPARATION": {
-      const tpl = (await db.query("SELECT name, version, production_approved FROM offer_templates WHERE status = 'ACTIVE'")).rows[0];
+      const tpl = await activeTemplate(db, app.applicant_type);
       const generated = c.documents.filter((d) => d.category === "GENERATED_OFFER");
+      const pdfs = c.documents.filter((d) => d.category === "GENERATED_OFFER_PDF");
       const signed = c.documents.filter((d) => d.category === "SIGNED_OFFER");
       const missing = ["GENERATED_OFFER", ...PACK].filter((p) => !has(p));
       body.push(
@@ -820,12 +822,14 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
         </div>,
       );
       body.push(
-        <GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={tpl ? `${tpl.name} v${tpl.version}${tpl.production_approved ? "" : " (not bank-approved)"}` : "none active"} />,
+        <GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={tpl ? `${tpl.name} v${tpl.version} (${tpl.format === "DOCX" ? "Word" : "HTML"})${tpl.production_approved ? "" : " · awaiting bank approval"}` : "none active for this applicant type"} />,
       );
       if (generated.length || signed.length)
         body.push(
           <div key="versions" className="small">
-            {generated.map((d) => <div key={d.id}>Generated offer v{d.version_no} · template v{d.template_version} · {formatLagos(d.uploaded_at)}{d.superseded_at ? " · superseded" : ""}</div>)}
+            {generated.map((d) => <div key={d.id}>Generated offer v{d.version_no} ({d.mime_type === "text/html" ? "HTML" : "Word"}) · template v{d.template_version} · {formatLagos(d.uploaded_at)}{d.superseded_at ? " · superseded" : ""}</div>)}
+            {pdfs.filter((d) => !d.superseded_at).map((d) => <div key={d.id}><Link href={`/requests/${app.id}?tab=documents&doc=${d.id}`}>Preview PDF copy v{d.version_no}</Link></div>)}
+            <div className="muted">Download the Word letter from Documents to complete case-specific lines (security, Hamish Jiddiyah %) before printing. Upload the customer-signed copy as “Signed offer letter”.</div>
             {signed.map((d) => <div key={d.id}>Signed offer v{d.version_no} · {formatLagos(d.uploaded_at)}{d.superseded_at ? " · superseded" : ""}</div>)}
           </div>,
         );
