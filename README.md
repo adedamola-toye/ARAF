@@ -13,6 +13,8 @@ the server-side domain module `src/server/domain/` (see [docs/WORKFLOW.md](docs/
 
 ## Quick start (development)
 
+Non-developers: follow the step-by-step guide in [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
+
 Prerequisites: Node 20.11+ and PostgreSQL 16. You can start PostgreSQL with `docker compose up -d postgres`;
 the compose file also creates `wakeel_test`.
 
