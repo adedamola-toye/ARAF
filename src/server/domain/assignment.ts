@@ -4,7 +4,7 @@ import { audit } from "../audit";
 import { securePick } from "../crypto";
 import { enqueueEmail } from "../notify/outbox";
 import { assignmentEmail, simpleEmail } from "../notify/templates";
-import type { Role } from "./roles";
+import { zoneForRegion, type Role } from "./roles";
 import { REQUIRED_ACTION, STAGE_LABELS, type Stage } from "./stages";
 import { getRoute } from "./routing";
 import { latestAssessment, type AssessmentRow } from "./assessment";
@@ -123,9 +123,10 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     case "BUSINESS_ENDORSEMENT": {
       if (app.initiator_role === "RM") return { roles: ["RBE"], exclude: [app.initiator_id] };
       if (app.initiator_role === "MERCHANT_OFFICER") return { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id] };
-      if (app.region === "NORTH") return { roles: ["ANM_LEAD_NORTH"], exclude: [app.initiator_id] };
-      if (app.region === "SOUTH") return { roles: ["ANM_LEAD_SOUTH"], exclude: [app.initiator_id] };
-      return { roles: [], exclude: [] }; // ANM without configured region -> unstaffed
+      const zone = zoneForRegion(app.region);
+      if (zone === "NORTH") return { roles: ["ANM_LEAD_NORTH"], exclude: [app.initiator_id] };
+      if (zone === "SOUTH") return { roles: ["ANM_LEAD_SOUTH"], exclude: [app.initiator_id] };
+      return { roles: [], exclude: [] }; // ANM without a configured state -> unstaffed
     }
     case "DRAFT":
     case "INITIATOR_CORRECTION":

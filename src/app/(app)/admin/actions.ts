@@ -39,7 +39,13 @@ export async function provisionAction(_p: ActionState, fd: FormData): Promise<Ac
   const { ctx } = await requireUser();
   let id: string;
   try {
-    id = await provisionStaff(ctx, { email: s(fd, "email"), fullName: s(fd, "fullName"), region: s(fd, "region") || null, businessUnit: s(fd, "businessUnit") || null });
+    id = await provisionStaff(ctx, {
+      email: s(fd, "email"),
+      fullName: s(fd, "fullName"),
+      region: s(fd, "region") || null,
+      businessUnit: s(fd, "businessUnit") || null,
+      role: s(fd, "role") || null,
+    });
   } catch (e) {
     return toActionError(e);
   }

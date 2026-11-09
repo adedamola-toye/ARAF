@@ -31,7 +31,7 @@ export default async function StaffDetail({ params, searchParams }: { params: Pr
         <div>
           <p className="small muted" style={{ margin: 0 }}><Link href="/admin/staff">Staff &amp; roles</Link></p>
           <h1>{s.full_name}</h1>
-          <p>{s.email} · {s.region ?? "No region"} · {s.business_unit ?? "No unit"} · {open} open task(s)</p>
+          <p>{s.email} · {s.region ?? "No state"} · {s.business_unit ?? "No unit"} · {open} open task(s)</p>
         </div>
         {!self && <StatusButton staffId={id} status={s.status} />}
       </div>
@@ -60,7 +60,7 @@ export default async function StaffDetail({ params, searchParams }: { params: Pr
       {!self && s.status === "ACTIVE" && (
         <div className="card">
           <h2>Grant role</h2>
-          <p className="small muted">Credit Lead 1/2 and the North/South ANM Lead positions have a single holder. ANM requires a region. Legal/Shariah reviewers must first be in the approved recipient group.</p>
+          <p className="small muted">Credit Lead 1/2 and the North/South ANM Lead positions have a single holder. ANM requires a state. Legal/Shariah reviewers must first be in the approved recipient group.</p>
           <GrantRoleForm
             staffId={id}
             regions={[...REGIONS]}

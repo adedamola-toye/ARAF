@@ -51,8 +51,84 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** Positions that may be held by at most one active person at a time. */
 export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"];
 
-export const REGIONS = ["NORTH", "SOUTH"] as const;
+/** Nigeria's 36 states plus the Federal Capital Territory. */
+export const REGIONS = [
+  "ABIA",
+  "ADAMAWA",
+  "AKWA IBOM",
+  "ANAMBRA",
+  "BAUCHI",
+  "BAYELSA",
+  "BENUE",
+  "BORNO",
+  "CROSS RIVER",
+  "DELTA",
+  "EBONYI",
+  "EDO",
+  "EKITI",
+  "ENUGU",
+  "FCT (ABUJA)",
+  "GOMBE",
+  "IMO",
+  "JIGAWA",
+  "KADUNA",
+  "KANO",
+  "KATSINA",
+  "KEBBI",
+  "KOGI",
+  "KWARA",
+  "LAGOS",
+  "NASARAWA",
+  "NIGER",
+  "OGUN",
+  "ONDO",
+  "OSUN",
+  "OYO",
+  "PLATEAU",
+  "RIVERS",
+  "SOKOTO",
+  "TARABA",
+  "YOBE",
+  "ZAMFARA",
+] as const;
 export type Region = (typeof REGIONS)[number];
+export type GeoZone = "NORTH" | "SOUTH";
+
+const NORTH_STATES = new Set<string>([
+  "ADAMAWA", "BAUCHI", "BORNO", "GOMBE", "TARABA", "YOBE",
+  "JIGAWA", "KADUNA", "KANO", "KATSINA", "KEBBI", "SOKOTO", "ZAMFARA",
+  "BENUE", "KOGI", "KWARA", "NASARAWA", "NIGER", "PLATEAU", "FCT (ABUJA)",
+]);
+const SOUTH_STATES = new Set<string>([
+  "ABIA", "ANAMBRA", "EBONYI", "ENUGU", "IMO",
+  "AKWA IBOM", "BAYELSA", "CROSS RIVER", "DELTA", "EDO", "RIVERS",
+  "EKITI", "LAGOS", "OGUN", "ONDO", "OSUN", "OYO",
+]);
+
+/** Map a state (or a legacy NORTH/SOUTH value) to the zone used by ANM routing. */
+export function zoneForRegion(region: string | null | undefined): GeoZone | null {
+  if (!region) return null;
+  const r = region.trim().toUpperCase();
+  if (r === "NORTH" || r === "SOUTH") return r;
+  if (NORTH_STATES.has(r)) return "NORTH";
+  if (SOUTH_STATES.has(r)) return "SOUTH";
+  return null;
+}
+
+/** Every state covered by a zone, for region-scoped reporting. */
+export function statesForZone(zone: GeoZone): string[] {
+  return [...(zone === "NORTH" ? NORTH_STATES : SOUTH_STATES)];
+}
+
+/** Expand zone values to their states while keeping legacy NORTH/SOUTH records matchable. */
+export function expandRegions(regions: readonly string[]): string[] {
+  return [...new Set(regions.flatMap((r) => (r === "NORTH" || r === "SOUTH" ? [r, ...statesForZone(r)] : [r])))];
+}
+
+/** Accepts the state list plus legacy NORTH/SOUTH values already stored in older records. */
+export function isRegion(v: unknown): v is string {
+  return typeof v === "string" && ((REGIONS as readonly string[]).includes(v) || v === "NORTH" || v === "SOUTH");
+}
 
 /** Roles that require a region scope on assignment. */
 export const REGION_REQUIRED_ROLES: readonly Role[] = ["ANM"];

@@ -25,7 +25,7 @@ export default async function AdminHome() {
     )
   ).rows;
   const cards = [
-    { href: "/admin/staff", icon: Users, title: "Users & roles", body: `${staff} active staff. Provision verified @altbank.ng staff and assign roles, regions and positions.` },
+    { href: "/admin/staff", icon: Users, title: "Users & roles", body: `${staff} active staff. Provision verified @altbank.ng staff and assign roles, states and positions.` },
     { href: "/admin/exceptions", icon: Route, title: "Routing exceptions", body: exceptions ? `${exceptions} stage(s) need an eligible assignee.` : "No unassigned stages. Hand over assigned tasks here." },
     { href: "/admin/groups", icon: UsersRound, title: "Closure recipients", body: `${members} approved Legal and Shariah Compliance recipient(s).` },
     { href: "/admin/templates", icon: FileText, title: "Offer templates", body: tpl ? `Active: ${tpl.name} v${tpl.version}${tpl.production_approved ? " (bank-approved)" : " (not bank-approved)"}.` : "No active template." },

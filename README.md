@@ -146,4 +146,4 @@ The RM / ANM / Merchant Officer / Staff choice is on the OTP step ("Open workspa
 - **Reminders** are allowed once an assignment is older than 6 hours, and at most once per 6 hours for the same assignment.
 - **Weekly digest** reports the past week's disbursements and the coming Monday–Sunday repayments. It is skipped for initiators with nothing to report.
 - **Material change** requires a fresh credit review and keeps the business endorsement. The second reviewer is kept if still eligible (no re-drawing).
-- **Reporting Admins** with a region on their assignment see only that region. Monthly recipients holding only ANM Lead roles get regional summaries.
+- **Reporting Admins** with a state on their assignment see only that state. Monthly recipients holding only ANM Lead roles get summaries for the states in their zone.

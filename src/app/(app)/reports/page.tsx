@@ -50,7 +50,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
         <div>
           <p className="eyebrow">Reporting</p>
           <h1>Reports</h1>
-          <p>{scope.regions ? `Scoped to region: ${scope.regions.join(", ")}.` : "Bank-wide."} Exports use exactly these filters and are logged.</p>
+          <p>{scope.regions ? `Scoped to state: ${scope.regions.join(", ")}.` : "Bank-wide."} Exports use exactly these filters and are logged.</p>
         </div>
         <div className="row">
           <a className="btn" href={`/api/reports/export?${qs}${qs ? "&" : ""}format=csv`}>
@@ -71,7 +71,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
             <label htmlFor="daoCode">DAO code</label>
             <input id="daoCode" name="daoCode" defaultValue={sp.daoCode ?? ""} />
           </div>
-          {sel("region", "Region", REGIONS.map((r) => [r, r]))}
+          {sel("region", "State", REGIONS.map((r) => [r, r]))}
           {sel("role", "Initiator role", INITIATOR_ROLES.map((r) => [r, ROLE_LABELS[r]]))}
           {sel("assigneeId", "Current assignee", staff.map((s) => [s.id, s.full_name]))}
           {sel("applicantType", "Applicant type", APPLICANT_TYPES.map((a) => [a, APPLICANT_TYPE_LABELS[a]]))}
@@ -126,7 +126,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
           <caption className="sr-only">Report preview</caption>
           <thead>
             <tr>
-              <th>Request ID</th><th>Customer</th><th>BVN</th><th>Type</th><th>Initiator</th><th>Region</th><th>DAO</th><th>Route</th><th>Stage</th><th>Assignee</th>
+              <th>Request ID</th><th>Customer</th><th>BVN</th><th>Type</th><th>Initiator</th><th>State</th><th>DAO</th><th>Route</th><th>Stage</th><th>Assignee</th>
               <th className="right">Requested</th><th className="right">Disbursed</th><th>Booking</th><th>Next due</th>
             </tr>
           </thead>

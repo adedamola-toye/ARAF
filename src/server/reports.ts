@@ -9,6 +9,7 @@ import { maskWithLast4 } from "./mask";
 import { formatKobo, koboToNairaString, parseNairaToKobo } from "./money";
 import { activeRoles } from "./domain/access";
 import { STAGE_LABELS, type Stage } from "./domain/stages";
+import { expandRegions } from "./domain/roles";
 import { addDaysToDateString, fromLagos, lagosDate } from "./time";
 
 const opt = z.string().trim().optional().transform((v) => (v ? v : undefined));
@@ -82,7 +83,7 @@ function buildWhere(f: ReportFilters, scope: ReportScope) {
     if (f.repaymentTo && DATE_RE.test(f.repaymentTo)) conds.push(`ri.due_date <= ${p(f.repaymentTo)}`);
     where.push(`EXISTS (SELECT 1 FROM repayment_instalments ri WHERE ${conds.join(" AND ")})`);
   }
-  if (scope.regions) where.push(`a.region = ANY(${p(scope.regions)}::text[])`);
+  if (scope.regions) where.push(`a.region = ANY(${p(expandRegions(scope.regions))}::text[])`);
   return { where: where.join(" AND "), params };
 }
 
@@ -186,7 +187,7 @@ export const EXPORT_COLUMNS: { header: string; value: (r: ReportRow) => string |
   { header: "BVN (masked)", value: (r) => (r.bvn_last4 ? maskWithLast4(r.bvn_last4) : "") },
   { header: "Initiator", value: (r) => r.initiator_name },
   { header: "Initiator role", value: (r) => r.initiator_role },
-  { header: "Region", value: (r) => r.region ?? "" },
+  { header: "State", value: (r) => r.region ?? "" },
   { header: "DAO code", value: (r) => r.dao_code ?? "" },
   { header: "Route", value: (r) => r.route ?? "" },
   { header: "Stage", value: (r) => STAGE_LABELS[r.stage] ?? r.stage },

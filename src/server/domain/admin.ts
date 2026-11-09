@@ -7,7 +7,7 @@ import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
 import { type AppRow, assignmentSpec, eligibleStaff, notifyAssignment } from "./assignment";
-import { REGIONS, REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRole, type Role } from "./roles";
+import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, type Role } from "./roles";
 import type { Stage } from "./stages";
 import { validateTemplate, DOCX_MIME } from "./offer";
 import { assertDocx, validateDocxTemplate } from "./offer-docx";
@@ -41,21 +41,25 @@ export async function directoryEntry(q: Db, email: string) {
   return (await q.query<{ email: string; full_name: string; is_group_mailbox: boolean; active: boolean }>("SELECT * FROM bank_directory WHERE email = $1", [email.toLowerCase()])).rows[0] ?? null;
 }
 
-export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null }) {
+export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null; role?: string | null }) {
   return adminOp(ctx, "STAFF_PROVISIONED", async (tx) => {
     const email = p.email.trim().toLowerCase();
     if (!isStaffDomain(email) || !/^[a-z0-9._%+-]+@[a-z0-9.-]+$/.test(email)) throw invalid(`Staff must use a verified @${config.staffEmailDomain} email.`, { email: "Invalid email." });
     const dir = await directoryEntry(tx, email);
     if (!dir || !dir.active) throw invalid("This email is not in the bank directory (verification failed).", { email: "Not found in the bank directory." });
     if (dir.is_group_mailbox) throw invalid("Group mailboxes cannot be provisioned as staff.", { email: "Group mailbox." });
-    if (p.region && !(REGIONS as readonly string[]).includes(p.region)) throw invalid("Unknown region.");
+    if (p.region && !isRegion(p.region)) throw invalid("Unknown state.", { region: "Unknown state." });
+    if (p.role && !isRole(p.role)) throw invalid("Unknown role.", { role: "Unknown role." });
     const exists = await tx.query("SELECT 1 FROM staff WHERE email = $1", [email]);
     if (exists.rowCount) throw conflict("A staff record already exists for this email.");
     const r = await tx.query<{ id: string }>(
       `INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING id`,
       [email, p.fullName.trim() || dir.full_name, p.region || null, p.businessUnit?.trim() || null, ctx.actor!.staffId, ctx.now],
     );
-    await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId: r.rows[0].id, email, region: p.region ?? null } });
+    if (p.role) {
+      await grantRoleInTx(tx, ctx, { staffId: r.rows[0].id, role: p.role, region: p.region ?? null, businessUnit: p.businessUnit ?? null });
+    }
+    await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId: r.rows[0].id, email, region: p.region ?? null, role: p.role ?? null } });
     return r.rows[0].id;
   });
 }
@@ -73,36 +77,38 @@ export async function setStaffStatus(ctx: Ctx, staffId: string, status: "ACTIVE"
   });
 }
 
+async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null }) {
+  if (!isRole(p.role)) throw invalid("Unknown role.");
+  if (p.staffId === ctx.actor!.staffId) throw forbidden("Super Admins cannot change their own role assignments.");
+  const staff = (await tx.query("SELECT * FROM staff WHERE id = $1 FOR UPDATE", [p.staffId])).rows[0];
+  if (!staff) throw notFound();
+  if (staff.status !== "ACTIVE") throw invalid("Reactivate the staff member before assigning roles.");
+  const region = p.region || staff.region || null;
+  if (REGION_REQUIRED_ROLES.includes(p.role) && !region) throw invalid("This role requires a state.", { region: "Required." });
+  if (region && !isRegion(region)) throw invalid("Unknown state.");
+  if (SINGLE_HOLDER_ROLES.includes(p.role)) {
+    const holder = await tx.query("SELECT staff_id FROM role_assignments WHERE role = $1 AND active FOR UPDATE", [p.role]);
+    if (holder.rowCount) throw conflict("This position already has an active holder. Revoke it first.");
+  }
+  if (p.role === "LEGAL_REVIEWER" || p.role === "SHARIAH_REVIEWER") {
+    const g = p.role === "LEGAL_REVIEWER" ? "LEGAL" : "SHARIAH";
+    const m = await tx.query("SELECT 1 FROM recipient_group_members WHERE group_code = $1 AND email = $2", [g, staff.email]);
+    if (!m.rowCount) throw invalid(`Add ${staff.email} to the approved ${g === "LEGAL" ? "Legal" : "Shariah Compliance"} recipient group first.`);
+  }
+  try {
+    await tx.query(
+      `INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [p.staffId, p.role, region, p.businessUnit?.trim() || staff.business_unit || null, ctx.actor!.staffId, ctx.now],
+    );
+  } catch (e) {
+    if ((e as { code?: string }).code === "23505") throw conflict("The staff member already holds this role.");
+    throw e;
+  }
+  await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region } });
+}
+
 export async function grantRole(ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null }) {
-  return adminOp(ctx, "ROLE_GRANTED", async (tx) => {
-    if (!isRole(p.role)) throw invalid("Unknown role.");
-    if (p.staffId === ctx.actor!.staffId) throw forbidden("Super Admins cannot change their own role assignments.");
-    const staff = (await tx.query("SELECT * FROM staff WHERE id = $1 FOR UPDATE", [p.staffId])).rows[0];
-    if (!staff) throw notFound();
-    if (staff.status !== "ACTIVE") throw invalid("Reactivate the staff member before assigning roles.");
-    const region = p.region || staff.region || null;
-    if (REGION_REQUIRED_ROLES.includes(p.role) && !region) throw invalid("This role requires a region (North or South).", { region: "Required." });
-    if (region && !(REGIONS as readonly string[]).includes(region)) throw invalid("Unknown region.");
-    if (SINGLE_HOLDER_ROLES.includes(p.role)) {
-      const holder = await tx.query("SELECT staff_id FROM role_assignments WHERE role = $1 AND active FOR UPDATE", [p.role]);
-      if (holder.rowCount) throw conflict("This position already has an active holder. Revoke it first.");
-    }
-    if (p.role === "LEGAL_REVIEWER" || p.role === "SHARIAH_REVIEWER") {
-      const g = p.role === "LEGAL_REVIEWER" ? "LEGAL" : "SHARIAH";
-      const m = await tx.query("SELECT 1 FROM recipient_group_members WHERE group_code = $1 AND email = $2", [g, staff.email]);
-      if (!m.rowCount) throw invalid(`Add ${staff.email} to the approved ${g === "LEGAL" ? "Legal" : "Shariah Compliance"} recipient group first.`);
-    }
-    try {
-      await tx.query(
-        `INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-        [p.staffId, p.role, region, p.businessUnit?.trim() || staff.business_unit || null, ctx.actor!.staffId, ctx.now],
-      );
-    } catch (e) {
-      if ((e as { code?: string }).code === "23505") throw conflict("The staff member already holds this role.");
-      throw e;
-    }
-    await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region } });
-  });
+  return adminOp(ctx, "ROLE_GRANTED", (tx) => grantRoleInTx(tx, ctx, p));
 }
 
 export async function revokeRole(ctx: Ctx, p: { staffId: string; role: string }) {

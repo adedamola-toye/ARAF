@@ -4,15 +4,17 @@ import * as A from "./actions";
 
 type Opt = { value: string; label: string };
 
-export function ProvisionForm({ regions }: { regions: string[] }) {
+export function ProvisionForm({ regions, roles }: { regions: string[]; roles: Opt[] }) {
   return (
     <ActionForm action={A.provisionAction} refreshOnSuccess={false}>
       <div className="grid-2">
         <div className="field"><label htmlFor="email">Work email (@altbank.ng, must exist in bank directory)</label><input id="email" name="email" type="email" required /></div>
         <div className="field"><label htmlFor="fullName">Full name</label><input id="fullName" name="fullName" required /></div>
-        <div className="field"><label htmlFor="region">Region</label><select id="region" name="region"><option value="">None</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
+        <div className="field"><label htmlFor="role">Role</label><select id="role" name="role"><option value="">No role yet</option>{roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
+        <div className="field"><label htmlFor="region">State</label><select id="region" name="region"><option value="">None</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
         <div className="field"><label htmlFor="businessUnit">Business unit</label><input id="businessUnit" name="businessUnit" /></div>
       </div>
+      <p className="small muted" style={{ margin: 0 }}>ANM roles require a state. Legal and Shariah reviewers must first be added to their recipient group.</p>
       <div><SubmitButton>Provision staff</SubmitButton></div>
     </ActionForm>
   );
@@ -24,7 +26,7 @@ export function GrantRoleForm({ staffId, roles, regions }: { staffId: string; ro
       <input type="hidden" name="staffId" value={staffId} />
       <div className="grid-3">
         <div className="field"><label htmlFor="role">Role</label><select id="role" name="role" required>{roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-        <div className="field"><label htmlFor="gregion">Region scope</label><select id="gregion" name="region"><option value="">Staff default / none</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
+        <div className="field"><label htmlFor="gregion">State scope</label><select id="gregion" name="region"><option value="">Staff default / none</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
         <div className="field"><label htmlFor="gbu">Business unit</label><input id="gbu" name="businessUnit" /></div>
       </div>
       <div><SubmitButton className="btn btn-dark">Grant role</SubmitButton></div>

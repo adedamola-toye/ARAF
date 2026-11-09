@@ -6,6 +6,7 @@ import { formatKobo } from "../money";
 import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail, caseLink } from "../notify/templates";
 import { STAGE_LABELS, type Stage } from "../domain/stages";
+import { expandRegions } from "../domain/roles";
 import { addDaysToDateString, fromLagos, lagosDate, lagosParts, lagosWeekStart } from "../time";
 
 /** How long after the scheduled instant a missed run is still caught up (worker downtime). */
@@ -134,14 +135,15 @@ const DEFAULT_MONTHLY_ROLES = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "MERCHANT_OFFIC
 /** Regions a recipient may see: region-scoped only when every assignment is region-scoped. */
 async function recipientRegions(tx: Tx, staffId: string): Promise<string[] | null> {
   const roles = (await tx.query<{ role: string; region: string | null }>("SELECT role, region FROM role_assignments WHERE staff_id = $1 AND active", [staffId])).rows;
-  const regional = roles.map((r) => (r.role === "ANM_LEAD_NORTH" ? "NORTH" : r.role === "ANM_LEAD_SOUTH" ? "SOUTH" : null));
-  if (roles.length && regional.every((x) => x)) return [...new Set(regional as string[])];
+  const zones = roles.map((r) => (r.role === "ANM_LEAD_NORTH" ? "NORTH" : r.role === "ANM_LEAD_SOUTH" ? "SOUTH" : null));
+  if (roles.length && zones.every((x) => x)) return [...new Set(zones as string[])];
   return null;
 }
 
 export async function monthlySummary(tx: Tx, start: Date, end: Date, regions: string[] | null, now: Date) {
-  const regionSql = regions ? "AND a.region = ANY($3::text[])" : "";
-  const params: unknown[] = regions ? [start, end, regions] : [start, end];
+  const regionValues = regions ? expandRegions(regions) : null;
+  const regionSql = regionValues ? "AND a.region = ANY($3::text[])" : "";
+  const params: unknown[] = regionValues ? [start, end, regionValues] : [start, end];
   const one = async (sql: string, extra: unknown[] = []) => (await tx.query(sql, [...params, ...extra])).rows[0];
   const pipeline = await one(
     `SELECT count(*) FILTER (WHERE a.submitted_at >= $1 AND a.submitted_at < $2) AS submitted,

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireSuperAdmin } from "../guard";
 import { db } from "@/server/db";
-import { ROLE_LABELS, REGIONS, type Role } from "@/server/domain/roles";
+import { ROLES, ROLE_LABELS, REGIONS, type Role } from "@/server/domain/roles";
 import { ProvisionForm } from "../AdminForms";
 
 export const metadata = { title: "Staff & roles" };
@@ -29,7 +29,7 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Provision staff</h2>
-        <ProvisionForm regions={[...REGIONS]} />
+        <ProvisionForm regions={[...REGIONS]} roles={ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))} />
       </div>
       <form className="filters" method="get">
         <div className="field">
@@ -41,7 +41,7 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
       <div className="table-wrap">
         <table className="data">
           <thead>
-            <tr><th>Name</th><th>Email</th><th>Status</th><th>Region / unit</th><th>Active roles</th></tr>
+            <tr><th>Name</th><th>Email</th><th>Status</th><th>State / unit</th><th>Active roles</th></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
