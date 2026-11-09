@@ -92,6 +92,20 @@ npm run mail:test -- you@example.com
 3. Open it from the **Documents** tab (Word download, or PDF preview if LibreOffice is installed).
 4. Sign in as `superadmin@altbank.ng` → **Offer templates** → **Approve for production** on each template.
 
+## Upload the bank directory
+
+The bank directory is the list of staff email addresses that new users and closure recipient groups
+are checked against.
+
+1. Sign in as `superadmin@altbank.ng` and open **Administration → Bank directory**.
+2. Click **Download template (CSV)**, or use the bank's own staff export. The file needs **Email**
+   and **Full name** columns; **Department**, **Group mailbox** (Yes/No) and **Active** (Yes/No) are
+   optional. Excel (.xlsx) or .csv, `@altbank.ng` addresses only.
+3. Choose the file and how to import:
+   - **Add and update**: adds new people and updates existing ones; nobody is removed.
+   - **Full replace**: the file is the complete list; anyone missing is marked inactive (not deleted).
+4. Click **Preview changes**, check the counts and any row errors, then click **Import**.
+
 ## Start again with fresh demo data
 
 ```

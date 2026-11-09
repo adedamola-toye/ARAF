@@ -21,6 +21,7 @@ import { retryOutbox } from "@/server/jobs/outbox";
 import { auditOutsideTx } from "@/server/audit";
 import { updatePricingSettings } from "@/server/domain/pricing";
 import { updateSecondSignatory } from "@/server/domain/signatory";
+import { importDirectory } from "@/server/domain/directory";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 type Op = (fd: FormData, ctx: Awaited<ReturnType<typeof requireUser>>["ctx"]) => Promise<string | void>;
@@ -118,3 +119,21 @@ export const signatoryAction = async (_p: ActionState, fd: FormData) =>
   run(fd, async (f, ctx) => {
     await updateSecondSignatory(ctx, { name: s(f, "name"), title: s(f, "title"), reason: s(f, "reason") });
   }, "Signatory saved. It applies to offer letters generated from now on; letters already generated are unchanged.");
+export async function directoryImportAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose the directory file (.xlsx or .csv)." };
+  const mode = s(fd, "mode") === "REPLACE" ? "REPLACE" : "MERGE";
+  const intent = s(fd, "intent");
+  try {
+    const summary = await importDirectory(ctx, { filename: file.name, data: Buffer.from(await file.arrayBuffer()), mode, dryRun: intent !== "import" });
+    return {
+      ok: true,
+      data: summary,
+      message: summary.applied ? `Directory imported: ${summary.added} added, ${summary.updated} updated, ${summary.deactivated} deactivated.` : "Preview ready. Nothing has been saved yet.",
+      nonce: Date.now(),
+    };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

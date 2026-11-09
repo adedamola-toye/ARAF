@@ -24,7 +24,7 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
       <div className="page-head">
         <div>
           <h1>Staff &amp; roles</h1>
-          <p>Provision named staff against verified @altbank.ng directory entries. There is no public registration. Admin status does not grant approval powers.</p>
+          <p>Provision named staff against verified @altbank.ng entries in the <Link href="/admin/directory">bank directory</Link>. There is no public registration. Admin status does not grant approval powers.</p>
         </div>
       </div>
       <div className="card" style={{ marginBottom: 16 }}>

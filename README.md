@@ -72,12 +72,13 @@ try provisioning.
 | `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
 | `npm run mail:test -- you@example.com` | Send one test email through the configured transport |
 
-The test suite has 194 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
+The test suite has 203 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
 
 - **Routing:** boundary amounts, all three routes end to end, every endorsement path, random eligibility and separation of duties, and unstaffed stages with admin resolution.
 - **Workflow rules:** correction and rejection routing, material-change invalidation, the three-report, APR and invoice gates, the production APR block, and the pack, insurance and CRMS gates.
 - **Disbursement and closure:** duplicate-disbursement prevention, closure dedupe and retry, vendor confirmation and repayment prompts.
 - **Documents and offers:** offer rendering for each entity type, APR fixtures and propagation into emails, and scoped document access with version retention.
+- **Bank directory:** CSV/Excel parsing with header aliases, row validation, preview, merge vs full replace (deactivate, never delete) and admin-only, audited imports.
 - **Platform:** OTP and idle expiry for every role (polling does not extend sessions), deep-link safety, report exports, audit metadata, reminders, and digest scheduling.
 
 ## Architecture
@@ -111,7 +112,7 @@ Set `APP_ENV=production`. Then:
 - **Scanning.** Use `SCANNER_DRIVER=clamd` (or replace the adapter with the bank's scanning service).
 - **Email.** Use `MAIL_DRIVER=smtp` with the bank-approved relay, or `MAIL_DRIVER=resend` with `RESEND_API_KEY` and a verified sending domain in `MAIL_FROM` (Resend and Cloudflare DNS steps in [docs/EMAIL.md](docs/EMAIL.md)). Set `CLOSURE_MAX_ATTACHMENT_BYTES` to the provider's limit; larger packs go out as an authenticated link.
 - **Network.** Set `TRUSTED_PROXY_HOPS` to the number of reverse proxies so the audit records the real client IP. Set `COOKIE_SECURE=true` (HTTPS only).
-- **Directory.** Load the bank directory export into `bank_directory` (provisioning and recipient groups validate against it). Then create the first Super Admin with a one-off SQL insert; there is no public registration.
+- **Directory.** Upload the bank's staff export at **Administration → Bank directory** (Super Admin; .xlsx or .csv with Email and Full name, optionally Department, Group mailbox, Active). Preview first, then import as *Add and update* or *Full replace* (missing people are marked inactive, never deleted). For scripted loads of a CSV, `npm run directory:import -- <file.csv> [--dry-run]` also works. Provisioning and recipient groups validate against it. Then create the first Super Admin with a one-off SQL insert; there is no public registration.
 - **Processes.** Run `npm run migrate`, then `npm run build && npm start`, and at least one `npm run worker`. Several workers are safe because they use `SKIP LOCKED` and advisory locks.
 - **Retention.** `RETENTION_YEARS` sets `retention_until` on closure or rejection. `RETENTION_PURGE_ENABLED=true` lets the worker purge blobs after that date (the metadata and audit stay).
 
@@ -124,7 +125,7 @@ Set `APP_ENV=production`. Then:
 | **Brand / typeface** | Golden Yellow #FFC900 and Deep Graphite #1C1D20 tokens (`src/app/globals.css`), "Wakeel" text wordmark, dark theme by default. Century Gothic is used where installed; it is a licensed font and is not bundled. | Supply a licensed Century Gothic web font (add an `@font-face` in `globals.css`) and the approved logo asset if wanted. |
 | **Merchant photograph** | Local copy of the image from the official Wakeel page (`public/images/wakeel-merchant-*.jpg`), taken from the accepted landing reference. | Confirm the bank's usage rights for internal use. |
 | **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |
-| **Bank directory** | Seeded `bank_directory` table. | Scheduled import from the HR/AD directory. |
+| **Bank directory** | Seeded `bank_directory` table; Super Admin upload (Excel/CSV, preview, merge or full replace, audited) at Administration → Bank directory. | Upload the HR/AD export; a scheduled automatic import can be added when the bank supplies a feed. |
 | **Email channel, malware scanning, object storage** | Resend email delivery, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
 
 ## Interface
