@@ -21,7 +21,7 @@ export default async function Verify({ searchParams }: { searchParams: Promise<R
           <p className="lede">
             If {maskEmail(pending.email)} belongs to provisioned staff, we sent it a 6-digit code. It works once.
           </p>
-          <VerifyForm next={next} as={pending.as} expiresAt={pending.at + config.otpTtlSeconds * 1000} ttlMs={config.otpTtlSeconds * 1000} devMailbox={!config.isProduction && config.mailDriver === "dev"} />
+          <VerifyForm next={next} as={pending.as} expiresAt={pending.at + config.otpTtlSeconds * 1000} ttlMs={config.otpTtlSeconds * 1000} />
         </>
       ) : (
         <>

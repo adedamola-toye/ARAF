@@ -54,9 +54,8 @@ in the terminal. Next time, start Docker Desktop, open the terminal in the folde
 
 ## 6. Sign in
 
-1. Enter a demo email (below) and click **Continue**.
-2. Open **http://localhost:3000/dev/mailbox** in another tab to read the 6-digit code (the test copy
-   does not send real email).
+1. Enter a seeded email (below) and click **Continue**.
+2. Check that email inbox for the 6-digit code. Codes are sent through Resend.
 3. Enter the code, choose the workspace, and click **Continue**.
 
 Sessions end after 5 minutes without activity; just sign in again.
@@ -75,11 +74,16 @@ Sessions end after 5 minutes without activity; just sign in again.
 
 All emails end in `@altbank.ng`; the full list is in the README.
 
-## Send real email instead of the test mailbox (optional)
+## Email delivery
 
-By default the test copy sends no real email; codes appear at `/dev/mailbox`. To deliver real email
-through Resend, add a verified domain and key, then follow [docs/EMAIL.md](EMAIL.md). While the domain
-is still being verified in Cloudflare, keep `MAIL_DRIVER=dev`.
+Sign-in codes and notifications are sent through Resend using the verified `wakeelboost.ng` domain.
+Set `RESEND_API_KEY` and keep `MAIL_DRIVER=resend`; see [docs/EMAIL.md](EMAIL.md) for details.
+
+To send a test message:
+
+```
+npm run mail:test -- you@example.com
+```
 
 ## Review the offer letters and approve the templates
 

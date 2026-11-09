@@ -1,0 +1,6 @@
+email,full_name,department,is_group_mailbox,active
+tomiwa.adebanjo@altbank.ng,Tomiwa Adebanjo,IT,false,true
+paul.toje@altbank.ng,Paul Toje,IT,false,true
+example.staff@altbank.ng,Example Staff,Commercial,false,true
+legal@altbank.ng,Legal Department,Legal,true,true
+shariah@altbank.ng,Shariah Compliance Desk,Shariah Compliance,true,true

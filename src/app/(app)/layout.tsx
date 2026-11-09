@@ -106,11 +106,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="small muted desktop-only">{ws ? `${ROLE_LABELS[ws]} workspace` : ""}</span>
         </div>
         <div className="topbar-right">
-          {!config.isProduction && (
-            <span className="badge badge-warn" title="Development adapters are active (mailbox, storage, scanner)">
-              DEV
-            </span>
-          )}
           <ThemeToggle initial={theme} />
           <details className="menu">
             <summary aria-label={`Profile menu for ${session.fullName}`}>

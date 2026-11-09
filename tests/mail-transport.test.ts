@@ -16,7 +16,7 @@ beforeEach(() => {
   vi.stubEnv("RESEND_API_KEY", "re_test_key");
   vi.stubEnv("RESEND_BASE_URL", "https://api.resend.test/");
   vi.stubEnv("RESEND_REPLY_TO", "support@altbank.ng");
-  vi.stubEnv("MAIL_FROM", "WakeelBoost Work Desk <workdesk@altbank.ng>");
+  vi.stubEnv("MAIL_FROM", "WakeelBoost Work Desk <noreply@wakeelboost.ng>");
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   setMailTransportForTests(null);
@@ -43,7 +43,7 @@ describe("Resend mail transport", () => {
       "Content-Type": "application/json",
     });
     expect(JSON.parse(String(init.body))).toEqual({
-      from: "WakeelBoost Work Desk <workdesk@altbank.ng>",
+      from: "WakeelBoost Work Desk <noreply@wakeelboost.ng>",
       to: ["staff@altbank.ng"],
       cc: ["lead@altbank.ng"],
       subject: "Your WakeelBoost Work Desk sign-in code",

@@ -104,10 +104,10 @@ export const config = {
     return bool("RETENTION_PURGE_ENABLED", false);
   },
   get mailDriver() {
-    return str("MAIL_DRIVER", "dev") as "dev" | "smtp" | "resend";
+    return str("MAIL_DRIVER", "resend") as "dev" | "smtp" | "resend";
   },
   get mailFrom() {
-    return str("MAIL_FROM", "WakeelBoost Work Desk <workdesk@altbank.ng>");
+    return str("MAIL_FROM", "WakeelBoost Work Desk <noreply@wakeelboost.ng>");
   },
   get smtp() {
     return {

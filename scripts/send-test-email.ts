@@ -19,7 +19,7 @@ async function main() {
   const driver = config.mailDriver;
   console.log(`[mail:test] driver=${driver}`);
   console.log(`[mail:test] from=${config.mailFrom}`);
-  if (driver === "dev") console.warn("[mail:test] MAIL_DRIVER=dev captures the message in the dev mailbox; no real email is sent. Set MAIL_DRIVER=resend to deliver.");
+  if (driver === "dev") console.warn("[mail:test] MAIL_DRIVER=dev captures the message in the test mailbox; no real email is sent. Set MAIL_DRIVER=resend to deliver.");
   if (driver === "resend" && !config.resend.apiKey) console.warn("[mail:test] RESEND_API_KEY is empty.");
 
   try {

@@ -21,15 +21,21 @@ the compose file also creates `wakeel_test`.
 ```bash
 cp .env.example .env          # development defaults
 npm install
-npm run db:reset              # migrate + seed synthetic staff, groups, template and demo cases
+npm run db:reset              # migrate + seed real staff, groups and the offer template
+npm run seed -- --with-demo   # add the synthetic demo staff and demo cases
 npm run dev:all               # Next.js on :3000 + background worker
 ```
 
 To run the two processes separately, use `npm run dev` and `npm run worker`.
 
-Open http://localhost:3000, choose a sign-in option, enter a demo email, then read the one-time
-code at **http://localhost:3000/dev/mailbox**. Assignment, reminder, closure and digest emails also appear
-there once the worker delivers them. This page does not exist in production.
+Open http://localhost:3000, choose a sign-in option and enter a seeded email. The one-time code is
+emailed to that address through Resend. Assignment, reminder, closure and digest emails are delivered
+the same way once the worker sends them.
+
+### Real accounts
+
+`npm run seed` creates only the real Super Admins: `tomiwa.adebanjo@altbank.ng` and
+`paul.toje@altbank.ng`. Run `npm run seed -- --with-demo` to also add the synthetic demo staff below.
 
 ### Demo accounts (all `@altbank.ng`, synthetic)
 
@@ -59,7 +65,7 @@ try provisioning.
 |---|---|
 | `npm run migrate` | Apply pending SQL migrations (`migrations/*.sql`) |
 | `npm run db:reset` | Drop, migrate and seed the dev database (refused in production) |
-| `npm run seed` | Seed reference data (+ demo cases when empty; `--no-cases` to skip) |
+| `npm run seed` | Seed real staff and reference data (`--with-demo` adds synthetic staff and demo cases; `--no-cases` skips cases) |
 | `npm run demo:routes` | Drive one synthetic case through each credit route end to end and print every handoff |
 | `npm test` | Vitest suite against `TEST_DATABASE_URL` (schema is recreated) |
 | `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
@@ -99,7 +105,7 @@ Key guarantees:
 
 Set `APP_ENV=production`. Then:
 
-- **Development adapters are refused.** The local file store, dev mailbox, dev scanner and published dev encryption keys all throw at use.
+- **Development adapters are refused.** The local file store, test mailbox, dev scanner and published dev encryption keys all throw at use.
 - **Secrets.** Generate `FIELD_ENCRYPTION_KEY`, `APP_HMAC_KEY` and `STORAGE_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep them in the bank's secret manager. Rotating the field key requires re-encryption. Values are versioned (`v1:`).
 - **Storage.** Use `STORAGE_DRIVER=s3` with a private bucket (block public access), `S3_KMS_KEY_ID` for SSE-KMS, and IAM limited to the bucket.
 - **Scanning.** Use `SCANNER_DRIVER=clamd` (or replace the adapter with the bank's scanning service).
@@ -119,7 +125,7 @@ Set `APP_ENV=production`. Then:
 | **Merchant photograph** | Local copy of the image from the official Wakeel page (`public/images/wakeel-merchant-*.jpg`), taken from the accepted landing reference. | Confirm the bank's usage rights for internal use. |
 | **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |
 | **Bank directory** | Seeded `bank_directory` table. | Scheduled import from the HR/AD directory. |
-| **Email channel, malware scanning, object storage** | Dev mailbox, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
+| **Email channel, malware scanning, object storage** | Resend email delivery, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
 
 ## Interface
 

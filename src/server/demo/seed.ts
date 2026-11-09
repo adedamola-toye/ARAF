@@ -17,6 +17,12 @@ export interface DemoStaff {
   unit?: string;
 }
 
+/** Real (non-synthetic) staff seeded in every environment. */
+export const REAL_STAFF: DemoStaff[] = [
+  { email: "tomiwa.adebanjo@altbank.ng", name: "Tomiwa Adebanjo", roles: [{ role: "SUPER_ADMIN" }], unit: "IT" },
+  { email: "paul.toje@altbank.ng", name: "Paul Toje", roles: [{ role: "SUPER_ADMIN" }], unit: "IT" },
+];
+
 export const DEMO_STAFF: DemoStaff[] = [
   { email: "superadmin@altbank.ng", name: "Sade Admin", roles: [{ role: "SUPER_ADMIN" }], unit: "IT" },
   { email: "reports@altbank.ng", name: "Remi Reports", roles: [{ role: "REPORTING_ADMIN" }], unit: "MIS" },
@@ -42,22 +48,29 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "shariah.officer@altbank.ng", name: "Aisha Shariah", roles: [{ role: "SHARIAH_REVIEWER" }], unit: "Shariah Compliance" },
 ];
 
-/** Directory entries that are not provisioned (to demonstrate provisioning) and group mailboxes. */
-export const EXTRA_DIRECTORY = [
-  { email: "new.officer@altbank.ng", name: "Nkechi New-Officer", group: false },
-  { email: "legal@altbank.ng", name: "Legal Department", group: true },
-  { email: "shariah@altbank.ng", name: "Shariah Compliance Desk", group: true },
+/** Group mailboxes that are always seeded (the closure workflow needs them). */
+export const GROUP_MAILBOXES = [
+  { email: "legal@altbank.ng", name: "Legal Department" },
+  { email: "shariah@altbank.ng", name: "Shariah Compliance Desk" },
 ];
 
-export async function seedReferenceData(q: Db) {
-  for (const s of DEMO_STAFF) {
-    await q.query(`INSERT INTO bank_directory (email, full_name, source) VALUES ($1,$2,'synthetic-seed') ON CONFLICT (email) DO NOTHING`, [s.email, s.name]);
+/** Demo-only directory entries that are not provisioned (to demonstrate provisioning). */
+export const EXTRA_DIRECTORY = [
+  { email: "new.officer@altbank.ng", name: "Nkechi New-Officer", group: false },
+];
+
+export async function seedReferenceData(q: Db, opts: { includeDemo?: boolean } = {}) {
+  const includeDemo = opts.includeDemo ?? true;
+  const staff = includeDemo ? [...REAL_STAFF, ...DEMO_STAFF] : [...REAL_STAFF];
+  for (const s of staff) {
+    const source = REAL_STAFF.some((r) => r.email === s.email) ? "seed" : "synthetic-seed";
+    await q.query(`INSERT INTO bank_directory (email, full_name, source) VALUES ($1,$2,$3) ON CONFLICT (email) DO NOTHING`, [s.email, s.name, source]);
   }
-  for (const d of EXTRA_DIRECTORY) {
+  for (const d of [...GROUP_MAILBOXES.map((g) => ({ ...g, group: true })), ...(includeDemo ? EXTRA_DIRECTORY : [])]) {
     await q.query(`INSERT INTO bank_directory (email, full_name, is_group_mailbox, source) VALUES ($1,$2,$3,'synthetic-seed') ON CONFLICT (email) DO NOTHING`, [d.email, d.name, d.group]);
   }
   const ids: Record<string, string> = {};
-  for (const s of DEMO_STAFF) {
+  for (const s of staff) {
     const r = await q.query<{ id: string }>(
       `INSERT INTO staff (email, full_name, region, business_unit) VALUES ($1,$2,$3,$4)
        ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name RETURNING id`,
@@ -73,8 +86,8 @@ export async function seedReferenceData(q: Db) {
     }
   }
   for (const [g, emails] of [
-    ["LEGAL", ["legal@altbank.ng", "legal.officer@altbank.ng"]],
-    ["SHARIAH", ["shariah@altbank.ng", "shariah.officer@altbank.ng"]],
+    ["LEGAL", ["legal@altbank.ng", ...(includeDemo ? ["legal.officer@altbank.ng"] : [])]],
+    ["SHARIAH", ["shariah@altbank.ng", ...(includeDemo ? ["shariah.officer@altbank.ng"] : [])]],
   ] as const) {
     for (const e of emails) await q.query("INSERT INTO recipient_group_members (group_code, email) VALUES ($1,$2) ON CONFLICT DO NOTHING", [g, e]);
   }

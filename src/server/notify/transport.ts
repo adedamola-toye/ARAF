@@ -19,11 +19,11 @@ export interface MailTransport {
   send(m: OutgoingEmail): Promise<{ messageId: string }>;
 }
 
-/** DEVELOPMENT ADAPTER: stores messages in the dev_mailbox table, viewable at /dev/mailbox. */
+/** TEST ADAPTER: captures messages in the dev_mailbox table. Never used by the app by default. */
 class DevMailbox implements MailTransport {
-  readonly name = "dev-mailbox (development adapter)";
+  readonly name = "test-mailbox";
   async send(m: OutgoingEmail) {
-    assertNotProduction("Development mailbox");
+    assertNotProduction("Test mailbox");
     const r = await db.query<{ id: string }>(
       `INSERT INTO dev_mailbox (outbox_id, to_addresses, cc_addresses, subject, body_text, attachments)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,

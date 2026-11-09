@@ -5,9 +5,9 @@ transport selected by `MAIL_DRIVER`:
 
 | Driver | Behaviour |
 |---|---|
-| `dev` (default) | Captured in `dev_mailbox`, readable at `/dev/mailbox`. Nothing leaves the machine. Refused in production. |
-| `resend` | Sent through the Resend HTTP API (`https://api.resend.com/emails`). Requires `RESEND_API_KEY` and a **verified** sending domain. |
+| `resend` (default) | Sent through the Resend HTTP API (`https://api.resend.com/emails`). Requires `RESEND_API_KEY` and a **verified** sending domain. |
 | `smtp` | Sent through the bank-approved SMTP relay. |
+| `dev` | Test-only capture to `dev_mailbox`; never used unless explicitly configured. |
 
 OTP messages are sent directly (not through the outbox) and are never stored with the code. The other
 notifications are queued in `notification_outbox` and delivered by `npm run worker`.
@@ -24,11 +24,11 @@ notifications are queued in `notification_outbox` and delivered by `npm run work
 
 ```dotenv
 MAIL_DRIVER=resend
-MAIL_FROM="WakeelBoost Work Desk <workdesk@mail.altbank.ng>"
+MAIL_FROM="WakeelBoost Work Desk <noreply@wakeelboost.ng>"
 RESEND_API_KEY=re_...
 RESEND_BASE_URL=https://api.resend.com
 # optional
-RESEND_REPLY_TO=support@altbank.ng
+RESEND_REPLY_TO=support@wakeelboost.ng
 ```
 
 `MAIL_FROM` must use the verified domain, otherwise Resend returns `403 domain is not verified`.
@@ -47,10 +47,10 @@ RESEND_REPLY_TO=support@altbank.ng
 ## Testing before the domain is verified
 
 Resend's shared sender `onboarding@resend.dev` can only deliver to the email address that owns the
-Resend account. It cannot deliver sign-in codes to `@altbank.ng` staff, so keep `MAIL_DRIVER=dev`
-locally until the domain is verified.
+Resend account. It cannot deliver sign-in codes to staff addresses. Once `wakeelboost.ng` is verified,
+all sign-in codes go directly to the staff member's email address.
 
-Once the API key or domain is ready, send a test message through the real transport:
+Send a test message through the real transport:
 
 ```bash
 npm run mail:test -- you@example.com

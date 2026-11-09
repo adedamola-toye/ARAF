@@ -1,7 +1,7 @@
 import { loadEnv } from "./load-env";
 loadEnv();
 import { db, closePool } from "../src/server/db";
-import { seedReferenceData, DEMO_STAFF } from "../src/server/demo/seed";
+import { seedReferenceData, DEMO_STAFF, REAL_STAFF } from "../src/server/demo/seed";
 import { NAIRA } from "../src/server/money";
 import { createSubmittedCase, act, approveFirstReview, driveToOffer, driveToClosed, prepareFirstReview, recordAcceptanceAssessment } from "../src/server/demo/scenario";
 
@@ -11,9 +11,10 @@ import { createSubmittedCase, act, approveFirstReview, driveToOffer, driveToClos
  */
 async function main() {
   if (process.env.APP_ENV === "production") throw new Error("Refusing to seed synthetic data in production.");
-  await seedReferenceData(db);
+  const includeDemo = process.argv.includes("--with-demo");
+  await seedReferenceData(db, { includeDemo });
   const existing = await db.query("SELECT count(*)::int AS n FROM applications");
-  if (existing.rows[0].n === 0 && !process.argv.includes("--no-cases")) {
+  if (includeDemo && existing.rows[0].n === 0 && !process.argv.includes("--no-cases")) {
     console.log("Creating synthetic demo cases…");
     // At business endorsement (RM -> selected RBE)
     await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(2_500_000) });
@@ -37,9 +38,9 @@ async function main() {
     await driveToOffer(e);
     await driveToClosed(e);
   }
-  console.log("Seed complete. Demo accounts:");
-  for (const s of DEMO_STAFF) console.log(`  ${s.email.padEnd(30)} ${s.roles.map((r) => r.role).join(", ")}`);
-  console.log("Sign in with any demo email; read the one-time code at http://localhost:3000/dev/mailbox (development only).");
+  console.log(includeDemo ? "Seed complete. Accounts:" : "Seed complete. Real accounts (pass --with-demo for synthetic demo staff):");
+  for (const s of includeDemo ? [...REAL_STAFF, ...DEMO_STAFF] : REAL_STAFF) console.log(`  ${s.email.padEnd(30)} ${s.roles.map((r) => r.role).join(", ")}`);
+  console.log("Sign in with any seeded email; the one-time code is emailed to that address.");
 }
 main()
   .catch((e) => {

@@ -357,7 +357,7 @@ dialog.modal::backdrop { background: rgb(0 0 0 / 60%); }
   :root[data-theme="light"] .auth::before { background: linear-gradient(90deg, #f5f4effa, #f5f4efc9 66%, #f5f4ef68); }
   .auth-header .wordmark-text { font-size: 26px; }
 }
-/* plain branded frame for long-form pages (dev mailbox) */
+/* plain branded frame for long-form pages */
 .plain-frame { min-height: 100vh; display: flex; flex-direction: column; }
 .plain-frame header { display: flex; justify-content: space-between; align-items: center; padding: 16px clamp(16px, 4vw, 40px); border-bottom: 1px solid var(--line); }
 .plain-frame main { flex: 1; padding: var(--space-5) clamp(16px, 4vw, 40px); max-width: 900px; width: 100%; }

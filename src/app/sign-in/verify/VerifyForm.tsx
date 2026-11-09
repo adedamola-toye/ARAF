@@ -10,7 +10,7 @@ const WORKSPACES = [
   { v: "MERCHANT_OFFICER", l: "Merchant Officer" },
 ];
 
-export function VerifyForm({ next, as, expiresAt, ttlMs, devMailbox }: { next: string; as: string; expiresAt: number; ttlMs: number; devMailbox: boolean }) {
+export function VerifyForm({ next, as, expiresAt, ttlMs }: { next: string; as: string; expiresAt: number; ttlMs: number }) {
   const [state, action, pending] = useActionState(verifyOtpAction, {});
   const [resend, resendAction, resending] = useActionState(resendOtpAction, {});
   const [deadline, setDeadline] = useState(expiresAt);
@@ -59,11 +59,6 @@ export function VerifyForm({ next, as, expiresAt, ttlMs, devMailbox }: { next: s
             {resending ? "Sending…" : "Resend code"}
           </button>
           <Link href={`/sign-in?next=${encodeURIComponent(next)}`}>Use a different email</Link>
-          {devMailbox && (
-            <Link href="/dev/mailbox" target="_blank">
-              Development mailbox
-            </Link>
-          )}
         </p>
       </form>
     </>
