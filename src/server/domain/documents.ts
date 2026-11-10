@@ -7,7 +7,7 @@ import { config } from "../config";
 import { sha256Hex, hmac, safeEqualHex } from "../crypto";
 import { DomainError, forbidden, invalid, notFound } from "../errors";
 import { objectStore } from "../storage";
-import { documentScanner, sniffAllowedType, ALLOWED_EXTENSIONS } from "../storage/scanner";
+import { documentScanner, sniffAllowedType, ALLOWED_EXTENSIONS, type ScanResult } from "../storage/scanner";
 import { caseAccess } from "./access";
 import type { Stage } from "./stages";
 
@@ -169,7 +169,21 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
   if (input.category === "GENERATED_OFFER" || input.category === "GENERATED_OFFER_PDF") throw forbidden("Generated offers are produced by the system.");
 
   const quarantineKey = `quarantine/${input.applicationId}/${randomUUID()}`;
-  await objectStore().put(quarantineKey, input.data, mime);
+  try {
+    await objectStore().put(quarantineKey, input.data, mime);
+  } catch (e) {
+    console.error("[upload] object storage write failed", e);
+    await auditOutsideTx(ctx, {
+      action: "DOCUMENT_UPLOAD_FAILED",
+      outcome: "FAILURE",
+      applicationId: input.applicationId,
+      details: { category: input.category, filename, reason: e instanceof Error ? e.message : String(e) },
+    }).catch(() => undefined);
+    throw new DomainError(
+      "CONFIG",
+      "Document storage is not available. An administrator must check the object storage configuration (STORAGE_DRIVER / S3 settings).",
+    );
+  }
   let rec: { id: string; version: number };
   try {
     rec = await withTx(async (tx) => {
@@ -244,8 +258,32 @@ export async function storeGeneratedDocument(
 export async function scanDocument(ctx: Ctx, docId: string): Promise<string> {
   const doc = (await db.query<DocumentRow>("SELECT * FROM documents WHERE id = $1", [docId])).rows[0];
   if (!doc || doc.scan_status !== "QUARANTINED") return doc?.scan_status ?? "MISSING";
-  const data = await objectStore().get(doc.storage_key);
-  const res = await documentScanner().scan(data);
+
+  let res: ScanResult;
+  try {
+    const data = await objectStore().get(doc.storage_key);
+    res = await documentScanner().scan(data);
+  } catch (e) {
+    // Keep the row quarantined so the worker can retry, but record why it is stuck.
+    const detail = `Scan pending: ${e instanceof Error ? e.message : String(e)}`.slice(0, 500);
+    console.error("[scan] failed, leaving in quarantine", doc.id, e);
+    await db.query("UPDATE documents SET scan_detail = $2 WHERE id = $1 AND scan_status = 'QUARANTINED'", [doc.id, detail]).catch(() => undefined);
+    await auditOutsideTx(ctx, {
+      action: "DOCUMENT_SCAN_FAILED",
+      outcome: "FAILURE",
+      applicationId: doc.application_id,
+      documentId: doc.id,
+      documentVersion: doc.version_no,
+      details: { detail },
+    }).catch(() => undefined);
+    throw e;
+  }
+
+  if (res.deferred) {
+    await db.query("UPDATE documents SET scan_detail = $2 WHERE id = $1 AND scan_status = 'QUARANTINED'", [doc.id, res.detail]).catch(() => undefined);
+    return "QUARANTINED";
+  }
+
   if (res.clean) {
     const key = `documents/${doc.application_id}/${doc.id}`;
     await objectStore().move(doc.storage_key, key);

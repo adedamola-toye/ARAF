@@ -64,7 +64,7 @@ export default async function EditRequest({ params }: { params: Promise<{ id: st
         isCorrection={!!myTask}
         required={required.map((r) => ({ code: r, label: CATEGORY_LABEL[r], done: docs.some((d) => d.category === r && d.scan_status === "CLEAN") }))}
         uploadCategories={cats.map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))}
-        uploaded={docs.map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename} (v${d.version_no})`, href: signDocumentLink(d.id, session.staffId, session.sessionId, "download"), quarantined: d.scan_status === "QUARANTINED" }))}
+        uploaded={docs.map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename} (v${d.version_no})`, href: signDocumentLink(d.id, session.staffId, session.sessionId, "download"), quarantined: d.scan_status === "QUARANTINED", scanDetail: d.scan_detail }))}
       />
     </>
   );

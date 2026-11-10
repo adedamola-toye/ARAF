@@ -59,6 +59,17 @@ class S3Store implements ObjectStore {
     }
     return this.clientPromise;
   }
+  /**
+   * Server-side encryption is sent only when the bucket/provider supports it. Some
+   * S3-compatible providers (Supabase Storage, Cloudflare R2, MinIO without KMS) reject
+   * SSE headers, so set S3_SERVER_SIDE_ENCRYPTION=none for those.
+   */
+  private sse() {
+    const mode = config.s3.serverSideEncryption;
+    if (mode === "none") return {};
+    if (mode === "aws:kms") return { ServerSideEncryption: "aws:kms" as const, SSEKMSKeyId: config.s3.kmsKeyId };
+    return { ServerSideEncryption: "AES256" as const };
+  }
   async put(key: string, data: Buffer, contentType: string) {
     const { m, c } = await this.client();
     await c.send(
@@ -67,8 +78,7 @@ class S3Store implements ObjectStore {
         Key: key,
         Body: data,
         ContentType: contentType,
-        ServerSideEncryption: config.s3.kmsKeyId ? "aws:kms" : "AES256",
-        SSEKMSKeyId: config.s3.kmsKeyId,
+        ...this.sse(),
       }),
     );
   }
@@ -84,8 +94,7 @@ class S3Store implements ObjectStore {
         Bucket: config.s3.bucket,
         CopySource: `${config.s3.bucket}/${from}`,
         Key: to,
-        ServerSideEncryption: config.s3.kmsKeyId ? "aws:kms" : "AES256",
-        SSEKMSKeyId: config.s3.kmsKeyId,
+        ...this.sse(),
       }),
     );
     await this.delete(from);
@@ -103,6 +112,12 @@ export function objectStore(): ObjectStore {
       if (!config.s3.bucket) throw new Error("S3_BUCKET is required for STORAGE_DRIVER=s3");
       store = new S3Store();
     } else {
+      if (process.env.VERCEL) {
+        throw new Error(
+          "Local document storage cannot be used on Vercel: the filesystem is read-only and ephemeral. " +
+            "Set STORAGE_DRIVER=s3 with a private bucket and credentials (see README production configuration).",
+        );
+      }
       assertNotProduction("Local encrypted file storage");
       store = new LocalEncryptedStore(path.resolve(config.storageLocalDir));
     }

@@ -4,6 +4,8 @@ import { config, assertNotProduction } from "../config";
 export interface ScanResult {
   clean: boolean;
   detail: string;
+  /** True when scanning was intentionally skipped (e.g. SCANNER_DRIVER=defer); leave in quarantine for the worker. */
+  deferred?: boolean;
 }
 export interface Scanner {
   readonly name: string;
@@ -53,9 +55,25 @@ class ClamdScanner implements Scanner {
   }
 }
 
+/**
+ * Defers scanning to the background worker. Use on web nodes that cannot reach clamd
+ * (e.g. Vercel): uploads are accepted into quarantine and the worker on another host scans them.
+ * Must NOT be used by the worker itself, or nothing would ever leave quarantine.
+ */
+class DeferredScanner implements Scanner {
+  readonly name = "defer (scan on background worker)";
+  async scan(): Promise<ScanResult> {
+    return { clean: false, deferred: true, detail: "Scan deferred to the background worker." };
+  }
+}
+
 let scanner: Scanner | null = null;
 export function documentScanner(): Scanner {
-  if (!scanner) scanner = config.scannerDriver === "clamd" ? new ClamdScanner() : new DevScanner();
+  if (!scanner) {
+    if (config.scannerDriver === "clamd") scanner = new ClamdScanner();
+    else if (config.scannerDriver === "defer") scanner = new DeferredScanner();
+    else scanner = new DevScanner();
+  }
   return scanner;
 }
 

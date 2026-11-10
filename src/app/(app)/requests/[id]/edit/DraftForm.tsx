@@ -88,7 +88,7 @@ export function DraftForm(props: {
   correction: { by: string; reason: string; at: string } | null;
   required: { code: string; label: string; done: boolean }[];
   uploadCategories: { code: string; label: string }[];
-  uploaded: { id: string; label: string; href: string; quarantined: boolean }[];
+  uploaded: { id: string; label: string; href: string; quarantined: boolean; scanDetail?: string | null }[];
 }) {
   const [state, action] = useActionState(saveDraftAction, {});
   const router = useRouter();
@@ -373,7 +373,9 @@ export function DraftForm(props: {
           <ul style={{ margin: "12px 0 0", paddingLeft: 18 }}>
             {props.uploaded.map((d) => (
               <li key={d.id} className="small">
-                <a href={d.href}>{d.label}</a> {d.quarantined && <span className="badge badge-warn">Quarantined</span>}
+                <a href={d.href}>{d.label}</a>{" "}
+                {d.quarantined && <span className="badge badge-warn" title={d.scanDetail ?? undefined}>Quarantined</span>}
+                {d.quarantined && d.scanDetail && <div className="small muted">{d.scanDetail}</div>}
               </li>
             ))}
           </ul>

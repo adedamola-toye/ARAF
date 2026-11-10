@@ -36,7 +36,14 @@ export async function POST(req: NextRequest) {
     if (res.scanStatus === "REJECTED") return NextResponse.json({ ok: false, error: "The file failed the malware scan and was quarantined. It will not be used." }, { status: 422 });
     return NextResponse.json({ ok: true, version: res.version, scanStatus: res.scanStatus });
   } catch (e) {
-    if (e instanceof DomainError) return NextResponse.json({ ok: false, error: e.message }, { status: e.code === "FORBIDDEN" ? 403 : 400 });
-    throw e;
+    if (e instanceof DomainError) {
+      const status = e.code === "FORBIDDEN" ? 403 : e.code === "CONFIG" ? 500 : 400;
+      return NextResponse.json({ ok: false, error: e.message }, { status });
+    }
+    console.error("[documents/upload] unexpected failure", e);
+    return NextResponse.json(
+      { ok: false, error: "The upload failed unexpectedly. Try again, or contact an administrator if it keeps happening." },
+      { status: 500 },
+    );
   }
 }

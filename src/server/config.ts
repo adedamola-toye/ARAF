@@ -86,13 +86,14 @@ export const config = {
       endpoint: process.env.S3_ENDPOINT || undefined,
       kmsKeyId: process.env.S3_KMS_KEY_ID || undefined,
       forcePathStyle: bool("S3_FORCE_PATH_STYLE", false),
+      serverSideEncryption: str("S3_SERVER_SIDE_ENCRYPTION", "AES256") as "AES256" | "aws:kms" | "none",
     };
   },
   get maxUploadBytes() {
     return int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024);
   },
   get scannerDriver() {
-    return str("SCANNER_DRIVER", "dev") as "dev" | "clamd";
+    return str("SCANNER_DRIVER", "dev") as "dev" | "clamd" | "defer";
   },
   get clamd() {
     return { host: str("CLAMD_HOST", "127.0.0.1"), port: int("CLAMD_PORT", 3310) };
