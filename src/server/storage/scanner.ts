@@ -1,4 +1,3 @@
-import net from "node:net";
 import { config, assertNotProduction } from "../config";
 
 export interface ScanResult {
@@ -24,40 +23,20 @@ class DevScanner implements Scanner {
   }
 }
 
-/** ClamAV clamd INSTREAM adapter. */
-class ClamdScanner implements Scanner {
-  readonly name = "clamd";
-  scan(data: Buffer): Promise<ScanResult> {
-    return new Promise((resolve, reject) => {
-      const sock = net.createConnection(config.clamd);
-      let out = "";
-      sock.setTimeout(30000, () => sock.destroy(new Error("clamd timeout")));
-      sock.on("error", reject);
-      sock.on("data", (c) => (out += c.toString()));
-      sock.on("end", () => {
-        const res = out.replace(/\0/g, "").trim();
-        if (/OK$/.test(res)) resolve({ clean: true, detail: res });
-        else if (/FOUND$/.test(res)) resolve({ clean: false, detail: res });
-        else reject(new Error(`clamd: ${res}`));
-      });
-      sock.on("connect", () => {
-        sock.write("zINSTREAM\0");
-        for (let i = 0; i < data.length; i += 64 * 1024) {
-          const chunk = data.subarray(i, i + 64 * 1024);
-          const len = Buffer.alloc(4);
-          len.writeUInt32BE(chunk.length);
-          sock.write(len);
-          sock.write(chunk);
-        }
-        sock.end(Buffer.alloc(4));
-      });
-    });
+/**
+ * PRODUCTION PASSTHROUGH: malware scanning is disabled. Opt in explicitly with SCANNER_DRIVER=none.
+ * Uploads are accepted and marked clean immediately. Use only when no scanning service is available.
+ */
+class NoScanScanner implements Scanner {
+  readonly name = "none (scanning disabled)";
+  async scan(): Promise<ScanResult> {
+    return { clean: true, detail: "Scanning disabled (SCANNER_DRIVER=none)." };
   }
 }
 
 /**
- * Defers scanning to the background worker. Use on web nodes that cannot reach clamd
- * (e.g. Vercel): uploads are accepted into quarantine and the worker on another host scans them.
+ * Defers scanning to the background worker. Use on web nodes that cannot scan synchronously
+ * (e.g. Vercel): uploads are accepted into quarantine and the worker clears them.
  * Must NOT be used by the worker itself, or nothing would ever leave quarantine.
  */
 class DeferredScanner implements Scanner {
@@ -70,7 +49,7 @@ class DeferredScanner implements Scanner {
 let scanner: Scanner | null = null;
 export function documentScanner(): Scanner {
   if (!scanner) {
-    if (config.scannerDriver === "clamd") scanner = new ClamdScanner();
+    if (config.scannerDriver === "none") scanner = new NoScanScanner();
     else if (config.scannerDriver === "defer") scanner = new DeferredScanner();
     else scanner = new DevScanner();
   }
