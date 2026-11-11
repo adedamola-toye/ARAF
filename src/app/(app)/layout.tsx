@@ -1,8 +1,8 @@
 import { BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
 import { requireUser } from "../_lib/auth";
-import { currentTheme } from "../_lib/theme";
-import { Footer, Wordmark } from "@/components/Brand";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { themePreference } from "../_lib/theme";
+import { BankMark, Footer, Wordmark } from "@/components/Brand";
+import { AppearanceOptions } from "@/components/Appearance";
 import { IdleWatcher } from "@/components/IdleWatcher";
 import { MobileNavToggle, NavLink, WorkspaceSelect } from "@/components/NavLink";
 import { ROLE_LABELS, isInitiatorRole, type Role } from "@/server/domain/roles";
@@ -15,7 +15,7 @@ const ic = { className: "icon", "aria-hidden": true } as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, roles } = await requireUser();
-  const theme = await currentTheme();
+  const theme = await themePreference();
   const ws = session.activeRole as Role | null;
   const queueCount = Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id = $1", [session.staffId])).rows[0].n);
   const isInitiatorWs = isInitiatorRole(ws);
@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <nav className="sidenav" id="sidenav" aria-label="Main navigation">
         <div className="brand-block desktop-only">
           <Wordmark href="/queue" />
-          <span className="wordmark-app">Retail Asset Factory</span>
+          <BankMark />
         </div>
         <div className="nav-section">
           <span className="nav-title">Work</span>
@@ -150,10 +150,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="mobile-only">
             <Wordmark href="/queue" />
           </span>
-          <span className="small muted desktop-only">{ws ? `${ROLE_LABELS[ws]} workspace` : ""}</span>
+          {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
-          <ThemeToggle initial={theme} />
           <details className="menu">
             <summary aria-label={`Profile menu for ${session.fullName}`}>
               <span className="avatar" aria-hidden="true">
@@ -171,6 +170,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ) : (
                 <span className="badge">{ws ? ROLE_LABELS[ws] : ""}</span>
               )}
+              <div className="menu-section">
+                <p className="menu-caption">Appearance</p>
+                <AppearanceOptions initial={theme} />
+              </div>
               <div className="small muted">Sessions end after 5 minutes of inactivity.</div>
               <form action={signOutAction}>
                 <button className="btn btn-block">Sign out</button>

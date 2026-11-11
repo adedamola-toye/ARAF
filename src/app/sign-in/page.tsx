@@ -1,13 +1,14 @@
 import { AuthScene } from "@/components/Brand";
 import { safeNext } from "@/lib/paths";
 import { EmailForm } from "./EmailForm";
+import { themePreference } from "../_lib/theme";
 
 export const metadata = { title: "Sign in" };
 
 export default async function SignIn({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
   return (
-    <AuthScene>
+    <AuthScene theme={await themePreference()}>
       <p className="auth-eyebrow">Retail Financing &amp; Disbursements</p>
       <h1>
         From Request to Disbursement. <em>Seamlessly.</em>

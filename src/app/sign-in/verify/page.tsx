@@ -5,6 +5,7 @@ import { maskEmail } from "@/server/mask";
 import { safeNext } from "@/lib/paths";
 import { readPending } from "../actions";
 import { VerifyForm } from "./VerifyForm";
+import { themePreference } from "../../_lib/theme";
 
 export const metadata = { title: "Enter code" };
 
@@ -13,7 +14,7 @@ export default async function Verify({ searchParams }: { searchParams: Promise<R
   const next = safeNext(sp.next);
   const pending = await readPending();
   return (
-    <AuthScene>
+    <AuthScene theme={await themePreference()}>
       <h1 className="auth-h1-sm">Check your email</h1>
       {pending ? (
         <>
