@@ -1,6 +1,7 @@
-// Port the V39 reference CSS into a CSS module scoped to .page. Usage: node port-v39.js <v39.html> <out.css>
-const fs = require('fs');
-const postcss = require('postcss');
+// Regenerates src/app/landing.module.css from the approved V39 reference.
+// Usage: node scripts/port-v39-landing.mjs <v39.html with base64 images stripped or intact> src/app/landing.module.css
+import fs from 'node:fs';
+import postcss from 'postcss';
 const [src, out] = process.argv.slice(2);
 const html = fs.readFileSync(src, 'utf8');
 const blocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/g)].map(m => m[1]);
