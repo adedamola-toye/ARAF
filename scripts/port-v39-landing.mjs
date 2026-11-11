@@ -61,5 +61,13 @@ const header = `/*
 .page strong { font-weight: bold; }
 .page :focus-visible { outline: revert; border-radius: 0; }
 `;
-fs.writeFileSync(out, header + root.toString() + '\n');
+const corrections = `
+/* V39 corrections (found in browser verification; everything else above is V39 verbatim):
+   1. The footer "Appearance" control was #78849A at 78% opacity on #F7F9FF (below 3.6:1, WCAG AA needs 4.5:1).
+      It now uses V39's own secondary text colour at full opacity (4.9:1). Dark mode already passed.
+   2. (in the selectors above) System-mode switcher styling applies only when System resolves to dark. */
+:global(html[data-theme="light"]) .page .appearance-menu summary, .page .appearance-menu summary { color: #64718c; opacity: 1; }
+:global(html[data-theme="dark"]) .page .appearance-menu summary { color: #c2cedc; }
+`;
+fs.writeFileSync(out, header + root.toString() + '\n' + corrections);
 console.log('rules', root.nodes.length);

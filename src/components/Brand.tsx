@@ -49,7 +49,7 @@ export function AuthScene({ children, theme = "system" }: { children: React.Reac
       <div className={s.shell}>
         <header>
           <Link href="/" className={s.brand} aria-label="Retail Asset Factory home">
-            <p className="brand-title">Retail Asset Factory</p>
+            <p className={s["brand-title"]}>Retail Asset Factory</p>
             <p>A Payments and Collections Product</p>
           </Link>
           <div className={s["header-actions"]}>

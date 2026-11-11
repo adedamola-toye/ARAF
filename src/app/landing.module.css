@@ -199,3 +199,10 @@
 @media(max-width:740px){.page header{flex-wrap:nowrap!important;min-height:82px!important;gap:10px!important}.page header .header-actions{width:auto!important;flex-direction:row!important;justify-content:flex-end!important}.page header .header-actions .bank-logo{width:clamp(85px,22vw,125px);height:52px}.page footer .appearance-menu{margin-left:0}.page footer .appearance-panel{right:auto;left:0}}
 @media(max-width:380px){.page header .header-actions .bank-logo{width:82px}}
 
+
+/* V39 corrections (found in browser verification; everything else above is V39 verbatim):
+   1. The footer "Appearance" control was #78849A at 78% opacity on #F7F9FF (below 3.6:1, WCAG AA needs 4.5:1).
+      It now uses V39's own secondary text colour at full opacity (4.9:1). Dark mode already passed.
+   2. (in the selectors above) System-mode switcher styling applies only when System resolves to dark. */
+:global(html[data-theme="light"]) .page .appearance-menu summary, .page .appearance-menu summary { color: #64718c; opacity: 1; }
+:global(html[data-theme="dark"]) .page .appearance-menu summary { color: #c2cedc; }
