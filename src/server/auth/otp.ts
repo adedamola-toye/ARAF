@@ -10,7 +10,7 @@ import { simpleEmail } from "../notify/templates";
 import { rateLimit } from "./rateLimit";
 import { createSession } from "./session";
 
-export const GENERIC_OTP_MESSAGE = "If this email belongs to provisioned WakeelBoost staff, a one-time code has been sent to it.";
+export const GENERIC_OTP_MESSAGE = "If this email belongs to provisioned Retail Asset Factory staff, a one-time code has been sent to it.";
 
 export function normaliseEmail(e: string) {
   return e.trim().toLowerCase();
@@ -62,7 +62,7 @@ export async function requestOtp(ctx: Ctx, rawEmail: string): Promise<{ message:
     await mailTransport().send({
       to: [email],
       cc: [],
-      subject: "Your WakeelBoost Work Desk sign-in code",
+      subject: "Your AltBank Retail Asset Factory sign-in code",
       text: simpleEmail([
         `Your one-time sign-in code is: ${code}`,
         `It expires in ${Math.round(config.otpTtlSeconds / 60)} minutes and can be used once.`,

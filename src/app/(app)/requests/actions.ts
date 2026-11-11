@@ -123,6 +123,13 @@ export async function taskActionAction(_p: ActionState, fd: FormData): Promise<A
       crmsLogged: fd.get("crmsLogged") === "on" || fd.get("crmsLogged") === "true",
       dsrExceptionJustification: str(fd, "dsrExceptionJustification") || null,
       booking,
+      visitComments: str(fd, "visitComments") || null,
+      rmPhotoConfirmed: fd.get("rmPhotoConfirmed") === "on" || fd.get("rmPhotoConfirmed") === "true",
+      contractStepsConfirmed: fd.get("contractStepsConfirmed") === "on" || fd.get("contractStepsConfirmed") === "true",
+      facilityBooking:
+        action === "BOOK_FACILITY"
+          ? { bookingRef: str(fd, "bookingRef"), principalKobo: parseNairaToKobo(str(fd, "principal")) ?? -1, firstDueDate: str(fd, "firstDueDate") }
+          : null,
     });
     return { ok: true, message: r.message, nonce: Date.now() };
   } catch (e) {

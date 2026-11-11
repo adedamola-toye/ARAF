@@ -220,7 +220,7 @@ export function toCsv(rows: ReportRow[]): string {
 
 export async function toXlsx(rows: ReportRow[], totals: Record<string, number>, filters: ReportFilters): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "WakeelBoost Work Desk";
+  wb.creator = "AltBank Retail Asset Factory";
   const ws = wb.addWorksheet("Requests");
   ws.addRow(EXPORT_COLUMNS.map((c) => c.header)).font = { bold: true };
   for (const r of rows) ws.addRow(EXPORT_COLUMNS.map((c) => c.value(r)));

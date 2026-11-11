@@ -10,6 +10,7 @@ import { koboToNairaString } from "@/server/money";
 import { formatLagos } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
 import { DraftForm } from "./DraftForm";
+import { RetailEdit } from "./RetailEdit";
 
 export const metadata = { title: "Edit request" };
 
@@ -25,6 +26,12 @@ export default async function EditRequest({ params }: { params: Promise<{ id: st
   }
   const app = c.app;
   const myTask = c.openTask && c.openTask.assignee_id === session.staffId && c.openTask.stage === "INITIATOR_CORRECTION" ? c.openTask : null;
+  if (app.workflow === "RETAIL") {
+    const editable = app.stage === "DRAFT" || app.stage === "INITIATOR_CORRECTION";
+    if (app.initiator_id === session.staffId && (app.stage === "DRAFT" || myTask)) return <RetailEdit c={c} staffId={session.staffId} sessionId={session.sessionId} mode="INITIATOR" />;
+    if (editable && app.assigned_rm_id === session.staffId) return <RetailEdit c={c} staffId={session.staffId} sessionId={session.sessionId} mode="ASSIGNED_RM" />;
+    redirect(`/requests/${id}`);
+  }
   if (app.initiator_id !== session.staffId || !(app.stage === "DRAFT" || myTask)) redirect(`/requests/${id}`);
   const source = c.working ?? (c.version ? { ...c.version, directors: c.directors } : null);
   const data = draftDataSchema.parse(source?.data ?? {});

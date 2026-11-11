@@ -1,8 +1,8 @@
 {
-  "name": "wakeelboost-work-desk",
+  "name": "altbank-retail-asset-factory",
   "version": "0.1.0",
   "private": true,
-  "description": "WakeelBoost Work Desk - internal Alternative Bank workbench for WakeelBoost merchant stock financing",
+  "description": "AltBank Retail Asset Factory - internal platform for retail financing (Vendor Financing, Alt Drive, Alt Power) with the legacy WakeelBoost workflow",
   "scripts": {
     "dev": "next dev -p 3000",
     "dev:all": "tsx scripts/dev-all.ts",
@@ -20,7 +20,9 @@
     "test:watch": "vitest",
     "mail:test": "tsx scripts/send-test-email.ts",
     "directory:import": "tsx scripts/import-directory.ts",
-    "setup": "tsx scripts/setup.ts"
+    "setup": "tsx scripts/setup.ts",
+    "demo:retail": "tsx scripts/demo-retail.ts",
+    "migration:report": "tsx scripts/migration-report.ts"
   },
   "engines": {
     "node": ">=20.11"

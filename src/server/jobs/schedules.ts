@@ -105,7 +105,7 @@ export async function runWeeklyDigest(now = new Date()): Promise<{ ran: boolean;
       const lines = [
         `Hello ${ini.full_name},`,
         "",
-        `Your WakeelBoost summary for the week ${period.startDate} to ${period.endDate} (Africa/Lagos).`,
+        `Your Retail Asset Factory summary for the week ${period.startDate} to ${period.endDate} (Africa/Lagos).`,
         "",
         `Successful disbursements in the past week: ${disb.length}`,
         ...disb.map((d) => `  - ${d.ref} ${d.customer_name}: ${formatKobo(Number(d.amount_kobo))} on ${d.disbursed_on} (ref ${d.transaction_ref})`),
@@ -117,7 +117,7 @@ export async function runWeeklyDigest(now = new Date()): Promise<{ ran: boolean;
         kind: "WEEKLY_DIGEST",
         dedupeKey: `weekly:${period.key}:${ini.id}`,
         to: [ini.email],
-        subject: `WakeelBoost weekly summary: ${period.startDate} – ${period.endDate}`,
+        subject: `Retail Asset Factory weekly summary: ${period.startDate} – ${period.endDate}`,
         text: simpleEmail(lines),
       });
       await tx.query("UPDATE digest_deliveries SET outbox_id = $2 WHERE id = $1", [del.rows[0].id, out.id]);
@@ -207,7 +207,7 @@ export async function runMonthlyReport(now = new Date()): Promise<{ ran: boolean
       const lines = [
         `Hello ${r.full_name},`,
         "",
-        `WakeelBoost monthly summary for ${period.label}${regions ? ` (scope: ${regions.join(", ")})` : " (bank-wide)"}.`,
+        `Retail Asset Factory monthly summary for ${period.label}${regions ? ` (scope: ${regions.join(", ")})` : " (bank-wide)"}.`,
         "",
         "Pipeline",
         `  Submitted in month: ${sum.pipeline.submitted}`,
@@ -226,7 +226,7 @@ export async function runMonthlyReport(now = new Date()): Promise<{ ran: boolean
         kind: "MONTHLY_REPORT",
         dedupeKey: `monthly:${period.key}:${r.id}`,
         to: [r.email],
-        subject: `WakeelBoost monthly summary: ${period.label}`,
+        subject: `Retail Asset Factory monthly summary: ${period.label}`,
         text: simpleEmail(lines),
       });
       await tx.query("UPDATE digest_deliveries SET outbox_id = $2 WHERE id = $1", [del.rows[0].id, out.id]);

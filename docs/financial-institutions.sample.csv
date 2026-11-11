@@ -1,0 +1,2 @@
+code,name,category,regulatory_status,payment_supported,active,aliases,routing_codes,source_reference
+DEMO-001,Synthetic Commercial Bank (demo only),COMMERCIAL,UNCONFIRMED,yes,yes,SCB demo,NIP=000000,"Replace with the current CBN list and the payment provider's routing codes"

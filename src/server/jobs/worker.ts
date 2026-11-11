@@ -6,6 +6,9 @@ import { objectStore } from "../storage";
 import { scanDocument } from "../domain/documents";
 import { processOutbox } from "./outbox";
 import { runMonthlyReport, runWeeklyDigest } from "./schedules";
+import { runSlaEscalations } from "../domain/sla";
+import { expireStaleDrafts } from "../domain/retail";
+import { refreshArrears } from "../domain/retail-ops";
 
 /** Retry scans for files left in quarantine (e.g. scanner unavailable at upload time). */
 export async function rescanQuarantined(now = new Date()) {
@@ -38,5 +41,8 @@ export async function workerTick(now = new Date()) {
   results.monthly = await runMonthlyReport(now);
   await rescanQuarantined(now);
   results.retention = await retentionSweep(now);
+  results.slaEscalations = await runSlaEscalations(now);
+  results.draftsExpired = await expireStaleDrafts(now);
+  results.arrearsChanged = await refreshArrears(db, now);
   return results;
 }

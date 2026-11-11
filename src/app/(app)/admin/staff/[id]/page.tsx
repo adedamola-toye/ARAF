@@ -47,7 +47,7 @@ export default async function StaffDetail({ params, searchParams }: { params: Pr
               {assignments.map((a) => (
                 <tr key={a.id}>
                   <td>{ROLE_LABELS[a.role as Role] ?? a.role}</td>
-                  <td className="small">{a.region ?? "—"} {a.business_unit && `· ${a.business_unit}`}</td>
+                  <td className="small">{a.region ?? "—"} {a.business_unit && `· ${a.business_unit}`}{a.team && ` · team ${a.team}`}</td>
                   <td className="small">{formatLagos(a.granted_at)}{a.granted_by_name && <div className="muted">by {a.granted_by_name}</div>}</td>
                   <td>{a.active ? <span className="badge badge-green">Active</span> : <span className="badge">Revoked {formatLagos(a.revoked_at)}{a.revoked_by_name && ` by ${a.revoked_by_name}`}</span>}</td>
                   <td>{a.active && !self && <RevokeRoleButton staffId={id} role={a.role} />}</td>

@@ -5,7 +5,7 @@ import { requireUser } from "../../../_lib/auth";
 import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
 import { getCase } from "@/server/domain/views";
-import { signDocumentLink, CATEGORY_LABEL, DOC_CATEGORIES, UPLOADABLE_BY_STAGE, PACK, type DocumentRow } from "@/server/domain/documents";
+import { signDocumentLink, CATEGORY_LABEL, DOC_CATEGORIES, UPLOADABLE_BY_STAGE, RETAIL_UPLOADABLE_BY_STAGE, PACK, type DocumentRow } from "@/server/domain/documents";
 import { STAGE_LABELS, ACTION_LABELS, allowedActions, type Stage, type TaskAction } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { APPLICANT_TYPE_LABELS, assetCostKobo, type DraftData } from "@/server/domain/application-data";
@@ -27,6 +27,7 @@ function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: un
   return c.instalments.length > 0 && c.instalments.length !== tenor;
 }
 import { UploadPanel } from "@/components/UploadPanel";
+import { RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
 type Case = Awaited<ReturnType<typeof getCase>>;
@@ -53,9 +54,6 @@ const MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Disbursement", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
   { label: "Closure", stages: ["COMPLETION", "VENDOR_CONFIRMATION", "CLOSED"] },
 ];
-function milestoneIndex(stage: Stage) {
-  return MILESTONES.findIndex((m) => m.stages.includes(stage));
-}
 
 const OUTPUT_LABELS: Record<string, string> = {
   facilityType: "Facility type",
@@ -129,8 +127,14 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   const committed = sp.done
     ? (await db.query(`SELECT d.action, d.created_at, d.stage FROM decisions d WHERE d.application_id = $1 AND d.actor_id = $2 ORDER BY d.seq DESC LIMIT 1`, [id, session.staffId])).rows[0]
     : null;
-  const current = milestoneIndex(app.stage as Stage);
-  const rejectedAt = app.stage === "REJECTED" ? milestoneIndex((c.tasks.at(-1)?.stage ?? "BUSINESS_ENDORSEMENT") as Stage) : -1;
+  const retail = app.workflow === "RETAIL";
+  const milestones = retail ? RETAIL_MILESTONES : MILESTONES;
+  const mIndex = (st: Stage) => milestones.findIndex((m) => m.stages.includes(st));
+  const current = mIndex(app.stage as Stage);
+  const stoppedStage = ["REJECTED", "WITHDRAWN", "EXPIRED"].includes(app.stage);
+  const rejectedAt = stoppedStage ? mIndex(((c.tasks.filter((t: { outcome: string | null }) => t.outcome !== "WITHDRAWN").at(-1)?.stage) ?? (retail ? "DRAFT" : "BUSINESS_ENDORSEMENT")) as Stage) : -1;
+  const retailPanel = retail && myTask ? await RetailActionPanel({ c, task: myTask, doneHref }) : null;
+  const canEditAsRm = retail && app.assigned_rm_id === session.staffId && ["DRAFT", "INITIATOR_CORRECTION"].includes(app.stage);
 
   return (
     <>
@@ -151,6 +155,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
             <h1>{app.ref}</h1>
             <StageChip stage={app.stage as Stage} status={app.status} />
             {app.route && <span className="badge badge-blue">Route {app.route}</span>}
+            {app.product_label && <span className="badge badge-yellow">{app.product_label}</span>}
+            {app.suspended_at && <span className="badge badge-red">Suspended</span>}
           </div>
           <dl className="case-facts">
             <div>
@@ -176,6 +182,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         </div>
         <div className="row">
           {isInitiator && c.openTask?.assignee_id && c.openTask.assignee_id !== session.staffId && waited > REMINDER_MIN_AGE_MS && <ReminderButton applicationId={app.id} />}
+          {canEditAsRm && (
+            <Link className="btn btn-primary" href={`/requests/${app.id}/edit`}>
+              Write RM proposal and evidence
+            </Link>
+          )}
           {isInitiator && (app.stage === "DRAFT" || (myTask && myTask.stage === "INITIATOR_CORRECTION")) && (
             <Link className="btn btn-primary" href={`/requests/${app.id}/edit`}>
               {app.stage === "DRAFT" ? "Continue draft" : "Edit and resubmit"}
@@ -184,13 +195,13 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         </div>
       </div>
 
-      <ol className="progress" aria-label="Request progress">
-        {MILESTONES.map((m, i) => {
-          const state = app.stage === "REJECTED" ? (i < rejectedAt ? "done" : i === rejectedAt ? "stopped" : "") : app.stage === "CLOSED" ? "done" : i < current ? "done" : i === current ? "current" : "";
+      <ol className="progress" aria-label="Request progress" style={{ gridTemplateColumns: `repeat(${milestones.length}, minmax(0, 1fr))` }}>
+        {milestones.map((m, i) => {
+          const state = stoppedStage ? (i < rejectedAt ? "done" : i === rejectedAt ? "stopped" : "") : app.stage === "CLOSED" || app.stage === "COMPLETED" ? "done" : i < current ? "done" : i === current ? "current" : "";
           return (
             <li key={m.label} className={state} aria-current={state === "current" ? "step" : undefined}>
               {m.label}
-              <span className="sr-only">{state === "done" ? " (complete)" : state === "current" ? " (current)" : state === "stopped" ? " (rejected here)" : " (not started)"}</span>
+              <span className="sr-only">{state === "done" ? " (complete)" : state === "current" ? " (current)" : state === "stopped" ? ` (${app.stage.toLowerCase()} here)` : " (not started)"}</span>
             </li>
           );
         })}
@@ -228,9 +239,9 @@ export default async function CasePage({ params, searchParams }: { params: Promi
               </Link>
             ))}
           </nav>
-          {tab === "overview" && <Overview c={c} data={data} />}
+          {tab === "overview" && (retail ? <RetailOverview c={c} /> : <Overview c={c} data={data} />)}
           {tab === "documents" && <Documents c={c} link={link} tabHref={tabHref} previewId={previewDoc?.id ?? null} myTask={myTask} isInitiator={isInitiator} />}
-          {tab === "assessment" && <Assessment c={c} />}
+          {tab === "assessment" && (retail ? <RetailAssessmentTab c={c} /> : <Assessment c={c} />)}
           {tab === "activity" && (
             <>
               <History c={c} />
@@ -239,7 +250,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           )}
         </section>
         <aside className="split-right" aria-label="Actions and preview">
-          {myTask && <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />}
+          {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
+          {retail && <RetailCaseTools c={c} staffId={session.staffId} roles={roles} />}
           {!myTask && c.openTask && (
             <div className="card">
               <p className="eyebrow">Current step</p>
@@ -471,7 +483,10 @@ function docStatus(d: DocumentRow) {
 function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Case; link: (id: string, m: "view" | "download") => string; tabHref: (t: string, e?: SP) => string; previewId: string | null; myTask: Case["openTask"]; isInitiator: boolean }) {
   const stage = c.app.stage as Stage;
   const uploadStage = myTask ? (myTask.stage as Stage) : isInitiator && stage === "DRAFT" ? "DRAFT" : null;
-  const cats = uploadStage ? (UPLOADABLE_BY_STAGE[uploadStage] ?? []).filter((x) => !(c.app.applicant_type === "INDIVIDUAL" && x === "CAC_CERTIFICATE")) : [];
+  const retail = c.app.workflow === "RETAIL";
+  const byStage = retail ? RETAIL_UPLOADABLE_BY_STAGE : UPLOADABLE_BY_STAGE;
+  const cats = uploadStage ? (byStage[uploadStage] ?? []).filter((x) => !(c.app.applicant_type === "INDIVIDUAL" && x === "CAC_CERTIFICATE")) : [];
+  const canReview = retail && !!myTask && retailDocReviewable(myTask.stage);
   const current = c.documents.filter((d) => !d.superseded_at && d.scan_status !== "REJECTED");
   return (
     <div className="stack">
@@ -489,6 +504,10 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
                   <strong>{CATEGORY_LABEL[d.category] ?? d.category}</strong>
                   <div style={{ wordBreak: "break-all" }}>{d.filename} <span className="muted">· {(Number(d.size_bytes) / 1024).toFixed(0)} KB</span></div>
                   {d.generated && <span className="badge badge-blue">Generated · template v{d.template_version}</span>}
+                  {d.meta?.photoCategory && <div className="muted">Angle: {d.meta.photoCategory.replace(/_/g, " ").toLowerCase()}</div>}
+                  {d.meta?.coverageFrom && <div className="muted">Covers {d.meta.coverageFrom} to {d.meta.coverageTo}</div>}
+                  {d.review_status === "REJECTED" && <span className="badge badge-red">Rejected by reviewer: {d.review_reason}</span>}
+                  {d.review_status === "ACCEPTED" && <span className="badge badge-green">Accepted by reviewer</span>}
                 </td>
                 <td className="small" data-label="Uploaded" style={{ minWidth: 150 }}>
                   {d.uploader_name}
@@ -504,6 +523,7 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
                     <div className="row">
                       <Link className="btn btn-sm" href={tabHref("documents", { doc: d.id })} aria-label={`Preview ${d.filename} version ${d.version_no}`}><Eye {...ic} />Preview</Link>
                       <a className="btn btn-sm" href={link(d.id, "download")} aria-label={`Download ${d.filename} version ${d.version_no}`}><Download {...ic} />Download</a>
+                      {canReview && !d.superseded_at && !d.generated && <DocReview documentId={d.id} />}
                     </div>
                   ) : (
                     <span className="small muted">Unavailable</span>
@@ -520,6 +540,7 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
       {cats.length > 0 && (
         <UploadPanel
           applicationId={c.app.id}
+          withMeta={retail}
           categories={cats.map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))}
           replaces={current.filter((d) => cats.includes(d.category) && DOC_CATEGORIES.find((k) => k.code === d.category)?.multiple).map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename} (v${d.version_no})` }))}
         />

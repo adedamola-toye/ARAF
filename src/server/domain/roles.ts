@@ -19,10 +19,24 @@ export const ROLES = [
   "REPORTING_ADMIN",
   "LEGAL_REVIEWER",
   "SHARIAH_REVIEWER",
+  // Retail Asset Factory
+  "DELIGHT_OFFICER",
+  "OUTLET_SERVICE_SUPERVISOR",
+  "TEAM_LEAD",
+  "HEAD_OF_RETAIL_SALES",
+  "HEAD_OF_UNIT",
+  "PRODUCT_CONFIG_APPROVER",
+  "VENDOR_MANAGER",
+  "COLLECTIONS_OFFICER",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
-export const INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER"] as const;
+export const INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER", "DELIGHT_OFFICER"] as const;
+/** Initiators of retail products (Vendor Financing, Alt Drive, Alt Power), in display order. */
+export const RETAIL_INITIATOR_ROLES = ["RM", "DELIGHT_OFFICER"] as const;
+export type RetailInitiatorRole = (typeof RETAIL_INITIATOR_ROLES)[number];
+/** WakeelBoost (legacy) initiators. */
+export const LEGACY_INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER"] as const;
 export type InitiatorRole = (typeof INITIATOR_ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -38,7 +52,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   CREDIT_OFFICER_3: "Credit Officer 3",
   CREDIT_LEAD_1: "Credit Lead 1",
   CREDIT_LEAD_2: "Credit Lead 2",
-  UNIT_HEAD: "Unit Head",
+  UNIT_HEAD: "Unit Head (credit approval)",
   DIVISIONAL_HEAD: "Divisional Head",
   DISBURSEMENT_OFFICER_1: "Disbursement Officer 1",
   DISBURSEMENT_OFFICER_2: "Disbursement Officer 2",
@@ -46,7 +60,20 @@ export const ROLE_LABELS: Record<Role, string> = {
   REPORTING_ADMIN: "Reporting Admin",
   LEGAL_REVIEWER: "Legal (closure recipient)",
   SHARIAH_REVIEWER: "Shariah Compliance (closure recipient)",
+  DELIGHT_OFFICER: "Delight Officer",
+  OUTLET_SERVICE_SUPERVISOR: "Outlet Service Supervisor",
+  TEAM_LEAD: "Team Lead",
+  HEAD_OF_RETAIL_SALES: "Head of Retail Sales",
+  HEAD_OF_UNIT: "Head of Unit (business approval)",
+  PRODUCT_CONFIG_APPROVER: "Product configuration approver",
+  VENDOR_MANAGER: "Vendor register officer",
+  COLLECTIONS_OFFICER: "Collections and servicing officer",
 };
+
+/** Roles whose holders review retail cases across the organisation (dashboards and case visibility). */
+export const RETAIL_ORG_VIEW_ROLES: readonly Role[] = ["HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT"];
+/** Roles that need a team on assignment (routing scope). */
+export const TEAM_SCOPED_ROLES: readonly Role[] = ["RM", "TEAM_LEAD", "DELIGHT_OFFICER"];
 
 /** Positions that may be held by at most one active person at a time. */
 export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"];
@@ -135,6 +162,9 @@ export const REGION_REQUIRED_ROLES: readonly Role[] = ["ANM"];
 
 export function isRole(v: unknown): v is Role {
   return typeof v === "string" && (ROLES as readonly string[]).includes(v);
+}
+export function isRetailInitiatorRole(v: unknown): v is RetailInitiatorRole {
+  return typeof v === "string" && (RETAIL_INITIATOR_ROLES as readonly string[]).includes(v);
 }
 export function isInitiatorRole(v: unknown): v is InitiatorRole {
   return typeof v === "string" && (INITIATOR_ROLES as readonly string[]).includes(v);

@@ -2,14 +2,14 @@ import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
- * "Wakeel" text wordmark (the accepted reference uses the product name as text). Replace with the
- * approved logo asset when supplied; keep the accessible name.
+ * Text wordmark for the AltBank Retail Asset Factory. Replace with the approved logo asset when
+ * supplied; keep the accessible name.
  */
 export function Wordmark({ href = "/", app = false }: { href?: string; app?: boolean }) {
   return (
-    <Link href={href} className="wordmark" aria-label="Wakeel - WakeelBoost Work Desk home">
-      <span className="wordmark-text">Wakeel</span>
-      {app && <span className="wordmark-app">WakeelBoost Work Desk</span>}
+    <Link href={href} className="wordmark" aria-label="AltBank Retail Asset Factory home">
+      <span className="wordmark-text">AltBank</span>
+      {app && <span className="wordmark-app">Retail Asset Factory</span>}
     </Link>
   );
 }
@@ -19,20 +19,20 @@ export const FOOTER_TEXT = "Powered by DKTA Technologies @2026";
 export function Footer({ className = "footer" }: { className?: string }) {
   return (
     <footer className={className}>
-      <span>WakeelBoost Work Desk · Internal use only</span>
+      <span>AltBank Retail Asset Factory · Internal use only</span>
       <span>{FOOTER_TEXT}</span>
     </footer>
   );
 }
 
 /**
- * Authentication scene from the landing reference: full-bleed merchant photograph (official Wakeel
- * page image, stored locally) blended into graphite (dark) or warm off-white (light), with the
- * content in the foreground on the left. Used for sign-in, OTP, session-expired and error screens.
+ * Authentication scene from the accepted landing reference: full-bleed merchant photograph (retained
+ * existing visual asset, stored locally; usage rights to be confirmed) blended into graphite (dark) or
+ * warm off-white (light). Used for sign-in, OTP, session-expired and error screens.
  */
 export function AuthScene({ children, theme }: { children: React.ReactNode; theme: "light" | "dark" }) {
   return (
-    <section className="auth" aria-label="WakeelBoost Work Desk staff sign-in">
+    <section className="auth" aria-label="AltBank Retail Asset Factory staff sign-in">
       <figure className="auth-photo" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img

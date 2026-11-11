@@ -109,7 +109,7 @@ describe("template administration", () => {
     const sa = await ctxFor("superadmin@altbank.ng");
     const id = await createDocxTemplateVersion(sa, { name: "Murabaha Individual Offer", applicantType: "INDIVIDUAL", filename: "x.docx", data: readFileSync("templates/offers/murabaha-individual.docx"), productionApproved: false });
     await activateTemplate(sa, id);
-    const active = (await db.query("SELECT applicant_type, version FROM offer_templates WHERE status = 'ACTIVE' ORDER BY applicant_type")).rows;
+    const active = (await db.query("SELECT applicant_type, version FROM offer_templates WHERE status = 'ACTIVE' AND product_code IS NULL ORDER BY applicant_type")).rows;
     expect(active).toEqual([{ applicant_type: "ENTERPRISE", version: 1 }, { applicant_type: "INDIVIDUAL", version: 2 }, { applicant_type: "LIMITED", version: 1 }]);
     const caseId = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     await driveToOffer(caseId);

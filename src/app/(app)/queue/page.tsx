@@ -10,12 +10,18 @@ import { SortHeader, pageHref } from "@/components/SortHeader";
 import { PageHeader } from "@/components/PageHeader";
 import { StageChip, WaitChip } from "@/components/Status";
 import { ArrowRight, Inbox, Search } from "lucide-react";
+import { WalletCard } from "@/components/WalletCard";
+import { walletToday } from "@/server/domain/wallet";
 
 export const metadata = { title: "My Action Queue" };
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { session } = await requireUser();
+  const { session, roles: myRoles } = await requireUser();
   const sp = await searchParams;
+  const wallet = myRoles.includes("RM") ? await walletToday(db, session.staffId, new Date()) : null;
+  const rmAssigned = myRoles.includes("RM")
+    ? (await db.query(`SELECT a.id, a.ref, a.customer_name, a.product_label, a.stage, s.full_name AS do_name FROM applications a JOIN staff s ON s.id = a.initiator_id WHERE a.assigned_rm_id = $1 AND a.stage IN ('DRAFT','INITIATOR_CORRECTION') ORDER BY a.updated_at DESC`, [session.staffId])).rows
+    : [];
   const q = await actionQueue(db, session.staffId, {
     sort: (sp.sort as QueueSort) ?? "waiting",
     dir: sp.dir === "asc" ? "asc" : "desc",
@@ -41,7 +47,21 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </>
         }
       />
-      <form className="filters" method="get" role="search" aria-label="Filter queue">
+      {wallet && <WalletCard totalKobo={wallet.totalKobo} count={wallet.count} day={wallet.day} />}
+      {rmAssigned.length > 0 && (
+        <section className="card" aria-labelledby="h-rm" style={{ margin: "var(--space-4) 0" }}>
+          <h2 id="h-rm">Assigned to you as Relationship Manager</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>Delight Officer requests waiting for your credit proposal and business-visit evidence.</p>
+          <ul className="small">
+            {rmAssigned.map((r: { id: string; ref: string; customer_name: string; product_label: string; do_name: string }) => (
+              <li key={r.id}>
+                <Link href={`/requests/${r.id}/edit`}>{r.ref}</Link> · {r.customer_name} · {r.product_label} · from {r.do_name}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <form className="filters" method="get" role="search" aria-label="Filter queue" style={{ marginTop: "var(--space-4)" }}>
         <div className="field">
           <label htmlFor="q">Search</label>
           <input id="q" name="q" type="search" defaultValue={sp.q ?? ""} placeholder="Request ID or customer" />
@@ -113,7 +133,11 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                       {r.ref}
                     </Link>
                   </td>
-                  <td data-label="Customer">{r.customer_name}</td>
+                  <td data-label="Customer">
+                    {r.customer_name}
+                    {r.product_label && <div className="small muted">{r.product_label}</div>}
+                    {r.suspended && <span className="badge badge-red">Suspended</span>}
+                  </td>
                   <td className="num" data-label="Requested amount">{formatKobo(r.requested_amount_kobo)}</td>
                   <td data-label="Stage">
                     <StageChip stage={r.stage} />

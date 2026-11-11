@@ -32,6 +32,11 @@ export async function POST(req: NextRequest) {
       filename: file.name,
       data: Buffer.from(await file.arrayBuffer()),
       replacesDocumentId: String(fd.get("replacesDocumentId") ?? "") || null,
+      meta: {
+        photoCategory: String(fd.get("photoCategory") ?? ""),
+        coverageFrom: String(fd.get("coverageFrom") ?? ""),
+        coverageTo: String(fd.get("coverageTo") ?? ""),
+      },
     });
     if (res.scanStatus === "REJECTED") return NextResponse.json({ ok: false, error: "The file failed the malware scan and was quarantined. It will not be used." }, { status: 422 });
     return NextResponse.json({ ok: true, version: res.version, scanStatus: res.scanStatus });

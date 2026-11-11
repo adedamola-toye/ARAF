@@ -1,3 +1,4 @@
+import { PLATFORM_NAME } from "../brand";
 import { config } from "../config";
 import { formatKobo } from "../money";
 import { formatLagos } from "../time";
@@ -52,9 +53,9 @@ export function assignmentEmail(p: {
         ]
       : [`APR: ${a.aprPercent}%`, `DSR: ${a.dsrPercent}%`];
   return {
-    subject: `WakeelBoost ${p.ref}: ${STAGE_LABELS[p.stage]} assigned to you`,
+    subject: `${PLATFORM_NAME} ${p.ref}: ${STAGE_LABELS[p.stage]} assigned to you`,
     text: [
-      "WakeelBoost Work Desk",
+      PLATFORM_NAME,
       "",
       `A request has been assigned to you for: ${STAGE_LABELS[p.stage]}.`,
       "",
@@ -73,5 +74,5 @@ export function assignmentEmail(p: {
 }
 
 export function simpleEmail(lines: string[]) {
-  return ["WakeelBoost Work Desk", "", ...lines, "", "Powered by DKTA Technologies @2026"].join("\n");
+  return [PLATFORM_NAME, "", ...lines, "", "Powered by DKTA Technologies @2026"].join("\n");
 }

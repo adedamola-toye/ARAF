@@ -1,5 +1,6 @@
 /**
- * WakeelBoost workflow domain module (server-side only).
+ * Workflow domain module (server-side only): WakeelBoost (legacy) and retail cases share this engine;
+ * retail-specific stages live in retail.ts / retail-ops.ts.
  *
  * Every transition runs in a single database transaction that:
  *   1. claims an idempotency key (duplicate submissions replay the first result),
@@ -41,7 +42,10 @@ import { currentCleanDocuments, PACK } from "./documents";
 import { isInitiatorRole, type InitiatorRole } from "./roles";
 import { routeForAmount } from "./routing";
 import { pricingSettingsAt } from "./pricing";
-import { CREDIT_APPROVAL_STAGES, REASON_REQUIRED, STAGE_LABELS, allowedActions, type Stage, type TaskAction } from "./stages";
+import { BUSINESS_REVIEW_STAGES, COMMENT_REQUIRED_STAGES, CREDIT_APPROVAL_STAGES, REASON_REQUIRED, STAGE_LABELS, allowedActions, type Stage, type TaskAction } from "./stages";
+import { LEGACY_REF_PREFIX, PLATFORM_NAME } from "../brand";
+import { retailDispatch, retailResubmit, submitRetail } from "./retail";
+import { recordRequestLedger } from "./wallet";
 
 export interface ActionResult {
   applicationId: string;
@@ -52,22 +56,27 @@ export interface ActionResult {
 
 // ------------------------------------------------------------------ helpers
 
-async function lockApp(tx: Tx, appId: string): Promise<AppRow> {
+export async function lockApp(tx: Tx, appId: string): Promise<AppRow> {
   const r = await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [appId]);
   if (!r.rows[0]) throw notFound("Request not found.");
   return r.rows[0];
 }
 
-async function persistApp(tx: Tx, app: AppRow, now: Date) {
+export async function persistApp(tx: Tx, app: AppRow, now: Date) {
   await tx.query(
     `UPDATE applications SET stage=$2, status=$3, route=$4, current_version_id=$5, requested_amount_kobo=$6, customer_name=$7,
        selected_rbe_id=$8, endorser_id=$9, first_reviewer_id=$10, second_reviewer_id=$11, pack_co3_id=$12, do1_id=$13, do2_id=$14,
-       active_correction_id=$15, customer_id=$16, lock_version = lock_version + 1, updated_at=$17
+       active_correction_id=$15, customer_id=$16, lock_version = lock_version + 1, updated_at=$17,
+       oss_reviewer_id=$18, team_lead_id=$19, hrs_id=$20, hou_id=$21, team=$22, outlet_location_id=$23, assigned_rm_id=$24,
+       customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28
      WHERE id=$1`,
     [
       app.id, app.stage, app.status, app.route, app.current_version_id, app.requested_amount_kobo, app.customer_name,
       app.selected_rbe_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id, app.pack_co3_id, app.do1_id, app.do2_id,
       app.active_correction_id, app.customer_id, now,
+      app.oss_reviewer_id ?? null, app.team_lead_id ?? null, app.hrs_id ?? null, app.hou_id ?? null, app.team ?? null, app.outlet_location_id ?? null,
+      app.assigned_rm_id ?? null, app.customer_profile ?? null, app.financing_structure ?? null, app.product_config_id ?? null,
+      app.location_snapshot ? JSON.stringify(app.location_snapshot) : null,
     ],
   );
 }
@@ -75,12 +84,15 @@ async function persistApp(tx: Tx, app: AppRow, now: Date) {
 function statusForStage(stage: Stage, current: string): AppRow["status"] {
   if (stage === "REJECTED") return "REJECTED";
   if (stage === "CLOSED") return "CLOSED";
+  if (stage === "COMPLETED") return "COMPLETED";
+  if (stage === "WITHDRAWN") return "WITHDRAWN";
+  if (stage === "EXPIRED") return "EXPIRED";
   if (stage === "DRAFT") return "DRAFT";
   if (current === "BOOKED") return "BOOKED";
   return "IN_PROGRESS";
 }
 
-async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen: Chosen | null, note?: string) {
+export async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen: Chosen | null, note?: string) {
   const from = app.stage;
   app.stage = stage;
   app.status = statusForStage(stage, app.status);
@@ -89,7 +101,7 @@ async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen: Chose
   return null;
 }
 
-async function idempotent(
+export async function idempotent(
   tx: Tx,
   ctx: Ctx,
   key: string,
@@ -114,19 +126,40 @@ async function idempotent(
   return result;
 }
 
-async function recordDecision(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, action: string, reason: string | null, assessmentId: string | null = null) {
+/** Explicit meaning of a decision: business endorsement and credit approval are never conflated. */
+export function decisionKind(stage: string, action: string): string {
+  if (action === "REJECT") return "DECLINE";
+  if (["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(action)) return "CORRECTION";
+  if ((BUSINESS_REVIEW_STAGES as readonly string[]).includes(stage)) return "BUSINESS_REVIEW";
+  if (["FIRST_CREDIT_REVIEW", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW", "CREDIT_CORRECTION"].includes(stage)) return "CREDIT";
+  if (["INITIATOR_CORRECTION", "OFFER_PREPARATION", "VENDOR_CONFIRMATION", "FULFILMENT"].includes(stage)) return "INITIATOR";
+  return "OPERATIONAL";
+}
+
+export async function recordDecision(
+  tx: Tx,
+  ctx: Ctx,
+  app: AppRow,
+  task: TaskRow,
+  action: string,
+  reason: string | null,
+  assessmentId: string | null = null,
+  retailAssessmentId: string | null = null,
+) {
   const docs = await currentCleanDocuments(tx, app.id);
   await tx.query(
-    `INSERT INTO decisions (application_id, task_id, version_id, assessment_id, stage, actor_id, actor_role, action, reason, reviewed_documents, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+    `INSERT INTO decisions (application_id, task_id, version_id, assessment_id, stage, actor_id, actor_role, action, reason, reviewed_documents, created_at,
+       decision_kind, product_config_id, retail_assessment_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
     [
       app.id, task.id, task.version_id ?? app.current_version_id, assessmentId, task.stage, ctx.actor!.staffId, task.assignee_role, action, reason,
       JSON.stringify(docs.map((d) => ({ id: d.id, category: d.category, version: d.version_no, filename: d.filename }))), ctx.now,
+      decisionKind(task.stage, action), app.product_config_id ?? null, retailAssessmentId,
     ],
   );
 }
 
-async function completeTask(tx: Tx, ctx: Ctx, task: TaskRow, outcome: string, attestation: Record<string, unknown> = {}) {
+export async function completeTask(tx: Tx, ctx: Ctx, task: TaskRow, outcome: string, attestation: Record<string, unknown> = {}) {
   await tx.query(
     `UPDATE tasks SET status='COMPLETED', completed_at=$2, completed_by=$3, outcome=$4, attestation=$5 WHERE id=$1`,
     [task.id, ctx.now, ctx.actor!.staffId, outcome, JSON.stringify(attestation)],
@@ -145,12 +178,12 @@ export interface TaskRow {
   entered_at: Date;
 }
 
-async function staffEmail(tx: Tx, id: string | null): Promise<string | null> {
+export async function staffEmail(tx: Tx, id: string | null): Promise<string | null> {
   if (!id) return null;
   return (await tx.query<{ email: string }>("SELECT email FROM staff WHERE id = $1", [id])).rows[0]?.email ?? null;
 }
 
-function retentionDate(now: Date) {
+export function retentionDate(now: Date) {
   const d = lagosDate(now);
   const [y, m, day] = d.split("-");
   return `${Number(y) + config.retentionYears}-${m}-${day === "29" && m === "02" ? "28" : day}`;
@@ -186,11 +219,12 @@ export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applican
     ).rows[0];
     if (!ra) throw forbidden("You do not hold the selected initiator role.");
     const seq = (await tx.query<{ n: string }>("SELECT nextval('application_ref_seq') AS n")).rows[0].n;
-    const ref = `WB-${lagosDate(ctx.now).slice(0, 4)}-${String(seq).padStart(6, "0")}`;
+    if (p.initiatorRole === "DELIGHT_OFFICER") throw invalid("Delight Officers initiate retail products only.");
+    const ref = `${LEGACY_REF_PREFIX}-${lagosDate(ctx.now).slice(0, 4)}-${String(seq).padStart(6, "0")}`;
     const app = (
       await tx.query<{ id: string }>(
-        `INSERT INTO applications (ref, applicant_type, initiator_id, initiator_role, region, business_unit, status, stage, created_at, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,'DRAFT','DRAFT',$7,$7) RETURNING id`,
+        `INSERT INTO applications (ref, applicant_type, initiator_id, initiator_role, region, business_unit, status, stage, created_at, updated_at, workflow, product_code, product_label)
+         VALUES ($1,$2,$3,$4,$5,$6,'DRAFT','DRAFT',$7,$7,'WAKEELBOOST','WAKEELBOOST','WakeelBoost') RETURNING id`,
         [ref, p.applicantType, actor.staffId, p.initiatorRole, ra.region, ra.business_unit, ctx.now],
       )
     ).rows[0];
@@ -203,7 +237,7 @@ export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applican
   });
 }
 
-interface VersionRow {
+export interface VersionRow {
   id: string;
   application_id: string;
   version_no: number;
@@ -222,7 +256,7 @@ export async function workingVersion(tx: Tx, appId: string): Promise<VersionRow 
 }
 
 /** Ensure a working (unsubmitted) version exists, cloning the current submitted version when correcting. */
-async function ensureWorkingVersion(tx: Tx, ctx: Ctx, app: AppRow): Promise<VersionRow> {
+export async function ensureWorkingVersion(tx: Tx, ctx: Ctx, app: AppRow): Promise<VersionRow> {
   const w = await workingVersion(tx, app.id);
   if (w) return w;
   if (!app.current_version_id) throw new Error("No version to clone");
@@ -241,7 +275,7 @@ async function ensureWorkingVersion(tx: Tx, ctx: Ctx, app: AppRow): Promise<Vers
   return ins.rows[0];
 }
 
-async function assertCanEdit(tx: Tx, ctx: Ctx, app: AppRow) {
+export async function assertCanEdit(tx: Tx, ctx: Ctx, app: AppRow) {
   const actor = ctx.actor!;
   if (app.initiator_id !== actor.staffId) throw forbidden("Only the initiator can edit this request.");
   if (!(await holdsRole(tx, actor.staffId, app.initiator_role))) throw forbidden("Your initiator role is no longer active.");
@@ -257,6 +291,7 @@ export async function saveDraft(ctx: Ctx, appId: string, input: DraftInput) {
   if (!ctx.actor) throw forbidden();
   return withTx(async (tx) => {
     const app = await lockApp(tx, appId);
+    if (app.workflow === "RETAIL") throw invalid("Use the retail application form for this request.");
     await assertCanEdit(tx, ctx, app);
     if (input.expectedLockVersion != null && input.expectedLockVersion !== app.lock_version) {
       throw conflict("This request was changed elsewhere. Reload and try again.");
@@ -424,7 +459,9 @@ export async function submitApplication(ctx: Ctx, appId: string, idempotencyKey:
       if (app.initiator_id !== actor.staffId) throw forbidden("Only the initiator can submit this request.");
       if (app.stage !== "DRAFT") throw conflict("This request has already been submitted.");
       if (!(await holdsRole(tx, actor.staffId, app.initiator_role))) throw forbidden("Your initiator role is no longer active.");
+      if (app.workflow === "RETAIL") return submitRetail(tx, ctx, app);
       await finaliseVersionForSubmission(tx, ctx, app);
+      await recordRequestLedger(tx, app, ctx.now);
       (app as { submitted_at: Date | null }).submitted_at = ctx.now;
       await tx.query("UPDATE applications SET submitted_at = $2 WHERE id = $1", [app.id, ctx.now]);
       await audit(tx, ctx, { action: "REQUEST_SUBMITTED", actorRole: app.initiator_role, applicationId: app.id, customerId: app.customer_id, stage: "DRAFT", details: { versionId: app.current_version_id } });
@@ -460,6 +497,14 @@ export interface TaskActionInput {
   dsrExceptionJustification?: string | null;
   crmsLogged?: boolean;
   booking?: BookingInput;
+  /** Retail: Team Lead management visit comments (mandatory where the product/profile requires a visit). */
+  visitComments?: string | null;
+  /** Retail: reviewer confirms a photograph shows the responsible RM with the business (visual confirmation by a person). */
+  rmPhotoConfirmed?: boolean;
+  /** Retail: facility booking details (no payment is implied). */
+  facilityBooking?: { bookingRef: string; principalKobo: number; firstDueDate: string } | null;
+  /** Retail: offer/contract sequence steps confirmed with evidence. */
+  contractStepsConfirmed?: boolean;
 }
 
 export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promise<ActionResult> {
@@ -478,12 +523,16 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         if (input.expectedLockVersion != null && input.expectedLockVersion !== app.lock_version) {
           throw conflict("This request changed since you opened it. Reload to see the latest version.");
         }
-        if (!allowedActions(task.stage, app.route).includes(input.action)) {
+        if (app.suspended_at) throw gate(`This request is suspended (${app.suspension_reason ?? "no reason recorded"}). Actions are paused until it is resumed.`);
+        if (!allowedActions(task.stage, app.route, app.workflow).includes(input.action)) {
           throw invalid(`"${input.action}" is not available at ${STAGE_LABELS[task.stage]}.`);
         }
         const reason = (input.reason ?? "").trim() || null;
         if (REASON_REQUIRED.includes(input.action) && (!reason || reason.length < 3)) {
           throw invalid("A reason is required for this action.", { reason: "Enter a reason." });
+        }
+        if (app.workflow === "RETAIL" && COMMENT_REQUIRED_STAGES.includes(task.stage) && (!reason || reason.length < 10)) {
+          throw invalid("Record your recommendation or decision with supporting comments (at least 10 characters).", { reason: "Comments are required." });
         }
         ctx.actor = { ...actor, activeRole: task.assignee_role };
         const message = await dispatch(tx, ctx, app, task, input, reason);
@@ -510,6 +559,10 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
 
 async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: TaskActionInput, reason: string | null): Promise<string> {
   const a = input.action;
+  if (app.workflow === "RETAIL") {
+    const handled = await retailDispatch(tx, ctx, app, task, input, reason);
+    if (handled !== null) return handled;
+  }
   if (a === "REJECT") return reject(tx, ctx, app, task, reason!);
 
   switch (task.stage) {
@@ -714,7 +767,7 @@ async function involvedCo3(tx: Tx, app: AppRow): Promise<string | null> {
   return null;
 }
 
-async function reject(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
+export async function reject(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
   await recordDecision(tx, ctx, app, task, "REJECT", reason);
   await completeTask(tx, ctx, task, "REJECT");
   await resolveAllCorrections(tx, ctx, app, "CASE_REJECTED");
@@ -727,9 +780,9 @@ async function reject(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: stri
       dedupeKey: `reject:${app.id}`,
       applicationId: app.id,
       to: [email],
-      subject: `WakeelBoost ${app.ref}: request rejected`,
+      subject: `${PLATFORM_NAME} ${app.ref}: request ${app.workflow === "RETAIL" ? "declined" : "rejected"}`,
       text: simpleEmail([
-        `Request ${app.ref} (${app.customer_name}) was rejected at ${STAGE_LABELS[task.stage]}.`,
+        `Request ${app.ref} (${app.customer_name}${app.product_label ? `, ${app.product_label}` : ""}) was ${app.workflow === "RETAIL" ? "declined" : "rejected"} at ${STAGE_LABELS[task.stage]}.`,
         `Reason: ${reason}`,
         `Decision time: ${formatLagos(ctx.now)}`,
         "",
@@ -737,10 +790,10 @@ async function reject(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: stri
       ]),
     });
   }
-  return "Request rejected. The initiator has been notified.";
+  return app.workflow === "RETAIL" ? "Request declined. The initiator has been notified." : "Request rejected. The initiator has been notified.";
 }
 
-interface CorrectionRow {
+export interface CorrectionRow {
   id: string;
   parent_id: string | null;
   from_stage: Stage;
@@ -750,39 +803,41 @@ interface CorrectionRow {
   baseline_reports: string[];
 }
 
-async function createCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, toStage: Stage, reason: string, parentId: string | null) {
-  const assessment = await latestAssessment(tx, app.id);
+export async function createCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, toStage: Stage, reason: string, parentId: string | null, recipientId: string | null = null) {
+  const assessment = app.workflow === "RETAIL"
+    ? (await tx.query<{ id: string }>("SELECT id FROM retail_assessments WHERE application_id = $1 AND kind = 'FINAL' AND superseded_at IS NULL ORDER BY created_at DESC LIMIT 1", [app.id])).rows[0] ?? null
+    : await latestAssessment(tx, app.id);
   const reports = (await currentCleanDocuments(tx, app.id)).filter((d) => d.category === "CREDIT_REPORT").map((d) => d.id).sort();
   const r = await tx.query<{ id: string }>(
     `INSERT INTO corrections (application_id, parent_id, from_stage, from_assignee_id, from_role, to_stage, reason, requested_by,
-       baseline_version_id, baseline_assessment_id, baseline_reports, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
-    [app.id, parentId, task.stage, ctx.actor!.staffId, task.assignee_role, toStage, reason, ctx.actor!.staffId, app.current_version_id, assessment?.id ?? null, JSON.stringify(reports), ctx.now],
+       baseline_version_id, baseline_assessment_id, baseline_reports, created_at, recipient_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+    [app.id, parentId, task.stage, ctx.actor!.staffId, task.assignee_role, toStage, reason, ctx.actor!.staffId, app.current_version_id, assessment?.id ?? null, JSON.stringify(reports), ctx.now, recipientId],
   );
   app.active_correction_id = r.rows[0].id;
   await audit(tx, ctx, { action: "CORRECTION_REQUESTED", applicationId: app.id, stage: task.stage, reason, details: { correctionId: r.rows[0].id, toStage } });
   return r.rows[0].id;
 }
 
-async function activeCorrection(tx: Tx, app: AppRow, toStage: Stage): Promise<CorrectionRow> {
+export async function activeCorrection(tx: Tx, app: AppRow, toStage: Stage): Promise<CorrectionRow> {
   if (!app.active_correction_id) throw conflict("No open correction was found for this request.");
   const c = (await tx.query<CorrectionRow>("SELECT * FROM corrections WHERE id = $1", [app.active_correction_id])).rows[0];
   if (!c || c.to_stage !== toStage) throw conflict("The open correction does not match this stage.");
   return c;
 }
 
-async function resolveCorrection(tx: Tx, ctx: Ctx, id: string, resolution: string) {
+export async function resolveCorrection(tx: Tx, ctx: Ctx, id: string, resolution: string) {
   await tx.query("UPDATE corrections SET resolved_at=$2, resolution=$3 WHERE id=$1 AND resolved_at IS NULL", [id, ctx.now, resolution]);
 }
-async function resolveAllCorrections(tx: Tx, ctx: Ctx, app: AppRow, resolution: string) {
+export async function resolveAllCorrections(tx: Tx, ctx: Ctx, app: AppRow, resolution: string) {
   await tx.query("UPDATE corrections SET resolved_at=$2, resolution=$3 WHERE application_id=$1 AND resolved_at IS NULL", [app.id, ctx.now, resolution]);
   app.active_correction_id = null;
 }
 
 /** Return to the initiator: from business endorsement, first credit review or (via the first reviewer) a later credit stage. */
-async function returnToInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
+export async function returnToInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
   const parent = task.stage === "CREDIT_CORRECTION" ? app.active_correction_id : null;
-  await createCorrection(tx, ctx, app, task, "INITIATOR_CORRECTION", reason, parent);
+  await createCorrection(tx, ctx, app, task, "INITIATOR_CORRECTION", reason, parent, app.initiator_id);
   await recordDecision(tx, ctx, app, task, task.stage === "CREDIT_CORRECTION" ? "REQUEST_INITIATOR" : "RETURN", reason);
   await completeTask(tx, ctx, task, task.stage === "CREDIT_CORRECTION" ? "REQUEST_INITIATOR" : "RETURN");
   const chosen = await chooseAssignee(tx, app, "INITIATOR_CORRECTION");
@@ -791,8 +846,8 @@ async function returnToInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, r
 }
 
 /** A later credit correction returns to the assigned first credit reviewer. */
-async function creditCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
-  await createCorrection(tx, ctx, app, task, "CREDIT_CORRECTION", reason, app.active_correction_id);
+export async function creditCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
+  await createCorrection(tx, ctx, app, task, "CREDIT_CORRECTION", reason, app.active_correction_id, app.first_reviewer_id);
   await recordDecision(tx, ctx, app, task, "RETURN", reason);
   await completeTask(tx, ctx, task, "RETURN");
   const chosen = await chooseAssignee(tx, app, "CREDIT_CORRECTION", { preferred: app.first_reviewer_id, requirePreferred: true });
@@ -800,7 +855,7 @@ async function creditCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, re
   return "Returned to the first credit reviewer for correction.";
 }
 
-async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: string) {
+export async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: string) {
   const r = await tx.query(
     `UPDATE decisions SET invalidated_at=$2, invalidated_reason=$3
       WHERE application_id=$1 AND invalidated_at IS NULL AND action IN ('APPROVE','PROCEED') AND stage = ANY($4::text[])`,
@@ -810,6 +865,7 @@ async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: str
 }
 
 async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
+  if (app.workflow === "RETAIL") return retailResubmit(tx, ctx, app, task);
   const corr = await activeCorrection(tx, app, "INITIATOR_CORRECTION");
   const prevRoute = app.route;
   const { material } = await finaliseVersionForSubmission(tx, ctx, app);
@@ -905,7 +961,7 @@ async function book(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, booking: Booki
     dedupeKey: `disbursed:${app.id}`,
     applicationId: app.id,
     to: recipients,
-    subject: `WakeelBoost ${app.ref}: disbursed`,
+    subject: `${PLATFORM_NAME} ${app.ref}: disbursed`,
     text: simpleEmail([
       `Request ${app.ref} (${app.customer_name}) has been booked as disbursed.`,
       `Amount: ${formatKobo(b.amountKobo)}`,
@@ -921,7 +977,7 @@ async function book(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, booking: Booki
   return "Disbursement recorded. Credit Officer 3 and the initiator have been notified.";
 }
 
-async function completeProcess(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
+export async function completeProcess(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
   const members = (await tx.query<{ group_code: string; email: string }>("SELECT group_code, email FROM recipient_group_members ORDER BY group_code, email")).rows;
   const legal = members.filter((m) => m.group_code === "LEGAL").map((m) => m.email);
   const shariah = members.filter((m) => m.group_code === "SHARIAH").map((m) => m.email);
@@ -949,7 +1005,7 @@ async function completeProcess(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Pr
     applicationId: app.id,
     to: [...legal, ...shariah],
     cc: initiatorEmail ? [initiatorEmail] : [],
-    subject: `WakeelBoost ${app.ref}: closure pack and transaction summary`,
+    subject: `${PLATFORM_NAME} ${app.ref}: closure pack and transaction summary`,
     text: simpleEmail([
       `Closure pack for request ${app.ref}.`,
       "",
@@ -972,6 +1028,11 @@ async function completeProcess(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Pr
   });
   await tx.query("UPDATE closure_events SET outbox_id = $2 WHERE id = $1", [ce.rows[0].id, out.id]);
   await audit(tx, ctx, { action: "CLOSURE_PACK_QUEUED", applicationId: app.id, stage: task.stage, details: { mode, documents: docs.length, groups: ["LEGAL", "SHARIAH"], outboxId: out.id } });
+  if (app.workflow === "RETAIL") {
+    const chosen = await chooseAssignee(tx, app, "FULFILMENT");
+    await moveTo(tx, ctx, app, "FULFILMENT", chosen);
+    return "Process completed. Closure pack queued to Legal and Shariah Compliance; fulfilment tasks are with the initiator.";
+  }
   const chosen = await chooseAssignee(tx, app, "VENDOR_CONFIRMATION");
   await moveTo(tx, ctx, app, "VENDOR_CONFIRMATION", chosen);
   return "Process completed. Closure pack queued to Legal and Shariah Compliance (initiator copied).";
@@ -1009,7 +1070,7 @@ export async function sendReminder(ctx: Ctx, appId: string, idempotencyKey: stri
           dedupeKey: `reminder:${r.rows[0].id}`,
           applicationId: appId,
           to: [email!],
-          subject: `Reminder: WakeelBoost ${app.ref} is awaiting your action`,
+          subject: `Reminder: ${PLATFORM_NAME} ${app.ref} is awaiting your action`,
           text: simpleEmail([
             `${actor.name} sent a reminder about request ${app.ref} (${app.customer_name}).`,
             `Stage: ${STAGE_LABELS[task.stage]}`,

@@ -3,8 +3,8 @@ import "./globals.css";
 import { currentTheme } from "./_lib/theme";
 
 export const metadata: Metadata = {
-  title: { default: "WakeelBoost Work Desk", template: "%s · WakeelBoost Work Desk" },
-  description: "Stock financing for Wakeel merchants. Internal Alternative Bank workbench.",
+  title: { default: "AltBank Retail Asset Factory", template: "%s · AltBank Retail Asset Factory" },
+  description: "Internal Alternative Bank platform for initiating, appraising, reviewing, approving and processing retail financing applications.",
   robots: { index: false, follow: false },
   icons: { icon: "/icon.svg" },
 };

@@ -57,5 +57,26 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
   if (row.assigned) capacities.push("CASE_OFFICER");
   if (row.legal) capacities.push("LEGAL_RECIPIENT");
   if (row.shariah) capacities.push("SHARIAH_RECIPIENT");
+  // Retail scopes: assigned RM, team, outlet, retail leadership, exception authority, collections.
+  const rr = (
+    await q.query<{ assigned_rm: boolean; team: boolean; outlet: boolean; leadership: boolean; exception: boolean; collections: boolean }>(
+      `WITH a AS (SELECT * FROM applications WHERE id = $2 AND workflow = 'RETAIL'),
+            mine AS (SELECT role, team FROM role_assignments WHERE staff_id = $1 AND active)
+       SELECT
+         EXISTS (SELECT 1 FROM a WHERE a.assigned_rm_id = $1 AND EXISTS (SELECT 1 FROM mine WHERE role = 'RM')) AS assigned_rm,
+         EXISTS (SELECT 1 FROM a JOIN mine ON mine.role = 'TEAM_LEAD' AND mine.team IS NOT NULL AND mine.team = a.team WHERE a.stage <> 'DRAFT') AS team,
+         EXISTS (SELECT 1 FROM a JOIN locations l ON l.id = a.outlet_location_id WHERE l.oss_staff_id = $1 AND a.stage <> 'DRAFT' AND EXISTS (SELECT 1 FROM mine WHERE role = 'OUTLET_SERVICE_SUPERVISOR')) AS outlet,
+         EXISTS (SELECT 1 FROM a WHERE a.stage <> 'DRAFT' AND EXISTS (SELECT 1 FROM mine WHERE role IN ('HEAD_OF_RETAIL_SALES','HEAD_OF_UNIT'))) AS leadership,
+         EXISTS (SELECT 1 FROM policy_exceptions pe WHERE pe.application_id = $2 AND pe.approver_role IN (SELECT role FROM mine)) AS exception,
+         EXISTS (SELECT 1 FROM facilities f WHERE f.application_id = $2 AND EXISTS (SELECT 1 FROM mine WHERE role = 'COLLECTIONS_OFFICER')) AS collections`,
+      [staffId, appId],
+    )
+  ).rows[0];
+  if (rr?.assigned_rm) capacities.push("ASSIGNED_RM");
+  if (rr?.team) capacities.push("TEAM_SUPERVISOR");
+  if (rr?.outlet) capacities.push("OUTLET_SUPERVISOR");
+  if (rr?.leadership) capacities.push("RETAIL_LEADERSHIP");
+  if (rr?.exception) capacities.push("EXCEPTION_AUTHORITY");
+  if (rr?.collections) capacities.push("COLLECTIONS");
   return { canView: capacities.length > 0, capacities };
 }

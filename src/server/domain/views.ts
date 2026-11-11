@@ -44,6 +44,8 @@ export interface QueueItem {
   assigned_at: Date;
   required_action: string;
   applicant_type: string;
+  product_label: string | null;
+  suspended: boolean;
 }
 
 /**
@@ -77,7 +79,7 @@ export async function actionQueue(q: Db, staffId: string, query: QueueQuery) {
   const rows = (
     await q.query<QueueItem>(
       `SELECT t.id AS task_id, t.application_id, a.ref, a.customer_name, a.requested_amount_kobo, t.stage, t.assignee_role, t.assigned_at,
-              t.required_action, a.applicant_type
+              t.required_action, a.applicant_type, a.product_label, a.suspended_at IS NOT NULL AS suspended
        ${base} ORDER BY ${sortCol} ${dir} NULLS LAST, t.id ASC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
       params,
     )
@@ -96,7 +98,7 @@ export async function actionQueue(q: Db, staffId: string, query: QueueQuery) {
 export async function initiatorRequests(q: Db, staffId: string) {
   return (
     await q.query(
-      `SELECT a.id, a.ref, a.customer_name, a.requested_amount_kobo, a.stage, a.status, a.route, a.applicant_type, a.created_at, a.submitted_at, a.updated_at,
+      `SELECT a.id, a.ref, a.customer_name, a.requested_amount_kobo, a.stage, a.status, a.route, a.applicant_type, a.created_at, a.submitted_at, a.updated_at, a.product_label, a.workflow,
               t.id AS task_id, t.assigned_at, t.entered_at, s.full_name AS owner_name, t.assignee_role AS owner_role, t.assignee_id AS owner_id
          FROM applications a
          LEFT JOIN tasks t ON t.application_id = a.id AND t.status = 'OPEN'

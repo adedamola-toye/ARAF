@@ -77,7 +77,7 @@ export async function setStaffStatus(ctx: Ctx, staffId: string, status: "ACTIVE"
   });
 }
 
-async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null }) {
+async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null; team?: string | null }) {
   if (!isRole(p.role)) throw invalid("Unknown role.");
   if (p.staffId === ctx.actor!.staffId) throw forbidden("Super Admins cannot change their own role assignments.");
   const staff = (await tx.query("SELECT * FROM staff WHERE id = $1 FOR UPDATE", [p.staffId])).rows[0];
@@ -86,6 +86,9 @@ async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: strin
   const region = p.region || staff.region || null;
   if (REGION_REQUIRED_ROLES.includes(p.role) && !region) throw invalid("This role requires a state.", { region: "Required." });
   if (region && !isRegion(region)) throw invalid("Unknown state.");
+  const team = (p.team ?? "").trim().toUpperCase() || null;
+  if (team && !/^[A-Z0-9][A-Z0-9 _-]{1,40}$/.test(team)) throw invalid("Team codes use letters, digits, spaces, - or _.", { team: "Invalid team." });
+  if (["RM", "TEAM_LEAD"].includes(p.role) && !team) throw invalid("Relationship Managers and Team Leads need a team so requests can be routed to the right Team Lead.", { team: "Team required." });
   if (SINGLE_HOLDER_ROLES.includes(p.role)) {
     const holder = await tx.query("SELECT staff_id FROM role_assignments WHERE role = $1 AND active FOR UPDATE", [p.role]);
     if (holder.rowCount) throw conflict("This position already has an active holder. Revoke it first.");
@@ -97,17 +100,17 @@ async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: strin
   }
   try {
     await tx.query(
-      `INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [p.staffId, p.role, region, p.businessUnit?.trim() || staff.business_unit || null, ctx.actor!.staffId, ctx.now],
+      `INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at, team) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [p.staffId, p.role, region, p.businessUnit?.trim() || staff.business_unit || null, ctx.actor!.staffId, ctx.now, team],
     );
   } catch (e) {
     if ((e as { code?: string }).code === "23505") throw conflict("The staff member already holds this role.");
     throw e;
   }
-  await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region } });
+  await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region, team } });
 }
 
-export async function grantRole(ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null }) {
+export async function grantRole(ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null; team?: string | null }) {
   return adminOp(ctx, "ROLE_GRANTED", (tx) => grantRoleInTx(tx, ctx, p));
 }
 
@@ -150,7 +153,8 @@ export async function eligibleForTask(taskId: string) {
     if (!t) throw notFound();
     const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1", [t.application_id])).rows[0];
     const spec = await assignmentSpec(tx, app, t.stage as Stage);
-    return eligibleStaff(tx, spec.roles, spec.exclude);
+    if (spec.only && spec.only.filter(Boolean).length === 0) return [];
+    return eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only });
   });
 }
 
@@ -230,7 +234,11 @@ export async function activateTemplate(ctx: Ctx, templateId: string) {
     const t = (await tx.query("SELECT * FROM offer_templates WHERE id = $1", [templateId])).rows[0];
     if (!t) throw notFound();
     // One active template per applicant type: retire only the one it replaces.
-    await tx.query("UPDATE offer_templates SET status = 'RETIRED' WHERE status = 'ACTIVE' AND coalesce(applicant_type,'ALL') = coalesce($1,'ALL')", [t.applicant_type]);
+    await tx.query(
+      `UPDATE offer_templates SET status = 'RETIRED' WHERE status = 'ACTIVE' AND coalesce(applicant_type,'ALL') = coalesce($1,'ALL')
+          AND coalesce(product_code,'WAKEELBOOST') = coalesce($2,'WAKEELBOOST') AND coalesce(structure,'ALL') = coalesce($3,'ALL')`,
+      [t.applicant_type, t.product_code, t.structure],
+    );
     await tx.query("UPDATE offer_templates SET status = 'ACTIVE', activated_by = $2, activated_at = $3 WHERE id = $1", [templateId, ctx.actor!.staffId, ctx.now]);
     await audit(tx, ctx, { action: "TEMPLATE_ACTIVATED", actorRole: "SUPER_ADMIN", details: { templateId, name: t.name, version: t.version } });
   });

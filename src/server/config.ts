@@ -108,7 +108,7 @@ export const config = {
     return str("MAIL_DRIVER", "resend") as "dev" | "smtp" | "resend";
   },
   get mailFrom() {
-    return str("MAIL_FROM", "WakeelBoost Work Desk <noreply@wakeelboost.ng>");
+    return str("MAIL_FROM", "AltBank Retail Asset Factory <noreply@altbank.ng>");
   },
   get smtp() {
     return {

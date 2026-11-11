@@ -1,8 +1,16 @@
-# WakeelBoost Work Desk
+# AltBank Retail Asset Factory
 
-Internal Alternative Bank workbench for **WakeelBoost merchant stock financing**: initiation, business
-endorsement, three credit routes, offer pack, disbursement booking, closure and repayment prompts.
-It includes OTP sign-in, case-scoped document access and an append-only audit trail.
+Internal Alternative Bank platform for initiating, appraising, reviewing, approving and processing retail
+financing: **Vendor Financing**, **Alt Drive** and **Alt Power**. Products are configured, not coded.
+Initiation is by **Relationship Managers** and **Delight Officers**. Business review runs through the
+Outlet Service Supervisor, Team Lead, Head of Retail Sales and Head of Unit, and credit runs through the
+existing credit route table. The lifecycle continues through offers, booking, payment reconciliation,
+fulfilment and servicing. See **[docs/RETAIL.md](docs/RETAIL.md)** for retail workflow, configuration,
+outstanding business decisions and the new-client checklist.
+
+The platform originated as the WakeelBoost Work Desk. **WakeelBoost (merchant stock financing)** remains
+available as a legacy product: its cases keep their WB- references, label and workflow. It includes OTP
+sign-in, case-scoped document access and an append-only audit trail.
 
 Stack: **Next.js 15 (App Router) + TypeScript**, **PostgreSQL 16** (plain SQL migrations), private
 encrypted object storage (local adapter for development, S3/SSE-KMS in production), and a durable
@@ -23,6 +31,8 @@ cp .env.example .env          # development defaults
 npm install
 npm run db:reset              # migrate + seed real staff, groups and the offer template
 npm run seed -- --with-demo   # add the synthetic demo staff and demo cases
+# optional: SYNTHETIC retail configuration + retail demo cases (never use as bank policy)
+npm run seed -- --with-demo --with-retail-demo
 npm run dev:all               # Next.js on :3000 + background worker
 ```
 
@@ -36,6 +46,19 @@ the same way once the worker sends them.
 
 `npm run seed` creates only the real Super Admins: `tomiwa.adebanjo@altbank.ng` and
 `paul.toje@altbank.ng`. Run `npm run seed -- --with-demo` to also add the synthetic demo staff below.
+
+### Retail demo accounts (synthetic)
+
+| Email | Roles |
+|---|---|
+| rm.bola / rm.ade | Relationship Manager (team RETAIL-LAGOS-1) |
+| do.ife | Delight Officer (team RETAIL-LAGOS-1) |
+| oss.yaba | Outlet Service Supervisor (Yaba Altbox, Ikeja Branch) |
+| tl.lagos / tl.abuja | Team Lead (RETAIL-LAGOS-1 / RETAIL-ABUJA-1) |
+| hrs / hou | Head of Retail Sales / Head of Unit (business approval) |
+| config.approver | Product configuration approver |
+| vendor.maker / vendor.checker | Vendor register officers (maker-checker) |
+| collections | Collections and servicing officer |
 
 ### Demo accounts (all `@altbank.ng`, synthetic)
 
@@ -67,12 +90,23 @@ try provisioning.
 | `npm run db:reset` | Drop, migrate and seed the dev database (refused in production) |
 | `npm run seed` | Seed real staff and reference data (`--with-demo` adds synthetic staff and demo cases; `--no-cases` skips cases) |
 | `npm run demo:routes` | Drive one synthetic case through each credit route end to end and print every handoff |
+| `npm run demo:retail` | Reset the dev database and drive three synthetic retail journeys end to end |
+| `npm run migration:report` | List records needing a migration decision or manual reconciliation |
 | `npm test` | Vitest suite against `TEST_DATABASE_URL` (schema is recreated) |
 | `npm run lint` / `npm run typecheck` / `npm run build` | ESLint, TypeScript, production build |
 | `npm run worker` | Background worker (outbox, weekly/monthly schedules, quarantine rescans, retention) |
 | `npm run mail:test -- you@example.com` | Send one test email through the configured transport |
 
-The test suite has 203 tests, including 48 rows recalculated from the bank's APR workbook. It covers:
+The test suite has 240 tests, including 48 rows recalculated from the bank's APR workbook and 34 retail tests (`tests/retail.test.ts`, `tests/retail-smoke.test.ts`). It covers:
+
+- **Retail:**
+  - RM and Delight Officer routing, both shared business reviews and Head of Unit configuration
+  - the document matrix by product and profile, and Vendor Financing eligibility, limit and tenor
+  - AFS exceptions, photographs and RM evidence
+  - exact DSR boundaries with existing obligations, Alt Drive structures, rates and insurance
+  - blocked Alt Power configuration, material-change reassessment, access scope and independence
+  - duplicate booking and payment retries, reconciliation and facility closure
+  - the Lagos-date request wallet and backward compatibility
 
 - **Routing:** boundary amounts, all three routes end to end, every endorsement path, random eligibility and separation of duties, and unstaffed stages with admin resolution.
 - **Workflow rules:** correction and rejection routing, material-change invalidation, the three-report, APR and invoice gates, the production APR block, and the pack, insurance and CRMS gates.

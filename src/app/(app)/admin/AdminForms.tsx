@@ -28,6 +28,7 @@ export function GrantRoleForm({ staffId, roles, regions }: { staffId: string; ro
         <div className="field"><label htmlFor="role">Role</label><select id="role" name="role" required>{roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
         <div className="field"><label htmlFor="gregion">State scope</label><select id="gregion" name="region"><option value="">Staff default / none</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
         <div className="field"><label htmlFor="gbu">Business unit</label><input id="gbu" name="businessUnit" /></div>
+        <div className="field"><label htmlFor="gteam">Team (routing scope)</label><input id="gteam" name="team" placeholder="e.g. RETAIL-LAGOS-1" /><span className="hint">Required for Relationship Managers and Team Leads; optional for Delight Officers.</span></div>
       </div>
       <div><SubmitButton className="btn btn-dark">Grant role</SubmitButton></div>
     </ActionForm>

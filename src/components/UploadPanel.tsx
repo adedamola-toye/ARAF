@@ -15,12 +15,15 @@ export function UploadPanel({
   replaces,
   title = "Upload a document",
   compact = false,
+  withMeta = false,
 }: {
   applicationId: string;
   categories: { code: string; label: string }[];
   replaces?: { id: string; label: string }[];
   title?: string;
   compact?: boolean;
+  /** Retail uploads: capture photo category and statement/payslip coverage dates. */
+  withMeta?: boolean;
 }) {
   const id = useId();
   const router = useRouter();
@@ -29,6 +32,11 @@ export function UploadPanel({
   const [replace, setReplace] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const [fileName, setFileName] = useState("");
+  const [photoCategory, setPhotoCategory] = useState("");
+  const [coverageFrom, setCoverageFrom] = useState("");
+  const [coverageTo, setCoverageTo] = useState("");
+  const needsPhoto = withMeta && category === "BUSINESS_PHOTO";
+  const needsCoverage = withMeta && (category === "BANK_STATEMENT" || category === "PAYSLIP");
 
   const send = () => {
     const f = fileRef.current?.files?.[0];
@@ -37,9 +45,22 @@ export function UploadPanel({
       fileRef.current?.focus();
       return;
     }
+    if (needsPhoto && !photoCategory) {
+      setPhase({ kind: "error", msg: "Choose the photograph category (angle) first." });
+      return;
+    }
+    if (needsCoverage && (!coverageFrom || !coverageTo)) {
+      setPhase({ kind: "error", msg: "Enter the period the statement or payslip covers (from and to)." });
+      return;
+    }
     const fd = new FormData();
     fd.set("applicationId", applicationId);
     fd.set("category", category);
+    if (needsPhoto) fd.set("photoCategory", photoCategory);
+    if (needsCoverage) {
+      fd.set("coverageFrom", coverageFrom);
+      fd.set("coverageTo", coverageTo);
+    }
     if (replace) fd.set("replacesDocumentId", replace);
     fd.set("file", f);
     const xhr = new XMLHttpRequest();
@@ -106,6 +127,33 @@ export function UploadPanel({
           </div>
         )}
       </div>
+      {needsPhoto && (
+        <div className="field">
+          <label htmlFor={`${id}-p`}>Photograph category (angle)</label>
+          <select id={`${id}-p`} value={photoCategory} onChange={(e) => setPhotoCategory(e.target.value)} disabled={busy}>
+            <option value="">Choose…</option>
+            <option value="FRONT">Shop front</option>
+            <option value="SIGNAGE">Signage / name board</option>
+            <option value="INTERIOR">Interior</option>
+            <option value="STOCK">Stock / goods</option>
+            <option value="SURROUNDINGS">Street / surroundings</option>
+            <option value="RM_WITH_BUSINESS">Relationship Manager with the business</option>
+          </select>
+          <span className="hint">Use a different angle for each photograph. A reviewer confirms what each photograph shows; nothing is verified automatically.</span>
+        </div>
+      )}
+      {needsCoverage && (
+        <div className="grid-2">
+          <div className="field">
+            <label htmlFor={`${id}-cf`}>Covers from</label>
+            <input id={`${id}-cf`} type="date" value={coverageFrom} onChange={(e) => setCoverageFrom(e.target.value)} disabled={busy} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${id}-ct`}>Covers to</label>
+            <input id={`${id}-ct`} type="date" value={coverageTo} onChange={(e) => setCoverageTo(e.target.value)} disabled={busy} />
+          </div>
+        </div>
+      )}
       <div className="field">
         <label htmlFor={`${id}-f`}>File (PDF, PNG, JPG, DOCX or XLSX)</label>
         <input id={`${id}-f`} ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" disabled={busy} onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")} />

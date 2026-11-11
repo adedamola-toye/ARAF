@@ -18,6 +18,16 @@ export const STAGES = [
   "VENDOR_CONFIRMATION",
   "CLOSED",
   "REJECTED",
+  // Retail Asset Factory
+  "OSS_REVIEW",
+  "TEAM_LEAD_REVIEW",
+  "HRS_REVIEW",
+  "HEAD_OF_UNIT_APPROVAL",
+  "PAYMENT_RECONCILIATION",
+  "FULFILMENT",
+  "COMPLETED",
+  "WITHDRAWN",
+  "EXPIRED",
 ] as const;
 export type Stage = (typeof STAGES)[number];
 
@@ -39,6 +49,15 @@ export const STAGE_LABELS: Record<Stage, string> = {
   VENDOR_CONFIRMATION: "Vendor payment confirmation",
   CLOSED: "Closed",
   REJECTED: "Rejected",
+  OSS_REVIEW: "Outlet Service Supervisor preliminary review",
+  TEAM_LEAD_REVIEW: "Team Lead first review",
+  HRS_REVIEW: "Head of Retail Sales second review",
+  HEAD_OF_UNIT_APPROVAL: "Head of Unit business approval",
+  PAYMENT_RECONCILIATION: "Payment confirmation and reconciliation",
+  FULFILMENT: "Fulfilment and post-disbursement tasks",
+  COMPLETED: "Completed (facility servicing)",
+  WITHDRAWN: "Withdrawn",
+  EXPIRED: "Expired",
 };
 
 export const REQUIRED_ACTION: Record<Stage, string> = {
@@ -59,9 +78,21 @@ export const REQUIRED_ACTION: Record<Stage, string> = {
   VENDOR_CONFIRMATION: "Confirm vendor payment and end of process",
   CLOSED: "—",
   REJECTED: "—",
+  OSS_REVIEW: "Review completeness, outlet details and evidence; recommend, return or decline",
+  TEAM_LEAD_REVIEW: "First business review: appraisal, proposal, visit, DSR and viability",
+  HRS_REVIEW: "Second business review: prior recommendations, compliance and proposed terms",
+  HEAD_OF_UNIT_APPROVAL: "Final business approval before credit processing",
+  PAYMENT_RECONCILIATION: "Record payment outcome with evidence and reconcile",
+  FULFILMENT: "Complete delivery, installation, handover or POS deployment with evidence",
+  COMPLETED: "—",
+  WITHDRAWN: "—",
+  EXPIRED: "—",
 };
 
-export const TERMINAL_STAGES: readonly Stage[] = ["CLOSED", "REJECTED"];
+export const TERMINAL_STAGES: readonly Stage[] = ["CLOSED", "REJECTED", "COMPLETED", "WITHDRAWN", "EXPIRED"];
+
+/** Retail business review stages (business endorsement meaning, never credit approval). */
+export const BUSINESS_REVIEW_STAGES: readonly Stage[] = ["BUSINESS_ENDORSEMENT", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
 
 /** Stages whose approval decisions are credit approvals invalidated by material changes. */
 export const CREDIT_APPROVAL_STAGES: readonly Stage[] = [
@@ -85,7 +116,11 @@ export type TaskAction =
   | "SEND_FOR_CORRECTION"
   | "DISBURSED"
   | "COMPLETE_PROCESS"
-  | "CONFIRM_VENDOR_PAYMENT";
+  | "CONFIRM_VENDOR_PAYMENT"
+  | "RECOMMEND"
+  | "BOOK_FACILITY"
+  | "RECONCILE_PAYMENT"
+  | "COMPLETE_FULFILMENT";
 
 export const ACTION_LABELS: Record<TaskAction, string> = {
   ENDORSE: "Endorse",
@@ -102,13 +137,40 @@ export const ACTION_LABELS: Record<TaskAction, string> = {
   DISBURSED: "Disbursed",
   COMPLETE_PROCESS: "Complete Process",
   CONFIRM_VENDOR_PAYMENT: "Confirm vendor payment and end of process",
+  RECOMMEND: "Recommend",
+  BOOK_FACILITY: "Book facility",
+  RECONCILE_PAYMENT: "Confirm payment reconciled",
+  COMPLETE_FULFILMENT: "Complete fulfilment",
 };
 
 /** Actions requiring a reason. */
 export const REASON_REQUIRED: readonly TaskAction[] = ["REJECT", "RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"];
+/** Business review decisions also require supporting comments. */
+export const COMMENT_REQUIRED_STAGES: readonly Stage[] = ["OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
 
 /** Allowed actions per stage. Second review depends on the route (Proceed/Reject for routes 2 and 3). */
-export function allowedActions(stage: Stage, route: number | null): TaskAction[] {
+export function allowedActions(stage: Stage, route: number | null, workflow: string = "WAKEELBOOST"): TaskAction[] {
+  if (workflow === "RETAIL") {
+    switch (stage) {
+      case "OSS_REVIEW":
+      case "TEAM_LEAD_REVIEW":
+        return ["RECOMMEND", "RETURN", "REJECT"];
+      case "HRS_REVIEW":
+        return ["ENDORSE", "RETURN", "REJECT"];
+      case "HEAD_OF_UNIT_APPROVAL":
+        return ["APPROVE", "RETURN", "REJECT"];
+      case "DISBURSEMENT_BOOKING":
+        return ["BOOK_FACILITY"];
+      case "DISBURSEMENT_CHECK":
+        return ["OKAY", "SEND_FOR_CORRECTION", "RETURN"];
+      case "PAYMENT_RECONCILIATION":
+        return ["RECONCILE_PAYMENT"];
+      case "FULFILMENT":
+        return ["COMPLETE_FULFILMENT"];
+      case "VENDOR_CONFIRMATION":
+        return [];
+    }
+  }
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
       return ["ENDORSE", "REJECT", "RETURN"];

@@ -10,6 +10,7 @@ import { getRoute } from "./routing";
 import { latestAssessment, type AssessmentRow } from "./assessment";
 import type { AssessmentSummary } from "../notify/templates";
 import type { PricingResult } from "./pricing";
+import { PLATFORM_NAME } from "../brand";
 
 /** Attach the first reviewer's DSR exception justification (if the approval used one). */
 async function withException(tx: Tx, appId: string, s: AssessmentSummary): Promise<AssessmentSummary> {
@@ -54,7 +55,7 @@ export interface AppRow {
   customer_id: string | null;
   applicant_type: "INDIVIDUAL" | "ENTERPRISE" | "LIMITED";
   initiator_id: string;
-  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER";
+  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER" | "DELIGHT_OFFICER";
   region: string | null;
   business_unit: string | null;
   status: string;
@@ -79,6 +80,23 @@ export interface AppRow {
   process_completed_at: Date | null;
   repayment_prompts_active_at: Date | null;
   closed_at: Date | null;
+  workflow: "WAKEELBOOST" | "RETAIL";
+  product_code: string | null;
+  product_label: string | null;
+  product_config_id: string | null;
+  customer_profile: string | null;
+  financing_structure: string | null;
+  team: string | null;
+  outlet_location_id: string | null;
+  location_snapshot: Record<string, unknown> | null;
+  assigned_rm_id: string | null;
+  oss_reviewer_id: string | null;
+  team_lead_id: string | null;
+  hrs_id: string | null;
+  hou_id: string | null;
+  suspended_at: Date | null;
+  suspension_reason: string | null;
+  business_approved_at?: Date | null;
 }
 
 export interface EligibleStaff {
@@ -88,15 +106,23 @@ export interface EligibleStaff {
   email: string;
 }
 
-export async function eligibleStaff(tx: Tx, roles: readonly Role[], exclude: readonly (string | null)[]): Promise<EligibleStaff[]> {
+export async function eligibleStaff(
+  tx: Tx,
+  roles: readonly Role[],
+  exclude: readonly (string | null)[],
+  scope: { team?: string | null; only?: (string | null)[] | null } = {},
+): Promise<EligibleStaff[]> {
   const ex = exclude.filter((x): x is string => !!x);
+  const only = scope.only ? scope.only.filter((x): x is string => !!x) : null;
   const r = await tx.query<EligibleStaff>(
     `SELECT ra.staff_id, ra.role, s.full_name, s.email
        FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
       WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = ANY($1::text[])
         AND NOT (ra.staff_id = ANY($2::uuid[]))
+        AND ($3::text IS NULL OR ra.team = $3)
+        AND ($4::uuid[] IS NULL OR ra.staff_id = ANY($4::uuid[]))
       ORDER BY ra.role, s.full_name`,
-    [roles, ex],
+    [roles, ex, scope.team ?? null, only],
   );
   return r.rows;
 }
@@ -104,8 +130,9 @@ export async function eligibleStaff(tx: Tx, roles: readonly Role[], exclude: rea
 /** Staff that have taken a decision on any credit/approval stage of the case (separation of duties). */
 async function priorApprovers(tx: Tx, appId: string): Promise<string[]> {
   const r = await tx.query<{ actor_id: string }>(
-    `SELECT DISTINCT actor_id FROM decisions WHERE application_id = $1
-       AND stage IN ('BUSINESS_ENDORSEMENT','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW')`,
+    `SELECT DISTINCT actor_id FROM decisions WHERE application_id = $1 AND invalidated_at IS NULL
+       AND stage IN ('BUSINESS_ENDORSEMENT','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW',
+                     'OSS_REVIEW','TEAM_LEAD_REVIEW','HRS_REVIEW','HEAD_OF_UNIT_APPROVAL')`,
     [appId],
   );
   return r.rows.map((x) => x.actor_id);
@@ -114,10 +141,62 @@ async function priorApprovers(tx: Tx, appId: string): Promise<string[]> {
 export interface AssignmentSpec {
   roles: Role[];
   exclude: (string | null)[];
+  team?: string | null;
+  only?: (string | null)[] | null;
+  /** Why the pool may be empty (shown on the assignment exception). */
+  scopeNote?: string;
+}
+
+/** Retail routing: business review by team / outlet / organisation scope, independent credit review. */
+async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<AssignmentSpec | null> {
+  const base = [app.initiator_id, app.assigned_rm_id];
+  switch (stage) {
+    case "OSS_REVIEW": {
+      const loc = app.outlet_location_id ? (await tx.query<{ oss_staff_id: string | null; active: boolean }>("SELECT oss_staff_id, active FROM locations WHERE id = $1", [app.outlet_location_id])).rows[0] : null;
+      return { roles: ["OUTLET_SERVICE_SUPERVISOR"], exclude: base, only: [loc?.oss_staff_id ?? null], scopeNote: loc?.oss_staff_id ? "Outlet Service Supervisor mapped to the originating outlet" : "No Outlet Service Supervisor is mapped to the originating outlet" };
+    }
+    case "TEAM_LEAD_REVIEW":
+      if (!app.team) return { roles: ["TEAM_LEAD"], exclude: base, only: [], scopeNote: "The request has no team, so no Team Lead is in scope" };
+      return { roles: ["TEAM_LEAD"], exclude: [...base, app.oss_reviewer_id], team: app.team, scopeNote: `Team Lead for team ${app.team}` };
+    case "HRS_REVIEW":
+      return { roles: ["HEAD_OF_RETAIL_SALES"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id], scopeNote: "Head of Retail Sales (organisation)" };
+    case "HEAD_OF_UNIT_APPROVAL":
+      return { roles: ["HEAD_OF_UNIT"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, ...(await priorApprovers(tx, app.id))], scopeNote: "Head of Unit (must not have already decided on this request)" };
+    case "FIRST_CREDIT_REVIEW":
+    case "CREDIT_CORRECTION": {
+      const route = getRoute(app.route);
+      if (!route) throw new Error("Route not set");
+      const prior = (await priorApprovers(tx, app.id)).filter((x) => x !== app.first_reviewer_id);
+      return { roles: route.firstReviewRoles, exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior] };
+    }
+    case "SECOND_CREDIT_REVIEW": {
+      const route = getRoute(app.route);
+      if (!route) throw new Error("Route not set");
+      return { roles: route.secondReviewRoles, exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id] };
+    }
+    case "UNIT_HEAD_REVIEW":
+      return { roles: ["UNIT_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id] };
+    case "DIVISIONAL_HEAD_REVIEW":
+      return { roles: ["DIVISIONAL_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id, ...(await priorApprovers(tx, app.id))] };
+    case "PAYMENT_RECONCILIATION":
+      return { roles: ["DISBURSEMENT_OFFICER_1"], exclude: [...base, app.pack_co3_id, app.do2_id] };
+    case "DISBURSEMENT_CHECK":
+      return { roles: ["DISBURSEMENT_OFFICER_1"], exclude: [...base, app.pack_co3_id] };
+    case "DISBURSEMENT_BOOKING":
+      return { roles: ["DISBURSEMENT_OFFICER_2"], exclude: [...base, app.pack_co3_id, app.do1_id] };
+    case "FULFILMENT":
+      return { roles: [app.initiator_role], exclude: [] };
+    default:
+      return null;
+  }
 }
 
 /** Which roles may hold a stage for a case, and who is excluded (separation of duties). */
 export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise<AssignmentSpec> {
+  if (app.workflow === "RETAIL") {
+    const r = await retailSpec(tx, app, stage);
+    if (r) return r;
+  }
   const route = getRoute(app.route);
   switch (stage) {
     case "BUSINESS_ENDORSEMENT": {
@@ -165,6 +244,7 @@ export interface Chosen {
   role: Role;
   method: "ROUTED" | "RANDOM" | "RETAINED" | "INITIATOR" | "NO_ELIGIBLE";
   pool: EligibleStaff[];
+  scopeNote?: string;
 }
 
 /**
@@ -184,20 +264,20 @@ export async function chooseAssignee(
 ): Promise<Chosen> {
   const spec = await assignmentSpec(tx, app, stage);
   const fallbackRole = (spec.roles[0] ?? app.initiator_role) as Role;
-  if (["INITIATOR_CORRECTION", "OFFER_PREPARATION", "VENDOR_CONFIRMATION"].includes(stage)) {
+  if (["INITIATOR_CORRECTION", "OFFER_PREPARATION", "VENDOR_CONFIRMATION", "FULFILMENT"].includes(stage)) {
     const pool = await eligibleStaff(tx, spec.roles, []);
     const me = pool.find((p) => p.staff_id === app.initiator_id);
     return me
       ? { staffId: me.staff_id, role: me.role, method: "INITIATOR", pool }
       : { staffId: null, role: app.initiator_role, method: "NO_ELIGIBLE", pool };
   }
-  const pool = spec.roles.length ? await eligibleStaff(tx, spec.roles, spec.exclude) : [];
+  const pool = spec.roles.length && !(spec.only && spec.only.filter(Boolean).length === 0) ? await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only }) : [];
   if (opts.preferred) {
     const p = pool.find((x) => x.staff_id === opts.preferred);
     if (p) return { staffId: p.staff_id, role: p.role, method: opts.random ? "RETAINED" : "ROUTED", pool };
-    if (opts.requirePreferred) return { staffId: null, role: fallbackRole, method: "NO_ELIGIBLE", pool };
+    if (opts.requirePreferred) return { staffId: null, role: fallbackRole, method: "NO_ELIGIBLE", pool, scopeNote: spec.scopeNote };
   }
-  if (pool.length === 0) return { staffId: null, role: fallbackRole, method: "NO_ELIGIBLE", pool };
+  if (pool.length === 0) return { staffId: null, role: fallbackRole, method: "NO_ELIGIBLE", pool, scopeNote: spec.scopeNote };
   const rolesWithStaff = [...new Set(pool.map((p) => p.role))];
   const role = securePick(rolesWithStaff);
   const person = securePick(pool.filter((p) => p.role === role));
@@ -216,7 +296,7 @@ export async function openTask(
   const r = await tx.query<{ id: string }>(
     `INSERT INTO tasks (application_id, stage, assignee_role, assignee_id, version_id, required_action, assignment_note, entered_at, assigned_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-    [app.id, stage, chosen.role, chosen.staffId, app.current_version_id, REQUIRED_ACTION[stage], note ?? null, ctx.now, chosen.staffId ? ctx.now : null],
+    [app.id, stage, chosen.role, chosen.staffId, app.current_version_id, REQUIRED_ACTION[stage], note ?? (chosen.staffId ? null : (chosen.scopeNote ?? null)), ctx.now, chosen.staffId ? ctx.now : null],
   );
   const taskId = r.rows[0].id;
   await tx.query(
@@ -275,9 +355,9 @@ async function notifyAdminsUnassigned(tx: Tx, ctx: Ctx, app: AppRow, taskId: str
     dedupeKey: `unassigned:${taskId}`,
     applicationId: app.id,
     to: admins.rows.map((r) => r.email),
-    subject: `WakeelBoost ${app.ref}: no eligible assignee for ${STAGE_LABELS[stage]}`,
+    subject: `${PLATFORM_NAME} ${app.ref}: no eligible assignee for ${STAGE_LABELS[stage]}`,
     text: simpleEmail([
-      `Request ${app.ref} has reached "${STAGE_LABELS[stage]}" but no active, eligible staff member holds the required role (${role}).`,
+      `Request ${app.ref} has reached "${STAGE_LABELS[stage]}" but no active, eligible staff member holds the required role (${role}) within the request's scope.`,
       "The stage cannot be skipped. Provision or assign an eligible officer in Admin → Assignment exceptions.",
     ]),
   });

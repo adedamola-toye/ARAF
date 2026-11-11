@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(new Uint8Array(body), {
       headers: {
         "Content-Type": format === "csv" ? "text/csv; charset=utf-8" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="wakeelboost-report-${lagosDate(new Date())}.${format}"`,
+        "Content-Disposition": `attachment; filename="retail-asset-factory-report-${lagosDate(new Date())}.${format}"`,
         "Cache-Control": "private, no-store",
       },
     });

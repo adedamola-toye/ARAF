@@ -5,7 +5,7 @@ export default function GlobalError({ error }: { error: Error & { digest?: strin
     <html lang="en-NG">
       <body style={{ fontFamily: "'Century Gothic', 'Avenir Next', Futura, system-ui, sans-serif", margin: 0, background: "#1C1D20", color: "#F5F4EF" }}>
         <header style={{ padding: "22px 24px", fontWeight: 700, fontSize: 28, letterSpacing: "-0.06em" }}>
-          Wakeel
+          AltBank Retail Asset Factory
         </header>
         <main style={{ padding: 32, maxWidth: 560 }}>
           <h1>Something went wrong</h1>

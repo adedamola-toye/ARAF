@@ -37,14 +37,14 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
             <h2><span className="mono">{t.ref}</span> · {t.customer_name}</h2>
             <span className="badge badge-red">Waiting {formatDuration(Date.now() - new Date(t.entered_at).getTime())}</span>
           </div>
-          <p className="small">{STAGE_LABELS[t.stage as Stage]} · requires {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role} · since {formatLagos(t.entered_at)}</p>
+          <p className="small">{STAGE_LABELS[t.stage as Stage]} · requires {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role} · since {formatLagos(t.entered_at)}{t.assignment_note ? ` · ${t.assignment_note}` : ""}</p>
           <AssignForm taskId={t.id} eligible={eligible.map((e) => ({ value: e.staff_id, label: `${e.full_name} (${ROLE_LABELS[e.role]})` }))} />
         </div>
       ))}
       <div className="card">
         <h2>Hand over an assigned task</h2>
         <form method="get" className="row" style={{ alignItems: "end" }}>
-          <div className="field"><label htmlFor="ref">Request ID</label><input id="ref" name="ref" defaultValue={sp.ref ?? ""} placeholder="WB-2026-001001" /></div>
+          <div className="field"><label htmlFor="ref">Request ID</label><input id="ref" name="ref" defaultValue={sp.ref ?? ""} placeholder="ARAF-2026-001001" /></div>
           <button className="btn">Find</button>
         </form>
         {sp.ref && !lookup && <p className="small muted">No open task found for that request.</p>}
