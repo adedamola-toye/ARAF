@@ -26,9 +26,9 @@ async function main() {
     const r = await mailTransport().send({
       to: [to],
       cc: [],
-      subject: "WakeelBoost Work Desk mail test",
+      subject: "ARAF Retail Asset Factory mail test",
       text: [
-        "WakeelBoost Work Desk",
+        "ARAF Retail Asset Factory",
         "",
         `This is a test message sent at ${new Date().toISOString()} via ${driver}.`,
         "OTP sign-in codes, assignments, reminders, digests and closure packs use this same transport.",

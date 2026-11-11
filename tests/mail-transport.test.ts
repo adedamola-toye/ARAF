@@ -4,7 +4,7 @@ import { mailTransport, setMailTransportForTests } from "@/server/notify/transpo
 const message = {
   to: ["staff@altbank.ng"],
   cc: ["lead@altbank.ng"],
-  subject: "Your WakeelBoost Work Desk sign-in code",
+  subject: "Your ARAF Retail Asset Factory sign-in code",
   text: "Your one-time sign-in code is: 123456",
   attachments: [{ filename: "pack.pdf", contentType: "application/pdf", content: Buffer.from("%PDF-1.4") }],
 };
@@ -16,7 +16,7 @@ beforeEach(() => {
   vi.stubEnv("RESEND_API_KEY", "re_test_key");
   vi.stubEnv("RESEND_BASE_URL", "https://api.resend.test/");
   vi.stubEnv("RESEND_REPLY_TO", "support@altbank.ng");
-  vi.stubEnv("MAIL_FROM", "WakeelBoost Work Desk <noreply@wakeelboost.ng>");
+  vi.stubEnv("MAIL_FROM", "ARAF Retail Asset Factory <noreply@araf.ng>");
   fetchMock = vi.fn();
   vi.stubGlobal("fetch", fetchMock);
   setMailTransportForTests(null);
@@ -43,10 +43,10 @@ describe("Resend mail transport", () => {
       "Content-Type": "application/json",
     });
     expect(JSON.parse(String(init.body))).toEqual({
-      from: "WakeelBoost Work Desk <noreply@wakeelboost.ng>",
+      from: "ARAF Retail Asset Factory <noreply@araf.ng>",
       to: ["staff@altbank.ng"],
       cc: ["lead@altbank.ng"],
-      subject: "Your WakeelBoost Work Desk sign-in code",
+      subject: "Your ARAF Retail Asset Factory sign-in code",
       text: "Your one-time sign-in code is: 123456",
       reply_to: "support@altbank.ng",
       attachments: [{ filename: "pack.pdf", content: Buffer.from("%PDF-1.4").toString("base64"), content_type: "application/pdf" }],

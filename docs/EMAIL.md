@@ -16,7 +16,7 @@ notifications are queued in `notification_outbox` and delivered by `npm run work
 
 1. Create an API key at **Resend → API Keys** with **Sending access**. Put it in `RESEND_API_KEY`.
 2. Add the sending domain at **Resend → Domains → Add Domain**. Prefer a subdomain dedicated to the app,
-   for example `mail.altbank.ng`; this avoids conflicts with the bank's existing mail on the root domain.
+   for example `mail.araf.ng`; this avoids conflicts with the bank's existing mail on the root domain.
 3. Resend shows the DNS records to add (typically an `MX` record plus `TXT` records for SPF and DKIM,
    and a DMARC record is recommended). Add them exactly as shown in **Cloudflare → DNS → Records**.
 4. Wait for Resend to show the domain as **Verified** (usually minutes, occasionally a day).
@@ -24,11 +24,11 @@ notifications are queued in `notification_outbox` and delivered by `npm run work
 
 ```dotenv
 MAIL_DRIVER=resend
-MAIL_FROM="AltBank Retail Asset Factory <noreply@altbank.ng>"
+MAIL_FROM="ARAF Retail Asset Factory <noreply@araf.ng>"
 RESEND_API_KEY=re_...
 RESEND_BASE_URL=https://api.resend.com
 # optional
-RESEND_REPLY_TO=support@altbank.ng
+RESEND_REPLY_TO=support@araf.ng
 ```
 
 `MAIL_FROM` must use the verified domain, otherwise Resend returns `403 domain is not verified`.
@@ -38,7 +38,7 @@ RESEND_REPLY_TO=support@altbank.ng
 - **Proxy status does not apply to `MX` or `TXT` records.** If Resend asks you to add a `CNAME` (some
   setups use one for DKIM), set it to **DNS only** (grey cloud), not proxied.
 - **Do not reuse a host that Cloudflare Email Routing already uses.** Email Routing adds its own
-  `MX` records. Add Resend on a separate subdomain (for example `mail.altbank.ng`) instead of the root.
+  `MX` records. Add Resend on a separate subdomain (for example `mail.araf.ng`) instead of the root.
 - Keep the records exactly as Resend shows them. Changing names, or adding an extra `SPF` `TXT` record,
   delays or blocks verification. Merge SPF values into one record only if you know both providers' rules.
 - After verification, send one message and confirm it appears in **Resend → Emails**; that view shows
@@ -47,7 +47,7 @@ RESEND_REPLY_TO=support@altbank.ng
 ## Testing before the domain is verified
 
 Resend's shared sender `onboarding@resend.dev` can only deliver to the email address that owns the
-Resend account. It cannot deliver sign-in codes to staff addresses. Once `altbank.ng` is verified,
+Resend account. It cannot deliver sign-in codes to staff addresses. Once `araf.ng` is verified,
 all sign-in codes go directly to the staff member's email address.
 
 Send a test message through the real transport:

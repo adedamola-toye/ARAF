@@ -16,13 +16,13 @@ as Word files; with it, the app also shows a PDF preview (macOS/Linux, or set `S
 
 ## 2. Download the code
 
-**Easiest:** on GitHub open `pmtoje/wakeelboost`, switch the branch to
+**Easiest:** on GitHub open `pmtoje/ARAF`, switch the branch to
 `araf-retail-asset-factory`, click **Code → Download ZIP**, and unzip it (for example to your Desktop).
 
 **With Git:**
 
 ```
-git clone -b araf-retail-asset-factory https://github.com/pmtoje/wakeelboost.git
+git clone -b araf-retail-asset-factory https://github.com/pmtoje/ARAF.git
 ```
 
 ## 3. Open a terminal in the folder
@@ -77,7 +77,7 @@ All emails end in `@altbank.ng`; the full list is in the README.
 
 ## Email delivery
 
-Sign-in codes and notifications are sent through Resend using the verified `altbank.ng` domain.
+Sign-in codes and notifications are sent through Resend using the verified `araf.ng` domain.
 Set `RESEND_API_KEY` and keep `MAIL_DRIVER=resend`; see [docs/EMAIL.md](EMAIL.md) for details.
 
 To send a test message:

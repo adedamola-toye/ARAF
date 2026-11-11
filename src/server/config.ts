@@ -105,7 +105,7 @@ export const config = {
     return str("MAIL_DRIVER", "resend") as "dev" | "smtp" | "resend";
   },
   get mailFrom() {
-    return str("MAIL_FROM", "AltBank Retail Asset Factory <noreply@altbank.ng>");
+    return str("MAIL_FROM", "ARAF Retail Asset Factory <noreply@araf.ng>");
   },
   get smtp() {
     return {

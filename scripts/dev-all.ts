@@ -10,4 +10,4 @@ const stop = () => procs.forEach((p) => p.kill("SIGTERM"));
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 procs.forEach((p) => p.on("exit", (code) => code && stop()));
-console.log("\nWakeelBoost Work Desk is starting at http://localhost:3000 (press Ctrl+C to stop)\n");
+console.log("\nRetail Asset Factory is starting at http://localhost:3000 (press Ctrl+C to stop)\n");
