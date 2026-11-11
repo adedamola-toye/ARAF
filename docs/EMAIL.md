@@ -24,11 +24,11 @@ notifications are queued in `notification_outbox` and delivered by `npm run work
 
 ```dotenv
 MAIL_DRIVER=resend
-MAIL_FROM="WakeelBoost Work Desk <noreply@wakeelboost.ng>"
+MAIL_FROM="AltBank Retail Asset Factory <noreply@altbank.ng>"
 RESEND_API_KEY=re_...
 RESEND_BASE_URL=https://api.resend.com
 # optional
-RESEND_REPLY_TO=support@wakeelboost.ng
+RESEND_REPLY_TO=support@altbank.ng
 ```
 
 `MAIL_FROM` must use the verified domain, otherwise Resend returns `403 domain is not verified`.
@@ -47,7 +47,7 @@ RESEND_REPLY_TO=support@wakeelboost.ng
 ## Testing before the domain is verified
 
 Resend's shared sender `onboarding@resend.dev` can only deliver to the email address that owns the
-Resend account. It cannot deliver sign-in codes to staff addresses. Once `wakeelboost.ng` is verified,
+Resend account. It cannot deliver sign-in codes to staff addresses. Once `altbank.ng` is verified,
 all sign-in codes go directly to the staff member's email address.
 
 Send a test message through the real transport:

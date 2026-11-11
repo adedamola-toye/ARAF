@@ -111,7 +111,7 @@ Required on Vercel:
 | `SCANNER_DRIVER` | `none` |
 | `MAIL_DRIVER` | `resend` |
 | `RESEND_API_KEY` | Resend API key |
-| `MAIL_FROM` | Verified sender, e.g. `WakeelBoost Work Desk <noreply@wakeelboost.ng>` |
+| `MAIL_FROM` | Verified sender, e.g. `AltBank Retail Asset Factory <noreply@altbank.ng>` |
 | `FIELD_ENCRYPTION_KEY` | `openssl rand -base64 32` |
 | `APP_HMAC_KEY` | `openssl rand -base64 32` |
 | `STORAGE_ENCRYPTION_KEY` | `openssl rand -base64 32` |

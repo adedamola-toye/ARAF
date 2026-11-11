@@ -1,4 +1,4 @@
-# WakeelBoost workflow state map
+# Workflow state map (legacy and retail)
 
 All transitions live in `src/server/domain/workflow.ts`. Each one runs in a single PostgreSQL
 transaction that claims an idempotency key, locks the application and its open task, checks that the
