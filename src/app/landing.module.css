@@ -1,0 +1,153 @@
+/*
+ * Retail Asset Factory landing page. Ported from the approved reference
+ * (retail_asset_factory_fixed / responsive v25) and scoped to this page so it never
+ * affects the signed-in application. Values are kept as in the reference.
+ */
+.page {
+  min-height: 100vh;
+  background: #f7f9ff;
+  color: #152b59;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-size: 16px;
+  line-height: normal;
+  overflow-x: clip;
+  min-width: 0;
+}
+.page *,
+.page *::before,
+.page *::after { box-sizing: border-box; }
+.page a { color: inherit; text-decoration: none; }
+.page img { max-width: 100%; }
+.page h1, .page h2, .page h3, .page p { letter-spacing: normal; }
+
+.shell { width: 100%; max-width: 1240px; margin: auto; padding: 0 52px; }
+
+/* Header */
+.header { height: 102px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #dee5f3; gap: 24px; }
+.page .brand h1 { margin: 0; font-size: 23px; letter-spacing: -0.85px; line-height: 1.1; font-weight: 720; white-space: nowrap; color: #152b59; }
+.page .brand p { margin: 7px 0 0; font-size: 11px; color: #64718c; letter-spacing: 0.03em; line-height: normal; }
+.bankLogo { width: 178px; height: 80px; object-fit: contain; object-position: right center; display: block; }
+
+/* Hero */
+.main { padding: 65px 0 78px; }
+.hero { display: grid; grid-template-columns: 1.18fr 0.82fr; align-items: center; gap: 35px; margin-bottom: 58px; }
+.hero > * { min-width: 0; }
+.page .eyebrow { font-size: 11px; letter-spacing: 0.12em; font-weight: 750; color: #153faf; text-transform: uppercase; margin: 0 0 17px; line-height: normal; }
+.page .intro h2 { font-size: clamp(34px, 4vw, 52px); font-weight: 690; letter-spacing: -2.3px; line-height: 1.12; max-width: 650px; margin: 0 0 18px; overflow-wrap: normal; color: #152b59; }
+.page .intro h2 em { font-style: italic; font-weight: inherit; }
+.page .intro > p:not(.eyebrow) { font-size: 15px; line-height: 1.75; color: #64718c; max-width: 480px; margin: 0; }
+.photo { height: 305px; border-radius: 24px; overflow: hidden; position: relative; background: #e8e5d9; }
+.photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 39%; display: block; }
+.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 75%, #ffffff18); pointer-events: none; }
+
+/* Workspace cards */
+.page .sectionLabel { font-size: 12px; letter-spacing: 0.09em; font-weight: 720; text-transform: uppercase; margin: 0 0 19px; line-height: normal; color: #152b59; }
+.roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.page .role {
+  display: flex; flex-direction: column; justify-content: space-between; min-height: 218px; min-width: 0;
+  padding: 25px 25px 27px; border: 1px solid #dee5f3; border-radius: 12px;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+.page .role:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(17, 32, 61, 0.08); }
+.page .role:active { transform: translateY(0); box-shadow: 0 3px 10px rgba(17, 32, 61, 0.08); }
+.page .role:focus-visible { outline: 3px solid #153faf; outline-offset: 3px; border-radius: 12px; }
+.roleTop { display: flex; align-items: center; justify-content: space-between; }
+.roleNum { font-size: 12px; font-weight: 650; }
+.arrow { font-family: Arial, Helvetica, sans-serif; font-size: 31px; font-weight: 400; line-height: 1; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 28px; }
+.page .role h3 { font-size: 19px; font-weight: 680; letter-spacing: -0.6px; margin: 0 0 9px; line-height: normal; overflow-wrap: break-word; color: inherit; }
+.page .role p { font-size: 13px; line-height: 1.55; margin: 0; max-width: 235px; overflow-wrap: break-word; }
+
+.page .rm { background: #1d438e; color: #fff; border-color: #1d438e; }
+.page .rm .roleNum, .page .rm p { color: #e1e9fa; }
+.page .rm .arrow { color: #fff; }
+.page .delight { background: #e7f2eb; color: #204c3a; border-color: #d4e8da; }
+.page .delight .roleNum, .page .delight p { color: #496a59; }
+.page .delight .arrow { color: #204c3a; }
+.page .staff { background: #f7ebdd; color: #684a2d; border-color: #eadbc8; }
+.page .staff .roleNum, .page .staff p { color: #80664c; }
+.page .staff .arrow { color: #684a2d; }
+
+.page .accessNote { display: flex; align-items: center; gap: 9px; color: #64718c; font-size: 12px; margin: 20px 0 33px; line-height: normal; } /* 33px keeps the reference spacing where its demo-only notice line sat */
+.page .accessNote::before { content: "●"; font-size: 8px; color: #153faf; }
+
+/* Footer */
+.footer { border-top: 1px solid #dee5f3; display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 22px 0; min-height: 108px; }
+.footerCopy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.page .footerCopy p { font-size: 12px; color: #64718c; margin: 0; line-height: 1.45; }
+.page .footerCopy p:last-child { white-space: nowrap; }
+.footerLogos { display: flex; align-items: center; justify-content: flex-end; gap: 25px; flex-shrink: 0; min-width: 0; }
+.footerLogos img { display: block; object-fit: contain; flex: none; }
+.footerBankLogo { width: 150px; height: 62px; }
+.footerNifiLogo { width: 70px; height: 57px; }
+
+/* Responsive (reference breakpoints) */
+@media (max-width: 820px) {
+  .shell { padding: 0 22px; }
+  .header { height: 88px; }
+  .bankLogo { width: 120px; height: 65px; }
+  .page .brand h1 { font-size: clamp(14px, 3.2vw, 20px); }
+  .page .brand p { font-size: 9px; }
+  .main { padding: 38px 0 48px; }
+  .hero { grid-template-columns: 1fr; gap: 24px; margin-bottom: 35px; }
+  .photo { height: 220px; }
+}
+@media (max-width: 600px) {
+  .footer { align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+  .footerLogos { gap: 16px; }
+  .footerBankLogo { width: 120px; height: 50px; }
+  .footerNifiLogo { width: 54px; height: 48px; }
+}
+@media (max-width: 390px) {
+  .bankLogo { width: 96px; }
+  .page .brand h1 { font-size: 14px; }
+}
+@media (min-width: 821px) and (max-width: 1100px) {
+  .shell { padding-inline: 32px; }
+  .hero { gap: 24px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); }
+  .page .intro h2 { font-size: clamp(32px, 3.7vw, 46px); letter-spacing: -1.7px; }
+  .page .role { padding: 22px; min-height: 210px; }
+  .page .role h3 { font-size: 17px; }
+  .roles { gap: 12px; }
+}
+@media (min-width: 701px) and (max-width: 820px) {
+  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr); gap: 22px; }
+  .photo { height: 260px; }
+  .roles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .page .role { min-height: 210px; padding: 20px; }
+  .page .role h3 { font-size: 17px; }
+  .page .intro h2 { font-size: clamp(29px, 4vw, 36px); letter-spacing: -1.3px; }
+}
+@media (max-width: 700px) {
+  .hero { grid-template-columns: minmax(0, 1fr); }
+  .roles { grid-template-columns: 1fr; }
+  .page .role { min-height: 148px; }
+  .page .intro h2 { font-size: clamp(30px, 7vw, 40px); letter-spacing: -1.35px; }
+  .footerLogos { max-width: 100%; }
+}
+@media (max-width: 480px) {
+  .shell { padding-inline: 18px; }
+  .header { height: auto; min-height: 82px; padding-block: 13px; gap: 10px; }
+  .brand { min-width: 0; }
+  .page .brand h1 { font-size: clamp(14px, 4vw, 19px); white-space: normal; letter-spacing: -0.5px; }
+  .page .brand p { font-size: 9px; line-height: 1.35; }
+  .bankLogo { width: clamp(80px, 25vw, 110px); height: 55px; flex-shrink: 0; }
+  .page .intro h2 { font-size: clamp(30px, 8vw, 38px); line-height: 1.15; }
+  .page .intro > p:not(.eyebrow) { font-size: 14px; }
+  .photo { height: 190px; border-radius: 16px; }
+  .page .role { padding: 20px; min-height: 145px; }
+  .page .role h3 { font-size: 18px; }
+  .footer { gap: 16px; }
+  .page .footerCopy p:last-child { white-space: normal; }
+  .footerLogos { width: 100%; justify-content: flex-start; gap: 16px; }
+}
+@media (max-width: 340px) {
+  .shell { padding-inline: 14px; }
+  .page .brand h1 { font-size: 13px; }
+  .bankLogo { width: 76px; }
+  .page .intro h2 { font-size: 29px; }
+  .footerBankLogo { width: 108px; }
+  .footerNifiLogo { width: 48px; }
+}
+@media (hover: none) { .page .role:hover { transform: none; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) { .page .role { transition: none; } .page .role:hover { transform: none; } }

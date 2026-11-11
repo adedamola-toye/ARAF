@@ -147,3 +147,20 @@ Synthetic demo: `npm run seed -- --with-demo --with-retail-demo` applies a **syn
 | Payments | Manual payment events with evidence (source `MANUAL_EVIDENCE`). `recordPaymentEvent(..., "INTEGRATION")` is ready for a provider callback. Duplicates are idempotent; uncertain outcomes must be resolved before a retry. |
 | Repayments | Manual entries with evidence by Collections officers; `recordRepayment(..., "INTEGRATION")` adapter point |
 | Notifications | Existing outbox (dedupe, delivery status, controlled retries) |
+
+## 10. Landing page and workspace entry
+
+`/` is the public landing page (approved design `retail_asset_factory_fixed` / responsive v25), implemented in
+`src/app/page.tsx` with styles scoped in `src/app/landing.module.css`; images in `public/images/landing/`.
+Its three cards link to `/enter/<workspace>` (`src/app/enter/[workspace]/route.ts`), which reuses the existing
+OTP sign-in and never grants a permission:
+
+| Card | Signed out | Signed in |
+|---|---|---|
+| Relationship Manager | `/sign-in?as=RM&next=/queue` | switch to the RM workspace if held (audited), else "Access denied" |
+| Delight Officer | `/sign-in?as=DELIGHT_OFFICER&next=/queue` | same, for the Delight Officer role |
+| Staff Personal Request | `/sign-in?as=STAFF&next=/staff-request` | `/staff-request` |
+
+**Integration point:** no Staff Personal Request workflow exists yet. `/staff-request` is a signed-in placeholder
+that says so; replace it (or repoint `/enter/staff-personal-request`) when the product, eligibility and approval
+route are defined.
