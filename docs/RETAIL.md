@@ -152,6 +152,7 @@ Synthetic demo: `npm run seed -- --with-demo --with-retail-demo` applies a **syn
 
 `/` is the public landing page (approved design `retail_asset_factory_fixed` / responsive v25), implemented in
 `src/app/page.tsx` with styles scoped in `src/app/landing.module.css`; images in `public/images/landing/`.
+Usage rights for the family photograph and the NIFI logo were confirmed by the product owner (November 2026).
 Its three cards link to `/enter/<workspace>` (`src/app/enter/[workspace]/route.ts`), which reuses the existing
 OTP sign-in and never grants a permission:
 
