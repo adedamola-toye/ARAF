@@ -26,9 +26,9 @@ export function Footer({ className = "footer" }: { className?: string }) {
 }
 
 /**
- * Authentication scene from the accepted landing reference: full-bleed merchant photograph (retained
- * existing visual asset, stored locally; usage rights to be confirmed) blended into graphite (dark) or
- * warm off-white (light). Used for sign-in, OTP, session-expired and error screens.
+ * Authentication scene: full-bleed family photograph (the approved landing-page image; usage rights
+ * confirmed) blended into graphite (dark) or warm off-white (light). Used for sign-in, OTP,
+ * session-expired and error screens.
  */
 export function AuthScene({ children, theme }: { children: React.ReactNode; theme: "light" | "dark" }) {
   return (
@@ -36,9 +36,9 @@ export function AuthScene({ children, theme }: { children: React.ReactNode; them
       <figure className="auth-photo" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="/images/wakeel-merchant-1080.jpg"
-          srcSet="/images/wakeel-merchant-640.jpg 640w, /images/wakeel-merchant-1080.jpg 1080w"
-          sizes="(max-width: 670px) 100vw, 76vw"
+          src="/images/landing/family.webp"
+          width={760}
+          height={876}
           alt=""
           fetchPriority="high"
         />

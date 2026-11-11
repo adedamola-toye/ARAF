@@ -13,7 +13,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<R
         Retail Asset<span> Factory</span>
       </h1>
       <p className="lede">Initiate, appraise, approve and process retail financing: Vendor Financing, Alt Drive and Alt Power.</p>
-      <p className="lede" style={{ marginTop: -8 }}>
+      <p className="lede">
         For <strong>Relationship Managers</strong>, <strong>Delight Officers</strong> and the review, credit and operations teams.
       </p>
       <EmailForm as={sp.as ?? ""} next={safeNext(sp.next)} returning={!!sp.next && safeNext(sp.next) !== "/queue"} />
