@@ -68,11 +68,11 @@ export function assignmentEmail(p: {
       "",
       `Open the case (sign-in required): ${caseLink(p.applicationId, p.taskId)}`,
       "",
-      "Powered by DKTA Technologies @2026",
+      "A platform by The Alternative Bank. Internal use only.",
     ].join("\n"),
   };
 }
 
 export function simpleEmail(lines: string[]) {
-  return [PLATFORM_NAME, "", ...lines, "", "Powered by DKTA Technologies @2026"].join("\n");
+  return [PLATFORM_NAME, "", ...lines, "", "A platform by The Alternative Bank. Internal use only."].join("\n");
 }

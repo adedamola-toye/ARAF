@@ -33,7 +33,7 @@ async function main() {
         `This is a test message sent at ${new Date().toISOString()} via ${driver}.`,
         "OTP sign-in codes, assignments, reminders, digests and closure packs use this same transport.",
         "",
-        "Powered by DKTA Technologies @2026",
+        "A platform by The Alternative Bank. Internal use only.",
       ].join("\n"),
       attachments: [],
     });

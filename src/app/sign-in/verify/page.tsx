@@ -3,7 +3,6 @@ import { AuthScene } from "@/components/Brand";
 import { config } from "@/server/config";
 import { maskEmail } from "@/server/mask";
 import { safeNext } from "@/lib/paths";
-import { currentTheme } from "../../_lib/theme";
 import { readPending } from "../actions";
 import { VerifyForm } from "./VerifyForm";
 
@@ -14,7 +13,7 @@ export default async function Verify({ searchParams }: { searchParams: Promise<R
   const next = safeNext(sp.next);
   const pending = await readPending();
   return (
-    <AuthScene theme={await currentTheme()}>
+    <AuthScene>
       <h1 className="auth-h1-sm">Check your email</h1>
       {pending ? (
         <>

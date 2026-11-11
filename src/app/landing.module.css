@@ -25,7 +25,7 @@
 
 /* Header */
 .header { height: 102px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #dee5f3; gap: 24px; }
-.page .brand h1 { margin: 0; font-size: 23px; letter-spacing: -0.85px; line-height: 1.1; font-weight: 720; white-space: nowrap; color: #152b59; }
+.page .brand h1, .page .brand .brandTitle { margin: 0; font-size: 23px; letter-spacing: -0.85px; line-height: 1.1; font-weight: 720; white-space: nowrap; color: #152b59; }
 .page .brand p { margin: 7px 0 0; font-size: 11px; color: #64718c; letter-spacing: 0.03em; line-height: normal; }
 .bankLogo { width: 178px; height: 80px; object-fit: contain; object-position: right center; display: block; }
 
@@ -36,7 +36,7 @@
 .page .eyebrow { font-size: 11px; letter-spacing: 0.12em; font-weight: 750; color: #153faf; text-transform: uppercase; margin: 0 0 17px; line-height: normal; }
 .page .intro h2 { font-size: clamp(34px, 4vw, 52px); font-weight: 690; letter-spacing: -2.3px; line-height: 1.12; max-width: 650px; margin: 0 0 18px; overflow-wrap: normal; color: #152b59; }
 .page .intro h2 em { font-style: italic; font-weight: inherit; }
-.page .intro > p:not(.eyebrow) { font-size: 15px; line-height: 1.75; color: #64718c; max-width: 480px; margin: 0; }
+.page .intro > p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)) { font-size: 15px; line-height: 1.75; color: #64718c; max-width: 480px; margin: 0; }
 .photo { height: 305px; border-radius: 24px; overflow: hidden; position: relative; background: #e8e5d9; }
 .photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 39%; display: block; }
 .photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 75%, #ffffff18); pointer-events: none; }
@@ -86,7 +86,7 @@
   .shell { padding: 0 22px; }
   .header { height: 88px; }
   .bankLogo { width: 120px; height: 65px; }
-  .page .brand h1 { font-size: clamp(14px, 3.2vw, 20px); }
+  .page .brand h1, .page .brand .brandTitle { font-size: clamp(14px, 3.2vw, 20px); }
   .page .brand p { font-size: 9px; }
   .main { padding: 38px 0 48px; }
   .hero { grid-template-columns: 1fr; gap: 24px; margin-bottom: 35px; }
@@ -100,7 +100,7 @@
 }
 @media (max-width: 390px) {
   .bankLogo { width: 96px; }
-  .page .brand h1 { font-size: 14px; }
+  .page .brand h1, .page .brand .brandTitle { font-size: 14px; }
 }
 @media (min-width: 821px) and (max-width: 1100px) {
   .shell { padding-inline: 32px; }
@@ -129,11 +129,11 @@
   .shell { padding-inline: 18px; }
   .header { height: auto; min-height: 82px; padding-block: 13px; gap: 10px; }
   .brand { min-width: 0; }
-  .page .brand h1 { font-size: clamp(14px, 4vw, 19px); white-space: normal; letter-spacing: -0.5px; }
+  .page .brand h1, .page .brand .brandTitle { font-size: clamp(14px, 4vw, 19px); white-space: normal; letter-spacing: -0.5px; }
   .page .brand p { font-size: 9px; line-height: 1.35; }
   .bankLogo { width: clamp(80px, 25vw, 110px); height: 55px; flex-shrink: 0; }
   .page .intro h2 { font-size: clamp(30px, 8vw, 38px); line-height: 1.15; }
-  .page .intro > p:not(.eyebrow) { font-size: 14px; }
+  .page .intro > p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)) { font-size: 14px; }
   .photo { height: 190px; border-radius: 16px; }
   .page .role { padding: 20px; min-height: 145px; }
   .page .role h3 { font-size: 18px; }
@@ -143,7 +143,7 @@
 }
 @media (max-width: 340px) {
   .shell { padding-inline: 14px; }
-  .page .brand h1 { font-size: 13px; }
+  .page .brand h1, .page .brand .brandTitle { font-size: 13px; }
   .bankLogo { width: 76px; }
   .page .intro h2 { font-size: 29px; }
   .footerBankLogo { width: 108px; }
@@ -151,3 +151,11 @@
 }
 @media (hover: none) { .page .role:hover { transform: none; box-shadow: none; } }
 @media (prefers-reduced-motion: reduce) { .page .role { transition: none; } .page .role:hover { transform: none; } }
+
+/* Authentication screens (sign-in, code entry, session ended, errors) reuse this layout. */
+.page a.brand { display: block; }
+.authHero { align-items: center; margin-bottom: 0; }
+.authHero .photo { height: 420px; }
+@media (max-width: 820px) { .authHero .photo { height: 260px; } }
+@media (max-width: 700px) { .authHero { grid-template-columns: minmax(0, 1fr); } .authHero .photo { height: 200px; } }
+@media (max-width: 480px) { .authHero .photo { height: 170px; } }

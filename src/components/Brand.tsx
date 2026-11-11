@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { ThemeToggle } from "./ThemeToggle";
+/* eslint-disable @next/next/no-img-element */
+import s from "@/app/landing.module.css";
 
 /**
  * Text wordmark for the AltBank Retail Asset Factory. Replace with the approved logo asset when
@@ -14,51 +15,61 @@ export function Wordmark({ href = "/", app = false }: { href?: string; app?: boo
   );
 }
 
-export const FOOTER_TEXT = "Powered by DKTA Technologies @2026";
+export const FOOTER_TEXT = "A platform by The Alternative Bank.";
 
 export function Footer({ className = "footer" }: { className?: string }) {
   return (
     <footer className={className}>
-      <span>AltBank Retail Asset Factory · Internal use only</span>
       <span>{FOOTER_TEXT}</span>
+      <span>Internal use only</span>
     </footer>
   );
 }
 
 /**
- * Authentication scene: full-bleed family photograph (the approved landing-page image; usage rights
- * confirmed) blended into graphite (dark) or warm off-white (light). Used for sign-in, OTP,
- * session-expired and error screens.
+ * Authentication scene for sign-in, OTP, session-ended and error screens. It uses the approved
+ * landing-page design (landing.module.css): the same header, light palette, family photograph
+ * panel and footer with The Alternative Bank and NIFI logos (usage rights confirmed).
  */
-export function AuthScene({ children, theme }: { children: React.ReactNode; theme: "light" | "dark" }) {
+export function AuthScene({ children }: { children: React.ReactNode; theme?: "light" | "dark" }) {
   return (
-    <section className="auth" aria-label="AltBank Retail Asset Factory staff sign-in">
-      <figure className="auth-photo" aria-hidden="true">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/images/landing/family.webp"
-          width={760}
-          height={876}
-          alt=""
-          fetchPriority="high"
-        />
-      </figure>
-      <header className="auth-header">
-        <Wordmark href="/sign-in" />
-        <ThemeToggle initial={theme} variant="pill" />
-      </header>
-      <main className="auth-main" id="main">
-        {children}
-      </main>
-      <footer className="auth-footer">{FOOTER_TEXT}</footer>
-    </section>
+    <div className={`${s.page} auth`}>
+      <div className={s.shell}>
+        <header className={s.header}>
+          <Link href="/" className={s.brand} aria-label="Retail Asset Factory home">
+            <p className={s.brandTitle}>Retail Asset Factory</p>
+            <p>A Payments and Collections Product</p>
+          </Link>
+          <img className={s.bankLogo} src="/images/landing/alternative-bank-logo.webp" alt="The Alternative Bank" width={460} height={231} decoding="async" />
+        </header>
+        <main className={s.main} id="main">
+          <div className={`${s.hero} ${s.authHero}`}>
+            <div className={`${s.intro} auth-main`}>{children}</div>
+            <div className={s.photo}>
+              <img src="/images/landing/family.webp" alt="A smiling family at home" width={760} height={876} fetchPriority="high" />
+            </div>
+          </div>
+          <p className={s.accessNote}>Authorised staff only. Available actions are determined by your assigned role.</p>
+        </main>
+        <footer className={s.footer}>
+          <div className={s.footerCopy}>
+            <p>A platform by The Alternative Bank.</p>
+            <p>Internal use only</p>
+          </div>
+          <div className={s.footerLogos}>
+            <img className={s.footerBankLogo} src="/images/landing/alternative-bank-logo.webp" alt="The Alternative Bank" width={460} height={231} loading="lazy" />
+            <img className={s.footerNifiLogo} src="/images/landing/nifi-logo.png" alt="NIFI" width={210} height={165} loading="lazy" />
+          </div>
+        </footer>
+      </div>
+    </div>
   );
 }
 
 /** Backwards-compatible frame used by error and access pages. */
-export function AuthFrame({ children, theme = "dark" }: { children: React.ReactNode; theme?: "light" | "dark"; right?: React.ReactNode }) {
+export function AuthFrame({ children }: { children: React.ReactNode; theme?: "light" | "dark"; right?: React.ReactNode }) {
   return (
-    <AuthScene theme={theme}>
+    <AuthScene>
       <div className="auth-card">{children}</div>
     </AuthScene>
   );

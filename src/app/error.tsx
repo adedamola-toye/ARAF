@@ -3,9 +3,8 @@ import Link from "next/link";
 import { AuthScene } from "@/components/Brand";
 
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const theme = typeof document !== "undefined" && document.documentElement.dataset.theme === "light" ? "light" : "dark";
   return (
-    <AuthScene theme={theme}>
+    <AuthScene>
       <h1 className="auth-h1-sm">Something went wrong</h1>
       <p className="lede" role="alert">The request could not be completed and no partial changes were saved.{error.digest ? ` Reference: ${error.digest}.` : ""}</p>
       <div className="auth-form">
