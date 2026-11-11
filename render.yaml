@@ -1,0 +1,53 @@
+# Render Blueprint: background worker only. The web app is deployed on Vercel.
+# Fill the `sync: false` values in the Render dashboard. Keep every secret identical to Vercel.
+services:
+  - type: worker
+    name: araf-worker
+    runtime: node
+    plan: starter
+    region: oregon
+    buildCommand: npm ci
+    startCommand: npm run worker
+    preDeployCommand: npm run migrate
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: MAIL_DRIVER
+        value: resend
+      - key: MAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: "true"
+      - key: S3_SERVER_SIDE_ENCRYPTION
+        value: none
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: SCANNER_DRIVER
+        value: none
+      - key: FIELD_ENCRYPTION_KEY
+        sync: false
+      - key: APP_HMAC_KEY
+        sync: false
+      - key: STORAGE_ENCRYPTION_KEY
+        sync: false
+      - key: WORKER_POLL_MS
+        value: "5000"

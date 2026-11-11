@@ -15,8 +15,8 @@ the server-side domain module `src/server/domain/` (see [docs/WORKFLOW.md](docs/
 
 Non-developers: follow the step-by-step guide in [docs/LOCAL_SETUP.md](docs/LOCAL_SETUP.md).
 
-Prerequisites: Node 20.11+ and PostgreSQL 16. You can start PostgreSQL with `docker compose up -d postgres`;
-the compose file also creates `wakeel_test`.
+Prerequisites: Node 20.11+ and PostgreSQL 16 (a local install or a Supabase database). Create a
+`wakeel_test` database for `npm test`.
 
 ```bash
 cp .env.example .env          # development defaults
@@ -104,13 +104,16 @@ Key guarantees:
 
 ## Production configuration
 
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Vercel (web) + Render (worker) + Supabase
+(database and object storage) walkthrough.
+
 Set `APP_ENV=production`. Then:
 
 - **Development adapters are refused.** The local file store, test mailbox, dev scanner and published dev encryption keys all throw at use.
 - **Secrets.** Generate `FIELD_ENCRYPTION_KEY`, `APP_HMAC_KEY` and `STORAGE_ENCRYPTION_KEY` with `openssl rand -base64 32` and keep them in the bank's secret manager. Rotating the field key requires re-encryption. Values are versioned (`v1:`).
 - **Storage.** Use `STORAGE_DRIVER=s3` with a private bucket (block public access), `S3_KMS_KEY_ID` for SSE-KMS, and IAM limited to the bucket. Credentials are read from `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`. For S3-compatible providers that reject SSE headers (Supabase Storage, Cloudflare R2, some MinIO setups) set `S3_SERVER_SIDE_ENCRYPTION=none`.
-- **Serverless hosting (Vercel, Render, Railway).** The local filesystem is read-only or ephemeral, so `STORAGE_DRIVER=local` (the default) makes every upload fail with a 500. Set `STORAGE_DRIVER=s3` and a real bucket before testing uploads. The `clamd` scanner also needs a reachable host; a local `CLAMD_HOST=127.0.0.1` will leave uploads stuck in quarantine.
-- **Scanning.** Use `SCANNER_DRIVER=clamd` (or replace the adapter with the bank's scanning service). If the web node cannot reach clamd (e.g. Vercel), set `SCANNER_DRIVER=defer` there: uploads are accepted into quarantine and a worker elsewhere scans them. The worker itself must use `clamd`, never `defer`. Run `npm run rescan` to retry documents left in quarantine.
+- **Serverless hosting (Vercel, Render, Railway).** The local filesystem is read-only or ephemeral, so `STORAGE_DRIVER=local` (the default) makes every upload fail with a 500. Set `STORAGE_DRIVER=s3` and a real bucket before testing uploads. Vercel also caps a function request body at 4.5 MB, so keep `MAX_UPLOAD_BYTES` at or below 4 MB there. To accept larger files on Vercel, upload directly to the bucket with presigned URLs (not implemented).
+- **Scanning.** This deployment runs without ClamAV: set `SCANNER_DRIVER=none` on both the web app and the worker. Uploads are accepted and marked clean immediately; this is an explicit security tradeoff. The development `dev` (EICAR-only) adapter and the `defer` adapter remain available, but `defer` must never be used by the worker itself.
 - **Email.** Use `MAIL_DRIVER=smtp` with the bank-approved relay, or `MAIL_DRIVER=resend` with `RESEND_API_KEY` and a verified sending domain in `MAIL_FROM` (Resend and Cloudflare DNS steps in [docs/EMAIL.md](docs/EMAIL.md)). Set `CLOSURE_MAX_ATTACHMENT_BYTES` to the provider's limit; larger packs go out as an authenticated link.
 - **Network.** Set `TRUSTED_PROXY_HOPS` to the number of reverse proxies so the audit records the real client IP. Set `COOKIE_SECURE=true` (HTTPS only).
 - **Directory.** Upload the bank's staff export at **Administration → Bank directory** (Super Admin; .xlsx or .csv with Email and Full name, optionally Department, Group mailbox, Active). Preview first, then import as *Add and update* or *Full replace* (missing people are marked inactive, never deleted). For scripted loads of a CSV, `npm run directory:import -- <file.csv> [--dry-run]` also works. Provisioning and recipient groups validate against it. Then create the first Super Admin with a one-off SQL insert; there is no public registration.
@@ -127,7 +130,7 @@ Set `APP_ENV=production`. Then:
 | **Merchant photograph** | Local copy of the image from the official Wakeel page (`public/images/wakeel-merchant-*.jpg`), taken from the accepted landing reference. | Confirm the bank's usage rights for internal use. |
 | **Invoice portal, CRMS, core banking** | Staff attestations ("Logged invoice on invoice portal", "Logged CRMS") and recorded booking. **No funds are transferred.** | Integrate when the bank supplies approved APIs. |
 | **Bank directory** | Seeded `bank_directory` table; Super Admin upload (Excel/CSV, preview, merge or full replace, audited) at Administration → Bank directory. | Upload the HR/AD export; a scheduled automatic import can be added when the bank supplies a feed. |
-| **Email channel, malware scanning, object storage** | Resend email delivery, EICAR-only scanner, encrypted local files. | SMTP relay, clamd, S3/KMS (see above). |
+| **Email channel, malware scanning, object storage** | Resend email delivery, no malware scanner (`SCANNER_DRIVER=none`), S3-compatible object storage. | SMTP relay if required by the bank; a real scanning service before handling untrusted files. |
 
 ## Interface
 

@@ -8,7 +8,7 @@ runs entirely on your computer at `http://localhost:3000`; nothing is shared wit
 | Program | Where to get it | Notes |
 |---|---|---|
 | **Node.js 22 LTS** | https://nodejs.org (choose "LTS") | Accept the defaults. |
-| **Docker Desktop** | https://www.docker.com/products/docker-desktop | Runs the database. Open it once and wait until it says it is running. |
+| **PostgreSQL 16** | https://www.postgresql.org/download | Runs the database. Create the `wakeel_dev` database during install, or use a Supabase project and its connection string. |
 | **Git** (optional) | https://git-scm.com | Only needed if you download with Git instead of a ZIP. |
 
 Optional: **LibreOffice** (https://www.libreoffice.org). Without it, offer letters still generate
@@ -32,15 +32,16 @@ git clone -b claude/new-session-21v5xd https://github.com/pmtoje/wakeelboost.git
 
 ## 4. Set up (one time, about 2–5 minutes)
 
-Make sure Docker Desktop is running, then type each line and press Enter:
+Make sure PostgreSQL is running (or put your Supabase connection string in `.env`), then type each
+line and press Enter:
 
 ```
-docker compose up -d postgres
 npm install
 npm run setup
 ```
 
-`npm run setup` creates the settings file and the database, and loads demo staff and requests.
+`npm run setup` creates the settings file and the database, and loads demo staff and requests. If
+your database credentials differ from the defaults, edit `DATABASE_URL` in `.env` first.
 
 ## 5. Start the app (every time you want to use it)
 
@@ -49,8 +50,8 @@ npm run dev:all
 ```
 
 When it says it is ready, open **http://localhost:3000** in your browser. To stop, press `Ctrl + C`
-in the terminal. Next time, start Docker Desktop, open the terminal in the folder, and run
-`npm run dev:all` again.
+in the terminal. Next time, make sure PostgreSQL is running, open the terminal in the folder, and
+run `npm run dev:all` again.
 
 ## 6. Sign in
 
@@ -118,8 +119,7 @@ This erases the local test database and reloads the demo data.
 
 | Message | Fix |
 |---|---|
-| `docker: command not found` / cannot connect to Docker | Open Docker Desktop and wait until it is running, then retry. |
-| `Could not reach PostgreSQL` | Run `docker compose up -d postgres`, wait 10 seconds, retry `npm run setup`. |
-| Port 5432 already in use | Another PostgreSQL is running; stop it, or change the port in `docker-compose.yml` and `DATABASE_URL` in `.env`. |
+| `Could not reach PostgreSQL` | Start PostgreSQL, wait 10 seconds, then retry `npm run setup`. Check `DATABASE_URL` in `.env`. |
+| Port 5432 already in use | Another PostgreSQL is running; stop it, or change the port in `DATABASE_URL` in `.env`. |
 | Port 3000 already in use | Close the other program using it, or run `npx next dev -p 3001` and use `http://localhost:3001`. |
 | `npm` not found | Reinstall Node.js, then open a new terminal window. |

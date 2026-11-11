@@ -93,10 +93,7 @@ export const config = {
     return int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024);
   },
   get scannerDriver() {
-    return str("SCANNER_DRIVER", "dev") as "dev" | "clamd" | "defer";
-  },
-  get clamd() {
-    return { host: str("CLAMD_HOST", "127.0.0.1"), port: int("CLAMD_PORT", 3310) };
+    return str("SCANNER_DRIVER", "dev") as "none" | "dev" | "defer";
   },
   get retentionYears() {
     return int("RETENTION_YEARS", 10);
