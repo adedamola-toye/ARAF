@@ -3,7 +3,9 @@ npm-cache/
 .next/
 .data/
 .env
-.env.local
+.env.*
+!.env.example
+!.env.staging.example
 *.tsbuildinfo
 next-env.d.ts
 coverage/

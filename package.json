@@ -11,6 +11,7 @@
     "worker": "tsx scripts/worker.ts",
     "rescan": "tsx scripts/rescan.ts",
     "migrate": "tsx scripts/migrate.ts",
+    "doctor": "tsx scripts/doctor.ts",
     "seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/migrate.ts --reset && tsx scripts/seed.ts",
     "demo:routes": "tsx scripts/demo-routes.ts",

@@ -13,6 +13,14 @@ This project runs as two long-lived pieces plus two managed services:
 There is no Docker and no ClamAV in this deployment. Malware scanning is disabled with
 `SCANNER_DRIVER=none`; see [Security tradeoffs](#security-tradeoffs).
 
+## Environments
+
+This page describes **production**. Do not deploy straight to live: stand up the **staging** copy
+first and sign it off. Staging uses the same topology on separate Vercel, Render and Supabase
+resources, with its own keys and synthetic data. See [STAGING.md](STAGING.md) for the full runbook,
+isolation rules and the promotion checklist. The staging worker blueprint is
+[`render.staging.yaml`](../render.staging.yaml).
+
 ## 1. Local check (one time)
 
 ```bash

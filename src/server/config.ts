@@ -25,6 +25,35 @@ function bool(name: string, fallback: boolean): boolean {
 
 export type AppEnv = "development" | "test" | "production";
 
+/** Fail fast with an actionable message when DATABASE_URL cannot work on the hosting platform. */
+function databaseUrlValue(): string {
+  const raw = str("DATABASE_URL");
+  let host = "";
+  let username = "";
+  try {
+    const u = new URL(raw);
+    host = u.hostname;
+    username = decodeURIComponent(u.username);
+  } catch {
+    return raw;
+  }
+  const hosted = Boolean(process.env.VERCEL || process.env.RENDER);
+  if (hosted && /^db\.[a-z0-9]+\.supabase\.co$/i.test(host)) {
+    const platform = process.env.VERCEL ? "Vercel" : "Render";
+    const port = process.env.VERCEL ? "6543 (transaction pooler)" : "5432 (session pooler)";
+    throw new Error(
+      `DATABASE_URL uses the Supabase direct host ${host}, which is IPv6-only and unreachable from ${platform}. ` +
+        `Use the shared pooler connection string from Supabase -> Connect (port ${port}) with username postgres.<project-ref>.`,
+    );
+  }
+  if (/\.pooler\.supabase\.com$/i.test(host) && !username.includes(".")) {
+    throw new Error(
+      "Supabase shared pooler requires the username postgres.<project-ref>. Copy the exact connection string from Supabase -> Connect.",
+    );
+  }
+  return raw;
+}
+
 export const config = {
   get appEnv(): AppEnv {
     const v = str("APP_ENV", "development");
@@ -38,7 +67,7 @@ export const config = {
     return str("APP_URL", "http://localhost:3000").replace(/\/$/, "");
   },
   get databaseUrl() {
-    return str("DATABASE_URL");
+    return databaseUrlValue();
   },
   get fieldKey() {
     return keyFrom("FIELD_ENCRYPTION_KEY");

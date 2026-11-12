@@ -1,0 +1,66 @@
+# Render Blueprint: STAGING background worker only. The staging web app is on Vercel.
+# In the Render dashboard, create the Blueprint with:
+#   Branch:        staging
+#   Blueprint Path: render.staging.yaml
+# Fill every `sync: false` value in the Render dashboard.
+#
+# Isolation rules (see docs/STAGING.md):
+#   - Use a SEPARATE Supabase project, bucket and Resend key from production.
+#   - Generate FRESH FIELD_ENCRYPTION_KEY / APP_HMAC_KEY / STORAGE_ENCRYPTION_KEY.
+#   - Never point DATABASE_URL, S3_* or APP_URL at production.
+services:
+  - type: worker
+    name: araf-worker-staging
+    runtime: node
+    plan: starter
+    region: oregon
+    branch: staging
+    buildCommand: npm ci
+    startCommand: npm run worker
+    preDeployCommand: npm run migrate
+    autoDeploy: true
+    envVars:
+      # Production guards stay on so staging exercises the same code paths as live.
+      - key: APP_ENV
+        value: production
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: MAIL_DRIVER
+        value: resend
+      - key: MAIL_FROM
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_REGION
+        sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_FORCE_PATH_STYLE
+        value: "true"
+      - key: S3_SERVER_SIDE_ENCRYPTION
+        value: none
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: SCANNER_DRIVER
+        value: none
+      - key: FIELD_ENCRYPTION_KEY
+        sync: false
+      - key: APP_HMAC_KEY
+        sync: false
+      - key: STORAGE_ENCRYPTION_KEY
+        sync: false
+      - key: WORKER_POLL_MS
+        value: "5000"
+      # Staging never purges blobs; keep evidence around for test and sign-off.
+      - key: RETENTION_PURGE_ENABLED
+        value: "false"

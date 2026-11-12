@@ -2,7 +2,7 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
 /** Minimal .env loader for CLI scripts (Next.js loads .env itself). Existing env vars win. */
-export function loadEnv(file = ".env") {
+export function loadEnv(file = process.env.ENV_FILE ?? ".env") {
   const p = path.resolve(process.cwd(), file);
   if (!existsSync(p)) return;
   for (const line of readFileSync(p, "utf8").split(/\r?\n/)) {
