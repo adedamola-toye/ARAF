@@ -11,7 +11,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 | Markup engine on the financed amount, exact kobo arithmetic, rounding in the final instalment | Implemented — **rates not yet configured** (see 6) |
 | Terms fixed per application when the down payment is requested (later pricing changes do not apply) | Implemented |
 | Outright sale: phone → location → customer → verified ₦145,000 → IMEI → handover → receipt to customer, cc altbox@altbank.ng | Implemented |
-| Credit sale: BVN first → Seedfi → customer and accounts → Paystack down payment → automatic reservation → Direct Debit + internal mandate → contract by email OTP → approvals → disbursement | Implemented |
+| Credit sale: BVN first (with name, date of birth, gender and phone) → SeedFi Seed Score → customer and accounts → Paystack down payment → automatic reservation → Direct Debit + internal mandate → contract by email OTP → approvals → disbursement | Implemented |
 | DO route: Product Manager → Unit Head → back to the originating DO | Implemented |
 | SA route: Business Performance Manager → Product Manager → Unit Head → back to the originating SA | Implemented |
 | Branch / Shop / BOX locations; BOX never holds stock (database trigger) | Implemented (reuses `locations`: BRANCH, ALTSHOP, ALTBOX) |
@@ -24,7 +24,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 Outright: `DRAFT → AWAITING_PAYMENT → PAID (unit reserved) → COMPLETED` ("Outright Sale Completed").
 
 Credit: `DRAFT → AWAITING_DOWN_PAYMENT → IN_PREPARATION (unit reserved; mandates; contract) → UNDER_BPM_REVIEW (SA only) → UNDER_PM_REVIEW → UNDER_UNIT_HEAD_REVIEW → APPROVED ("Approved — Ready for Disbursement") → DISBURSED`.
-Exits: `CREDIT_DECLINED` (Seedfi FAIL), `RETURNED_FOR_CORRECTION` (resubmission restarts at the first stage of the route), `REJECTED`, `CANCELLED` (originator, before approval).
+Exits: `CREDIT_DECLINED` (Seed Score below the Fair threshold), `RETURNED_FOR_CORRECTION` (resubmission restarts at the first stage of the route), `REJECTED`, `CANCELLED` (originator, before approval).
 
 Every change is an audited event (`altphones_events`, `audit_events.altphones_application_id`); decisions are append-only (`altphones_reviews`).
 
@@ -55,7 +55,7 @@ All are disabled until configured; dependent actions show a clear "not configure
 
 | Integration | Variables | Notes |
 |---|---|---|
-| Seedfi credit assessment | `SEEDFI_ENABLED`, `SEEDFI_BASE_URL`, `SEEDFI_API_KEY`, `SEEDFI_ASSESS_PATH`, `SEEDFI_TIMEOUT_MS` | POST `{bvn, reference}` with a bearer key; the response must contain a reference and a numeric score (top level or under `data`). **Confirm the contract with Seedfi** and adjust `src/server/altphones/integrations.ts` if it differs. Unavailable, timeout or invalid response → "Integration unavailable — not assessed". |
+| SeedFi Seed Score | `SEEDFI_ENABLED`, `SEEDFI_BASE_URL`, `SEEDFI_API_KEY`, `SEEDFI_ASSESS_PATH`, `SEEDFI_TIMEOUT_MS` | Implemented to the SeedFi Loan Engine API documentation v2.0 (April 2026): `POST /scoring/api/v1/seed-score/calculate` with the `X-API-Key` header. Sends customer_id (a stable hash of the BVN, never the BVN), first and last name, BVN, date of birth, phone (0XXXXXXXXXX), gender and, when known, the tenure. The decision uses `reviewed_seedfi_score` (SeedFi lowers it for adverse credit); the overall score, credit-history flag and score components are stored. Scores outside 280–800, errors (SeedFi's `detail` is shown), timeouts and malformed responses are "Integration unavailable — not assessed", never a pass. Staging: `https://stg-loan-engine.theseedfi.com` (use the documented test personas); production: `https://loanengine.theseedfi.com` after SeedFi's go-live sign-off. |
 | Paystack payments | `PAYSTACK_ENABLED`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_BASE_URL` | Transaction initialise (bank-transfer channel) + verify. Webhook: `<APP_URL>/api/altphones/paystack/webhook` (set it in the Paystack dashboard). Signature checked (HMAC-SHA512), events de-duplicated, each event re-verified through the API; amount, currency and reference must match. |
 | Paystack Direct Debit | `PAYSTACK_DIRECT_DEBIT_ENABLED` | Authorisation initialise/verify (`/customer/authorization/*`, channel `direct_debit`). The mandate is Active only when Paystack's verification says so. **Confirm Direct Debit and settlement are enabled on the bank's Paystack integration before turning this on.** Collections against the mandate are not part of this release. |
 | Email | existing mail settings | Customer receipts and confirmations copy the team mailbox (default altbox@altbank.ng). The contract OTP email is sent directly and never stored; OTPs are stored only as HMACs, expire (`ALTPHONES_OTP_TTL_SECONDS`) and allow `ALTPHONES_OTP_MAX_ATTEMPTS` tries. |
@@ -69,7 +69,7 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 1. **Markup rates and basis** — Altphones settings → Pricing. The rate table and formula images in the specification were not received, so no rates are set and credit sales are unavailable. Enter each tenure's rate and choose whether the rate is the total for the tenure or per month; the "Current calculation" table must match the approved Excel figures. Add those figures to the pending test in `tests/altphones.test.ts` ("matches the approved Excel figures").
 2. **Repayment-date rules** — weekend/holiday rule and short-month rule (Pricing tab), and the public holiday list. The first instalment falls on the chosen repayment day in the calendar month after disbursement; confirm this matches policy.
 3. **Approved contract wording** (Pricing tab), using the listed `{{placeholders}}`.
-4. **Seedfi score bands** (Pass and Fair thresholds) and the **route Unit Head** — Super Admin, Credit policy and routing tab.
+4. **Seed Score bands** — set from SeedFi's documented decision bands (Pass ≥ 620 = Approved, Fair 530–619 = Manual Review, Fail < 530 = Declined; migration 012). Confirm them against the bank's approved credit policy; a Super Admin can change them. Also set the **route Unit Head** (Credit policy and routing tab).
 5. **Catalogue** — loaded from the AltPhone deck (Altphone L1 Series ×3 colours). Confirm the names and spec lines with the product team. The deck also mentions insurance cover, data bundles and flexible daily/weekly payment; those are not part of this workflow.
 6. **Locations** — import Branches, Shops and BOXes (Imports tab), then opening stock via stock requests approved by a Super Admin (or a historical stock import).
 7. **Roles** — grant Smile Associate, Business Performance Manager and Altphones Product Manager in Users & roles.
@@ -90,7 +90,7 @@ Import stock *positions* separately from historical transactions so nothing is c
 
 - `migrations/009_altphones.sql` — tables, constraints, append-only triggers, BOX stock guard.
 - `src/lib/altphones.ts` — statuses, calculator, repayment dates, validators (shared with the browser).
-- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (Seedfi, Paystack), `imports`, `views`.
+- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`.
 - `src/app/(app)/altphones/` — home/catalogue, sales, application page, receipt, reviews, inventory, settings.
 - `src/app/api/altphones/` — product images, Paystack webhook, import templates.
 - `tests/altphones.test.ts`; `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).

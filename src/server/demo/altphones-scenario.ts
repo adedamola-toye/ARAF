@@ -8,7 +8,7 @@ import { db } from "../db";
 import { ctxFor } from "./scenario";
 import { saveModel, savePolicy, savePricing } from "../altphones/catalogue";
 import { decideReplenishment, requestReplenishment } from "../altphones/stock";
-import type { CreditBureau, MandateVerification, PaymentGateway, PaymentVerification } from "../altphones/integrations";
+import type { CreditBureau, CreditInput, CreditResult, MandateVerification, PaymentGateway, PaymentVerification } from "../altphones/integrations";
 import type { MailTransport, OutgoingEmail } from "../notify/transport";
 import type { AltApp } from "../altphones/core";
 
@@ -52,7 +52,7 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
     contractTemplate: DEMO_CONTRACT,
     reason: "SYNTHETIC test settings",
   });
-  await savePolicy(admin, { passMin: "600", fairMin: "450", unitHeadId: await sidOf(ALT.unitHead), teamEmail: "altbox@altbank.ng", reason: "SYNTHETIC test policy" });
+  await savePolicy(admin, { passMin: "620", fairMin: "530", unitHeadId: await sidOf(ALT.unitHead), teamEmail: "altbox@altbank.ng", reason: "SYNTHETIC test policy" });
   const qty = opts.stock ?? 5;
   if (qty > 0) {
     for (const where of ["Ikeja Branch", "Yaba Altshop"]) {
@@ -63,21 +63,24 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
   return { models };
 }
 
+/** Synthetic Seed Score inputs (BVN is supplied per call). */
+export const CREDIT_PERSON = { firstName: "Synthetic", lastName: "Customer", dateOfBirth: "1990-01-15", gender: "male", phone: "0803 123 4567", consent: true };
+
 export const sidOf = async (email: string) => (await db.query<{ id: string }>("SELECT id FROM staff WHERE email = $1", [email])).rows[0].id;
 
 // ------------------------------------------------------------------ provider doubles
 
 export class TestBureau implements CreditBureau {
   readonly name = "Test bureau";
-  calls: { bvn: string; reference: string }[] = [];
+  calls: CreditInput[] = [];
   constructor(
     public score: number | null = 700,
     public fail: Error | null = null,
   ) {}
-  async assess(input: { bvn: string; reference: string }) {
+  async assess(input: CreditInput): Promise<CreditResult> {
     this.calls.push(input);
     if (this.fail) throw this.fail;
-    return { reference: `SF-${input.reference}`, score: this.score! };
+    return { reference: input.customerId, score: this.score!, overallScore: this.score!, hasCreditHistory: true, validUntil: null, components: {} };
   }
 }
 

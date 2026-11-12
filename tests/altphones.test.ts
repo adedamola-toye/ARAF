@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor } from "@/server/demo/scenario";
 import { computeTerms, formatRateE4, imeiChecksumOk, mapScore, parseRateE4, repaymentDates } from "@/lib/altphones";
-import { ALT, appRow, CapturingMail, latestPaymentRef, loc, lv, setupAltphones, sidOf, stockOf, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
+import { ALT, appRow, CapturingMail, CREDIT_PERSON, latestPaymentRef, loc, lv, setupAltphones, sidOf, stockOf, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/altphones/integrations";
 import { setMailTransportForTests } from "@/server/notify/transport";
 import {
@@ -74,7 +74,7 @@ async function creditReady(email = ALT.doOfficer) {
   const ctx = await ctxFor(email);
   const sa = email === ALT.sa;
   const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-  await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+  await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
   await saveLocations(ctx, id, { modelId: models[0], originId: await loc(sa ? "Yaba Altbox" : "Ikeja Branch"), supplyId: await loc(sa ? "Yaba Altshop" : "Ikeja Branch") });
   await saveCustomer(ctx, id, CREDIT_CUSTOMER);
   await requestPayment(ctx, id, {});
@@ -210,21 +210,23 @@ describe("credit assessment", () => {
   it("requires an 11-digit BVN, never treats an unavailable or failed check as a pass, and stores the BVN encrypted", async () => {
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-    await expect(runCreditCheck(ctx, id, { bvn: "1234567890", consent: true })).rejects.toMatchObject({ fields: { bvn: expect.any(String) } });
+    await expect(runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "1234567890" })).rejects.toMatchObject({ fields: { bvn: expect.any(String) } });
     setCreditBureauForTests(null);
-    const u = await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    const u = await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     expect(u.outcome).toBe("UNAVAILABLE");
     let r = await appRow(id);
     expect([r.seedfi_status, r.seedfi_outcome]).toEqual(["UNAVAILABLE", null]);
     expect(r.bvn_enc).not.toContain("22222222222");
     await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ code: "GATE" });
     setCreditBureauForTests(new TestBureau(null, new Error("timeout")));
-    expect((await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true })).outcome).toBe("UNAVAILABLE");
+    expect((await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" })).outcome).toBe("UNAVAILABLE");
     setCreditBureauForTests(new TestBureau(300));
-    const f = await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    const f = await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     expect(f.outcome).toBe("FAIL");
     r = await appRow(id);
-    expect([r.status, r.seedfi_outcome, r.seedfi_score, r.seedfi_reference]).toEqual(["CREDIT_DECLINED", "FAIL", "300.00", `SF-${r.ref}`]);
+    expect([r.status, r.seedfi_outcome, r.seedfi_score]).toEqual(["CREDIT_DECLINED", "FAIL", "300.00"]);
+    expect(r.seedfi_reference).toMatch(/^altphones-[0-9a-f]{32}$/); // stable per BVN, never the BVN itself
+    expect([r.customer_first_name, r.customer_last_name, r.customer_gender]).toEqual(["Synthetic", "Customer", "male"]);
     await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ code: "CONFLICT" });
     const logged = (await db.query("SELECT count(*)::int AS n FROM audit_events WHERE details::text LIKE '%22222222222%'")).rows[0].n;
     expect(logged).toBe(0);
@@ -284,7 +286,7 @@ describe("credit sale — Delight Officer route (Product Manager → Unit Head)"
   it("cannot submit until payment, both mandates and the contract are in place; OTP has retry limits", async () => {
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-    await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     await saveLocations(ctx, id, { modelId: models[0], originId: await loc("Ikeja Branch"), supplyId: "" });
     await saveCustomer(ctx, id, CREDIT_CUSTOMER);
     await requestPayment(ctx, id, {});
@@ -486,5 +488,99 @@ describe("approved catalogue", () => {
     const { readModelImage } = await import("@/server/altphones/catalogue");
     const id = (await db.query("SELECT id FROM altphones_models WHERE name LIKE '%Green'")).rows[0].id;
     expect(await readModelImage(id)).toEqual({ staticPath: "/images/altphones/altphone-l1-green.webp" });
+  });
+
+  it("a fresh installation records SeedFi's documented decision bands as a settings version", async () => {
+    const v2 = (await db.query("SELECT score_pass_min, score_fair_min, reason FROM altphones_settings WHERE version = 2")).rows[0];
+    expect([v2.score_pass_min, v2.score_fair_min]).toEqual(["620.00", "530.00"]);
+    expect(v2.reason).toMatch(/SeedFi Loan Engine API documentation v2.0/);
+  });
+});
+
+describe("SeedFi Seed Score client (API documentation v2.0)", () => {
+  const PERSONAS = {
+    // Staging personas from the SeedFi documentation (section 3.2) with their documented responses.
+    "12345654321": { overall: 384, reviewed: 384, history: false }, // Theodore Stone — clean, no history
+    "09876567890": { overall: 532, reviewed: 532, history: true }, // Nathan Smith — clean, has history
+    "12345678901": { overall: 544, reviewed: 444, history: true }, // John Doe — bad credit
+  } as Record<string, { overall: number; reviewed: number; history: boolean }>;
+  const saved = { ...process.env };
+  let requests: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[];
+  beforeEach(() => {
+    requests = [];
+    Object.assign(process.env, { SEEDFI_ENABLED: "true", SEEDFI_BASE_URL: "https://stg-loan-engine.theseedfi.com", SEEDFI_API_KEY: "test-api-key" });
+    setCreditBureauForTests(undefined);
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      requests.push({ url, headers: init.headers as Record<string, string>, body });
+      const p = PERSONAS[body.bvn];
+      if (!p) return new Response(JSON.stringify({ detail: "BVN not found", status_code: 400 }), { status: 400 });
+      return new Response(
+        JSON.stringify({
+          credit_score: {
+            payment_history: { payment_history_score: 16.5, payment_history_seedfi_score: 132.0 },
+            demographics: { demographics_score: 8.0, demographics_seedfi_score: 64.0 },
+            overall_seedfi_score: p.overall,
+            reviewed_seedfi_score: p.reviewed,
+            user_has_credit_history: p.history,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const k of ["SEEDFI_ENABLED", "SEEDFI_BASE_URL", "SEEDFI_API_KEY"]) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  async function check(bvn: string) {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    const res = await runCreditCheck(ctx, id, { bvn, firstName: "Nathan", lastName: "Smith", dateOfBirth: "1990-01-15", gender: "Male", phone: "0803 123 4567", consent: true });
+    return { res, row: await appRow(id) };
+  }
+
+  it("calls the documented endpoint with the X-API-Key and the required fields", async () => {
+    await check("09876567890");
+    expect(requests).toHaveLength(1);
+    const r = requests[0];
+    expect(r.url).toBe("https://stg-loan-engine.theseedfi.com/scoring/api/v1/seed-score/calculate");
+    expect(r.headers["x-api-key"]).toBe("test-api-key");
+    expect(r.body).toMatchObject({ first_name: "Nathan", last_name: "Smith", bvn: "09876567890", date_of_birth: "1990-01-15", phone_number: "08031234567", gender: "male" });
+    expect(String(r.body.customer_id)).toMatch(/^altphones-[0-9a-f]{32}$/);
+  });
+
+  it("maps the documented personas with SeedFi's bands (Pass ≥ 620, Fair 530–619, Fail < 530) on the reviewed score", async () => {
+    const nathan = await check("09876567890");
+    expect([nathan.res.outcome, nathan.row.seedfi_score, nathan.row.seedfi_overall_score, nathan.row.seedfi_has_history]).toEqual(["FAIR", "532.00", "532.00", true]);
+    const john = await check("12345678901"); // overall 544 would be Fair, but the reviewed score 444 is used
+    expect([john.res.outcome, john.row.status, john.row.seedfi_score, john.row.seedfi_overall_score]).toEqual(["FAIL", "CREDIT_DECLINED", "444.00", "544.00"]);
+    const theodore = await check("12345654321");
+    expect(theodore.res.outcome).toBe("FAIL");
+    expect(theodore.row.seedfi_details.components.payment_history).toEqual({ payment_history_score: 16.5, payment_history_seedfi_score: 132 });
+  });
+
+  it("treats SeedFi errors and malformed scores as unavailable, never as a pass", async () => {
+    const err = await check("11111111111");
+    expect(err.res.outcome).toBe("UNAVAILABLE");
+    expect(err.row.seedfi_last_error).toMatch(/BVN not found \(HTTP 400\)/);
+    expect(err.row.seedfi_outcome).toBeNull();
+    const { parseSeedScore } = await import("@/server/altphones/integrations");
+    expect(() => parseSeedScore({ credit_score: { overall_seedfi_score: 950 } }, "x")).toThrow();
+    expect(() => parseSeedScore({ status: 200, data: {} }, "x")).toThrow();
+    expect(parseSeedScore({ status: 200, data: { credit_score: { overall_seedfi_score: 700 } } }, "x").score).toBe(700);
+  });
+
+  it("validates the Seed Score inputs before calling SeedFi", async () => {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    await expect(runCreditCheck(ctx, id, { bvn: "09876567890", firstName: "", lastName: "Smith", dateOfBirth: "2999-01-01", gender: "x", phone: "123", consent: true })).rejects.toMatchObject({
+      fields: { firstName: expect.any(String), dateOfBirth: expect.any(String), gender: expect.any(String), phone: expect.any(String) },
+    });
+    expect(requests).toHaveLength(0);
   });
 });

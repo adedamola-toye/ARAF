@@ -60,7 +60,7 @@ export function creditReadiness(s: AltSettings): string[] {
   const out: string[] = [];
   const missing = s.tenures.filter((t) => s.markup_rates?.[String(t)] === undefined || s.markup_rates?.[String(t)] === null);
   if (missing.length || !s.markup_basis) out.push(`Markup rates${missing.length ? ` for ${missing.join(", ")} months` : ""}${!s.markup_basis ? " and the markup basis" : ""} are not configured.`);
-  if (s.score_pass_min === null || s.score_fair_min === null) out.push("Seedfi score bands (Pass and Fair thresholds) are not configured.");
+  if (s.score_pass_min === null || s.score_fair_min === null) out.push("Seed Score bands (Pass and Fair thresholds) are not configured.");
   if (!s.weekend_rule || !s.short_month_rule) out.push("Repayment-date rules are not configured.");
   if (!s.contract_template?.trim()) out.push("The approved customer contract wording is not loaded.");
   return out;

@@ -11,8 +11,7 @@
  *   GET  /customer/authorization/verify/:reference
  *   Webhooks: x-paystack-signature = HMAC-SHA512(raw body, secret key); every webhook is re-verified
  *   through the API before it changes anything.
- * Seedfi: the endpoint contract is configured (SEEDFI_BASE_URL + SEEDFI_ASSESS_PATH) and must be
- * confirmed with Seedfi; the response must carry a reference and a numeric score.
+ * SeedFi: Seed Score per the SeedFi API documentation v2.0 (see below).
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { config } from "../config";
@@ -39,7 +38,9 @@ async function call(provider: string, url: string, init: RequestInit & { timeout
       throw new IntegrationUnavailable(provider, `${provider} returned a response that is not JSON (HTTP ${res.status}).`);
     }
     if (!res.ok) {
-      const msg = body && typeof body === "object" && "message" in body ? String((body as { message: unknown }).message).slice(0, 200) : `HTTP ${res.status}`;
+      const o = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+      const raw = typeof o.detail === "string" ? o.detail : typeof o.message === "string" ? o.message : null;
+      const msg = raw ? `${raw.slice(0, 200)} (HTTP ${res.status})` : `HTTP ${res.status}`;
       throw new IntegrationUnavailable(provider, `${provider} refused the request: ${msg}`);
     }
     return body;
@@ -54,33 +55,96 @@ async function call(provider: string, url: string, init: RequestInit & { timeout
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
-// ------------------------------------------------------------------ Seedfi
+// ------------------------------------------------------------------ SeedFi (Seed Score)
 
+/**
+ * SeedFi Loan Engine — Seed Score (API documentation v2.0, April 2026):
+ *   POST {base}/scoring/api/v1/seed-score/calculate, header X-API-Key
+ *   body: customer_id, first_name, last_name, bvn, date_of_birth (YYYY-MM-DD), phone_number, gender ("male"/"female"),
+ *         optional monthly_income, loan_duration_in_month, include_narration
+ *   response: { credit_score: { overall_seedfi_score, reviewed_seedfi_score, user_has_credit_history, payment_history,
+ *              depth_of_credit, open_credit, demographics } } (possibly wrapped as { status, data })
+ * The score runs from 280 (highest risk) to 800 (lowest risk). The decision uses the reviewed score, which SeedFi
+ * lowers for adverse credit behaviour; the overall score and the components are stored for review.
+ */
+export interface CreditInput {
+  customerId: string;
+  firstName: string;
+  lastName: string;
+  bvn: string;
+  dateOfBirth: string;
+  phone: string;
+  gender: "male" | "female";
+  loanDurationMonths?: number | null;
+}
 export interface CreditResult {
+  /** The customer identifier the score was requested under (SeedFi returns no separate reference). */
   reference: string;
+  /** Reviewed Seed Score (used for the decision). */
   score: number;
+  overallScore: number;
+  hasCreditHistory: boolean | null;
+  validUntil: string | null;
+  components: Record<string, unknown>;
 }
 export interface CreditBureau {
   readonly name: string;
-  assess(input: { bvn: string; reference: string }): Promise<CreditResult>;
+  assess(input: CreditInput): Promise<CreditResult>;
+}
+
+export const SEED_SCORE_MIN = 280;
+export const SEED_SCORE_MAX = 800;
+
+const num = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : NaN);
+
+/** Validate a Seed Score response; anything unexpected is treated as unavailable, never as a pass. */
+export function parseSeedScore(body: unknown, customerId: string): CreditResult {
+  const top = obj(body);
+  const data = obj(top.data ?? top);
+  const cs = obj(data.credit_score ?? data);
+  const overall = num(cs.overall_seedfi_score);
+  const reviewed = Number.isFinite(num(cs.reviewed_seedfi_score)) ? num(cs.reviewed_seedfi_score) : overall;
+  const inRange = (n: number) => Number.isFinite(n) && n >= SEED_SCORE_MIN && n <= SEED_SCORE_MAX;
+  if (!inRange(overall) || !inRange(reviewed)) throw new IntegrationUnavailable("SeedFi", "SeedFi returned a response without a valid Seed Score (280–800).");
+  const components: Record<string, unknown> = {};
+  for (const k of ["payment_history", "depth_of_credit", "open_credit", "demographics"]) if (cs[k] && typeof cs[k] === "object") components[k] = cs[k];
+  const validity = cs.validity_date ?? data.validity_date;
+  return {
+    reference: customerId,
+    score: Math.round(reviewed * 100) / 100,
+    overallScore: Math.round(overall * 100) / 100,
+    hasCreditHistory: typeof cs.user_has_credit_history === "boolean" ? cs.user_has_credit_history : null,
+    validUntil: typeof validity === "string" ? validity.slice(0, 10) : null,
+    components,
+  };
+}
+
+/** SeedFi expects a Nigerian number; send the local 11-digit form (0XXXXXXXXXX). */
+export function seedfiPhone(e164: string) {
+  return e164.replace(/^\+234/, "0");
 }
 
 class SeedfiHttp implements CreditBureau {
-  readonly name = "Seedfi";
-  async assess(input: { bvn: string; reference: string }): Promise<CreditResult> {
+  readonly name = "SeedFi";
+  async assess(input: CreditInput): Promise<CreditResult> {
     const c = config.seedfi;
-    const body = await call("Seedfi", `${c.baseUrl}${c.assessPath}`, {
+    const body: Record<string, unknown> = {
+      customer_id: input.customerId,
+      first_name: input.firstName,
+      last_name: input.lastName,
+      bvn: input.bvn,
+      date_of_birth: input.dateOfBirth,
+      phone_number: seedfiPhone(input.phone),
+      gender: input.gender,
+    };
+    if (input.loanDurationMonths) body.loan_duration_in_month = input.loanDurationMonths;
+    const res = await call("SeedFi", `${c.baseUrl}${c.assessPath}`, {
       method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json", authorization: `Bearer ${c.apiKey}` },
-      body: JSON.stringify({ bvn: input.bvn, reference: input.reference }),
+      headers: { "content-type": "application/json", accept: "application/json", "x-api-key": c.apiKey },
+      body: JSON.stringify(body),
       timeoutMs: c.timeoutMs,
     });
-    const top = obj(body);
-    const d = obj(top.data ?? top);
-    const score = typeof d.score === "number" ? d.score : typeof d.score === "string" && /^-?\d+(\.\d+)?$/.test(d.score) ? Number(d.score) : NaN;
-    const ref = d.reference ?? d.id ?? d.assessment_id;
-    if (!Number.isFinite(score) || (typeof ref !== "string" && typeof ref !== "number")) throw new IntegrationUnavailable("Seedfi", "Seedfi returned a response without a reference and a numeric score.");
-    return { reference: String(ref).slice(0, 120), score: Math.round(score * 100) / 100 };
+    return parseSeedScore(res, input.customerId);
   }
 }
 

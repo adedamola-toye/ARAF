@@ -178,7 +178,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
           {stopped && (
             <div className={`alert ${app.status === "CANCELLED" ? "alert-warn" : "alert-error"}`} role="status">
               <span>
-                <strong>{ALT_STATUS_LABELS[app.status as AltStatus]}.</strong> {app.status === "CREDIT_DECLINED" ? "The customer did not pass the Seedfi credit assessment, so this credit sale cannot continue." : app.closed_reason}
+                <strong>{ALT_STATUS_LABELS[app.status as AltStatus]}.</strong> {app.status === "CREDIT_DECLINED" ? "The customer did not pass the SeedFi credit assessment, so this credit sale cannot continue." : app.closed_reason}
                 {app.refund_status === "REQUIRED" && " The payment received must be refunded under the approved refund process."}
                 {app.refund_status === "RECORDED" && ` Refund recorded (${app.refund_reference}).`}
               </span>
@@ -198,7 +198,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
               {app.seedfi_status === "UNAVAILABLE" && (
                 <div className="alert alert-warn" role="status">
                   <span>
-                    <strong>Integration unavailable — not assessed.</strong> {app.seedfi_last_error} The customer has not passed; try again when Seedfi responds.
+                    <strong>Integration unavailable — not assessed.</strong> {app.seedfi_last_error} The customer has not passed; try again when SeedFi responds.
                   </span>
                 </div>
               )}
@@ -206,11 +206,37 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                 {hidden}
                 <div className="field">
                   <label htmlFor="bvn">Customer BVN</label>
-                  <input id="bvn" name="bvn" inputMode="numeric" autoComplete="off" pattern="[0-9]{11}" maxLength={11} required placeholder="11 digits" className="mono alt-bvn" />
-                  <span className="hint">Sent securely to Seedfi. Only the last 4 digits are shown afterwards.</span>
+                  <input id="bvn" name="bvn" inputMode="numeric" autoComplete="off" pattern="[0-9]{11}" maxLength={11} required placeholder="11 digits" className="mono alt-bvn" autoFocus />
+                  <span className="hint">Sent securely to SeedFi for the Seed Score. Only the last 4 digits are shown afterwards.</span>
+                </div>
+                <div className="grid-2">
+                  <div className="field">
+                    <label htmlFor="firstName">First name</label>
+                    <input id="firstName" name="firstName" required autoComplete="off" defaultValue={app.customer_first_name ?? ""} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="lastName">Last name</label>
+                    <input id="lastName" name="lastName" required autoComplete="off" defaultValue={app.customer_last_name ?? ""} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="dateOfBirth">Date of birth</label>
+                    <input id="dateOfBirth" name="dateOfBirth" type="date" required max={new Date().toISOString().slice(0, 10)} defaultValue={app.customer_dob ? new Date(app.customer_dob).toISOString().slice(0, 10) : ""} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="gender">Gender</label>
+                    <select id="gender" name="gender" required defaultValue={app.customer_gender ?? ""}>
+                      <option value="">As on the BVN record</option>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="cphone">Phone number</label>
+                    <input id="cphone" name="phone" type="tel" required autoComplete="off" placeholder="0803 123 4567" defaultValue={app.customer_phone ? `0${String(app.customer_phone).slice(4)}` : ""} />
+                  </div>
                 </div>
                 <label className="check">
-                  <input type="checkbox" name="consent" required /> The customer consents to a credit check with Seedfi.
+                  <input type="checkbox" name="consent" required /> The customer consents to a credit check with SeedFi.
                 </label>
                 <div className="action-bar">
                   <SubmitButton>Run credit check</SubmitButton>
@@ -615,7 +641,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
             <section className="card action-panel stack" aria-labelledby="s-rev">
               <h2 id="s-rev">{reviewStage === "BPM" ? "Business Performance Manager review" : reviewStage === "PM" ? "Product and financing review" : "Final approval"}</h2>
               <ul className="alt-checks">
-                <Check ok={app.seedfi_outcome === "PASS" || app.seedfi_outcome === "FAIR"} label="Credit assessment" detail={app.seedfi_outcome ? `${SCORE_OUTCOME_LABELS[app.seedfi_outcome as "PASS"]} · score ${app.seedfi_score} · ${app.seedfi_reference}` : "not completed"} />
+                <Check ok={app.seedfi_outcome === "PASS" || app.seedfi_outcome === "FAIR"} label="Credit assessment" detail={app.seedfi_outcome ? `${SCORE_OUTCOME_LABELS[app.seedfi_outcome as "PASS"]} · Seed Score ${Number(app.seedfi_score)}${app.seedfi_overall_score !== null && Number(app.seedfi_overall_score) !== Number(app.seedfi_score) ? ` (overall ${Number(app.seedfi_overall_score)})` : ""}${app.seedfi_has_history === false ? " · no credit history" : ""}` : "not completed"} />
                 <Check ok={!!paid} label="Down payment" detail={paid ? `${formatNaira(paid.amount_kobo)} verified by Paystack · ${paid.reference}` : "not verified"} />
                 <Check ok={app.dd_status === "ACTIVE"} label="Paystack Direct Debit" detail={app.dd_status === "ACTIVE" ? `active · ${app.dd_bank_name ?? app.external_bank_name} ••${app.dd_account_last4 ?? ""} · ${app.dd_reference}` : app.dd_status.toLowerCase().replace("_", " ")} />
                 <Check ok={!!app.internal_mandate_confirmed_at} label="Alternative Bank mandate" detail={app.internal_mandate_confirmed_at ? `Officer Confirmed by ${nm(app.internal_mandate_confirmed_by)}` : "not confirmed"} />
@@ -680,7 +706,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
           <details className="card alt-history">
             <summary>
               <h2 id="s-hist">History</h2>
-              <span className="small muted">{events.length} events · latest {events[0] ? formatLagos(events[0].occurred_at) : "—"}</span>
+              <span className="small muted">{events.length} event{events.length === 1 ? "" : "s"} · latest {events[0] ? formatLagos(events[0].occurred_at) : "—"}</span>
             </summary>
             <ol className="timeline">
               {events.map((e) => (
@@ -748,11 +774,13 @@ export default async function AltApplicationPage({ params, searchParams }: { par
               {app.kind === "CREDIT" && (
                 <>
                   <div>
-                    <dt>Credit (Seedfi)</dt>
+                    <dt>Seed Score (SeedFi)</dt>
                     <dd>
                       {app.seedfi_outcome ? (
                         <>
-                          <span className={`badge ${app.seedfi_outcome === "FAIL" ? "badge-red" : "badge-green"}`}>{SCORE_OUTCOME_LABELS[app.seedfi_outcome as "PASS"]}</span> <span className="small">score {app.seedfi_score}</span>
+                          <span className={`badge ${app.seedfi_outcome === "FAIL" ? "badge-red" : app.seedfi_outcome === "FAIR" ? "badge-warn" : "badge-green"}`}>{SCORE_OUTCOME_LABELS[app.seedfi_outcome as "PASS"]}</span> <span className="small">Seed Score {Number(app.seedfi_score)}</span>
+                          {app.seedfi_overall_score !== null && Number(app.seedfi_overall_score) !== Number(app.seedfi_score) && <div className="small">Overall {Number(app.seedfi_overall_score)}, reviewed down to {Number(app.seedfi_score)}</div>}
+                          {app.seedfi_has_history !== null && <div className="small muted">{app.seedfi_has_history ? "Has credit history" : "No credit history"}</div>}
                           <div className="small muted">
                             {app.seedfi_reference} · {formatLagos(app.seedfi_assessed_at)}
                           </div>

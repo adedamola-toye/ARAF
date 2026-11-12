@@ -4,7 +4,7 @@ import { db, closePool } from "../src/server/db";
 import { migrate } from "../src/server/migrate";
 import { seedReferenceData } from "../src/server/demo/seed";
 import { ctxFor } from "../src/server/demo/scenario";
-import { ALT, appRow, CapturingMail, latestPaymentRef, loc, setupAltphones, TestBureau, TestGateway } from "../src/server/demo/altphones-scenario";
+import { ALT, appRow, CapturingMail, CREDIT_PERSON, latestPaymentRef, loc, setupAltphones, TestBureau, TestGateway } from "../src/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "../src/server/altphones/integrations";
 import { setMailTransportForTests } from "../src/server/notify/transport";
 import {
@@ -69,7 +69,7 @@ async function main() {
     const ctx = await ctxFor(email);
     const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
     if (stop === "credit") return id;
-    await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     await saveLocations(ctx, id, { modelId: models[0], originId: await loc(sa ? "Yaba Altbox" : "Ikeja Branch"), supplyId: await loc(sa ? "Yaba Altshop" : "Ikeja Branch") });
     if (stop === "customer") return id;
     await saveCustomer(ctx, id, CREDIT(n));
@@ -113,7 +113,7 @@ async function main() {
   await log("DO credit — disbursed", disb);
   setCreditBureauForTests(new TestBureau(300));
   const declined = await credit(ALT.doOfficer, n++, "credit");
-  await runCreditCheck(await ctxFor(ALT.doOfficer), declined, { bvn: "33333333333", consent: true });
+  await runCreditCheck(await ctxFor(ALT.doOfficer), declined, { ...CREDIT_PERSON, bvn: "33333333333" });
   await log("DO credit — declined by Seedfi", declined);
   for (const [k, v] of out) console.log(`${k.padEnd(48)} ${v}`);
 }

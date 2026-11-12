@@ -60,7 +60,7 @@ import {
   settingsById,
   transition,
 } from "./core";
-import { creditBureau, IntegrationUnavailable, paymentGateway, type PaymentVerification } from "./integrations";
+import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
 
 const EDITABLE: AltStatus[] = ["DRAFT"];
@@ -142,10 +142,42 @@ export async function saveLocations(ctx: Ctx, id: string, p: { modelId: string; 
 
 // ------------------------------------------------------------------ Seedfi credit assessment
 
-export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; consent: boolean; lockVersion?: number | null }) {
+export interface CreditCheckInput {
+  bvn: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: string;
+  phone: string;
+  consent: boolean;
+  lockVersion?: number | null;
+}
+
+/** Validate the Seed Score inputs (BVN first, as the officer captures it). */
+export function validateCreditInput(p: CreditCheckInput, today: string) {
+  const e: Record<string, string> = {};
   const bvn = (p.bvn ?? "").replace(/\s/g, "");
-  if (!isBvn(bvn)) throw invalid("Enter the customer's 11-digit BVN.", { bvn: "The BVN must be exactly 11 digits." });
-  if (!p.consent) throw invalid("Confirm the customer consented to the credit check.", { consent: "The customer's consent is required." });
+  if (!isBvn(bvn)) e.bvn = "The BVN must be exactly 11 digits.";
+  const clean = (s: string) => (s ?? "").trim().replace(/\s+/g, " ");
+  const first = clean(p.firstName);
+  const last = clean(p.lastName);
+  if (first.length < 2 || first.length > 60) e.firstName = "Enter the first name as on the BVN.";
+  if (last.length < 2 || last.length > 60) e.lastName = "Enter the last name as on the BVN.";
+  const dob = (p.dateOfBirth ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(new Date(`${dob}T00:00:00Z`).getTime()) || dob >= today || dob < "1900-01-01") e.dateOfBirth = "Enter the date of birth.";
+  const gender = (p.gender ?? "").toLowerCase();
+  if (gender !== "male" && gender !== "female") e.gender = "Choose the gender on the BVN record.";
+  const phone = normalisePhone(p.phone ?? "");
+  if (!phone) e.phone = "Enter a Nigerian mobile number, e.g. 0803 123 4567.";
+  if (!p.consent) e.consent = "The customer's consent is required.";
+  return { errors: e, bvn, first, last, dob, gender: gender as "male" | "female", phone: phone! };
+}
+
+export async function runCreditCheck(ctx: Ctx, id: string, p: CreditCheckInput) {
+  const v = validateCreditInput(p, lagosDate(ctx.now));
+  if (Object.keys(v.errors).length) throw invalid(v.errors.bvn ? "Enter the customer's 11-digit BVN." : "Check the customer's details for the credit check.", v.errors);
+  const bvn = v.bvn;
+  const customerId = `altphones-${hmac(`bvn:${bvn}`).slice(0, 32)}`;
   const pre = await denyOnError(ctx, id, "CREDIT_CHECK", () =>
     withTx(async (tx) => {
       let app = await lockApp(tx, id);
@@ -155,26 +187,37 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; con
       checkLock(app, p.lockVersion);
       if (app.seedfi_status === "COMPLETED") throw conflict("The credit assessment for this application is complete. Start a new sale for a different customer.");
       const s = await currentSettings(tx);
-      if (s.score_pass_min === null || s.score_fair_min === null) throw gate("Seedfi score bands are not configured. A Super Admin must record them from the approved credit policy.");
+      if (s.score_pass_min === null || s.score_fair_min === null) throw gate("Seed Score bands are not configured. A Super Admin must record them from the approved credit policy.");
       app = await transition(tx, ctx, app, {
         action: "CREDIT_CHECK_REQUESTED",
         role: app.originator_role,
-        set: { bvn_enc: encryptField(bvn), bvn_hash: hmac(`bvn:${bvn}`), bvn_last4: bvn.slice(-4) },
-        details: { bvnLast4: bvn.slice(-4) },
+        set: {
+          bvn_enc: encryptField(bvn),
+          bvn_hash: hmac(`bvn:${bvn}`),
+          bvn_last4: bvn.slice(-4),
+          customer_first_name: v.first,
+          customer_last_name: v.last,
+          customer_name: `${v.first} ${v.last}`,
+          customer_dob: v.dob,
+          customer_gender: v.gender,
+          customer_phone: v.phone,
+          seedfi_customer_id: customerId,
+        },
+        details: { bvnLast4: bvn.slice(-4), customerId },
       });
       return { app, s };
     }),
   );
   const bureau = creditBureau();
-  let result: { reference: string; score: number } | null = null;
+  let result: CreditResult | null = null;
   let failure: string | null = null;
-  if (!bureau) failure = "Seedfi is not configured. The credit check cannot be run until the integration is set up.";
+  if (!bureau) failure = "SeedFi is not configured. The credit check cannot be run until the integration is set up.";
   else {
     try {
-      result = await bureau.assess({ bvn, reference: pre.app.ref });
+      result = await bureau.assess({ customerId, firstName: v.first, lastName: v.last, bvn, dateOfBirth: v.dob, phone: v.phone, gender: v.gender, loanDurationMonths: pre.app.tenure_months ?? null });
     } catch (e) {
-      failure = e instanceof IntegrationUnavailable ? e.message : "The Seedfi request failed.";
-      if (!(e instanceof IntegrationUnavailable)) console.error("[altphones] Seedfi failure", e);
+      failure = e instanceof IntegrationUnavailable ? e.message : "The SeedFi request failed.";
+      if (!(e instanceof IntegrationUnavailable)) console.error("[altphones] SeedFi failure", e);
     }
   }
   return withTx(async (tx) => {
@@ -184,15 +227,26 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; con
       return { outcome: "UNAVAILABLE" as const, message: failure!, lockVersion: app.lock_version };
     }
     const outcome = mapScore(result.score, Number(pre.s.score_pass_min), Number(pre.s.score_fair_min))!;
-    const bands = { passMin: pre.s.score_pass_min, fairMin: pre.s.score_fair_min, settingsVersion: pre.s.version };
+    const bands = { passMin: pre.s.score_pass_min, fairMin: pre.s.score_fair_min, settingsVersion: pre.s.version, scoreUsed: "reviewed_seedfi_score" };
     app = await transition(tx, ctx, app, {
       action: "CREDIT_ASSESSED",
       to: outcome === "FAIL" ? "CREDIT_DECLINED" : undefined,
       role: app.originator_role,
-      set: { seedfi_status: "COMPLETED", seedfi_reference: result.reference, seedfi_score: result.score, seedfi_outcome: outcome, seedfi_bands: JSON.stringify(bands), seedfi_assessed_at: ctx.now, seedfi_last_error: null },
-      details: { reference: result.reference, score: result.score, outcome, bands },
+      set: {
+        seedfi_status: "COMPLETED",
+        seedfi_reference: result.reference,
+        seedfi_score: result.score,
+        seedfi_overall_score: result.overallScore,
+        seedfi_has_history: result.hasCreditHistory,
+        seedfi_details: JSON.stringify({ components: result.components, validUntil: result.validUntil }),
+        seedfi_outcome: outcome,
+        seedfi_bands: JSON.stringify(bands),
+        seedfi_assessed_at: ctx.now,
+        seedfi_last_error: null,
+      },
+      details: { reference: result.reference, reviewedScore: result.score, overallScore: result.overallScore, hasCreditHistory: result.hasCreditHistory, outcome, bands },
     });
-    return { outcome, message: outcome === "FAIL" ? "The customer did not pass the credit assessment. This application has been closed." : `Credit assessment: ${outcome}.`, lockVersion: app.lock_version };
+    return { outcome, message: outcome === "FAIL" ? `Seed Score ${result.score}: below the approval threshold. This credit application has been closed.` : `Seed Score ${result.score}: ${outcome === "PASS" ? "Pass" : "Fair"}.`, lockVersion: app.lock_version };
   });
 }
 

@@ -40,7 +40,7 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
       <div className="alt-integrations">
         {(
           [
-            ["Seedfi credit assessment", integ.seedfi],
+            ["SeedFi Seed Score", integ.seedfi],
             ["Paystack payments", integ.paystack],
             ["Paystack Direct Debit", integ.directDebit],
           ] as [string, string][]
@@ -294,8 +294,9 @@ async function Policy({ canEdit }: { canEdit: boolean }) {
       <h2 id="h-pol">Credit policy and routing</h2>
       <dl className="alt-kv">
         <div>
-          <dt>Seedfi bands</dt>
-          <dd>{s.score_pass_min === null ? "Not configured — credit checks cannot be mapped" : `Pass ≥ ${s.score_pass_min} · Fair ≥ ${s.score_fair_min} · Fail below ${s.score_fair_min}`}</dd>
+          <dt>Seed Score bands</dt>
+          <dd>{s.score_pass_min === null ? "Not configured — credit checks cannot be mapped" : `Pass ≥ ${Number(s.score_pass_min)} · Fair ${Number(s.score_fair_min)}–${Number(s.score_pass_min) - 1} · Fail below ${Number(s.score_fair_min)}`}
+            <div className="small muted">Seed Score range 280–800, decided on SeedFi&rsquo;s reviewed score. SeedFi&rsquo;s documented bands: Approved 620–800, Manual Review 530–619, Declined below 530.</div></dd>
         </div>
         <div>
           <dt>Unit Head (Altphones route)</dt>
@@ -314,11 +315,11 @@ async function Policy({ canEdit }: { canEdit: boolean }) {
         <ActionForm action={policyAction} className="stack">
           <div className="grid-2">
             <div className="field">
-              <label htmlFor="passMin">Pass: score at or above</label>
+              <label htmlFor="passMin">Pass: Seed Score at or above</label>
               <input id="passMin" name="passMin" inputMode="decimal" defaultValue={s.score_pass_min ?? ""} />
             </div>
             <div className="field">
-              <label htmlFor="fairMin">Fair: score at or above</label>
+              <label htmlFor="fairMin">Fair: Seed Score at or above</label>
               <input id="fairMin" name="fairMin" inputMode="decimal" defaultValue={s.score_fair_min ?? ""} />
               <span className="hint">Below this is Fail. Use the thresholds in the approved credit policy.</span>
             </div>

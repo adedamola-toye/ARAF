@@ -58,7 +58,7 @@ export const locationsAction = async (_p: ActionState, fd: FormData) =>
 
 export const creditCheckAction = async (_p: ActionState, fd: FormData) =>
   run(
-    (ctx) => runCreditCheck(ctx, s(fd, "id"), { bvn: s(fd, "bvn"), consent: on(fd, "consent"), lockVersion: lock(fd) }),
+    (ctx) => runCreditCheck(ctx, s(fd, "id"), { bvn: s(fd, "bvn"), firstName: s(fd, "firstName"), lastName: s(fd, "lastName"), dateOfBirth: s(fd, "dateOfBirth"), gender: s(fd, "gender"), phone: s(fd, "phone"), consent: on(fd, "consent"), lockVersion: lock(fd) }),
     (r) => (r as { message: string }).message,
   );
 

@@ -119,16 +119,17 @@ export const config = {
     };
   },
   /**
-   * Seedfi credit assessment (Altphones). Disabled unless SEEDFI_ENABLED=true and the endpoint and key are
-   * set. The request/response contract must be confirmed with Seedfi before go-live (docs/ALTPHONES.md).
+   * SeedFi Loan Engine Seed Score (Altphones), per the SeedFi API documentation v2.0. Disabled unless
+   * SEEDFI_ENABLED=true and the base URL and API key are set. Staging: https://stg-loan-engine.theseedfi.com;
+   * production: https://loanengine.theseedfi.com (after SeedFi's go-live sign-off).
    */
   get seedfi() {
     return {
       enabled: bool("SEEDFI_ENABLED", false),
       baseUrl: str("SEEDFI_BASE_URL", "").replace(/\/$/, ""),
       apiKey: str("SEEDFI_API_KEY", ""),
-      assessPath: str("SEEDFI_ASSESS_PATH", "/credit-assessments"),
-      timeoutMs: int("SEEDFI_TIMEOUT_MS", 15000),
+      assessPath: str("SEEDFI_ASSESS_PATH", "/scoring/api/v1/seed-score/calculate"),
+      timeoutMs: int("SEEDFI_TIMEOUT_MS", 30000),
     };
   },
   /** Paystack (Altphones payments and Direct Debit). Disabled unless PAYSTACK_ENABLED=true and the secret key is set. */
