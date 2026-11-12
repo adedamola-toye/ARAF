@@ -573,6 +573,9 @@ describe("SeedFi Seed Score client (API documentation v2.0)", () => {
     expect(() => parseSeedScore({ credit_score: { overall_seedfi_score: 950 } }, "x")).toThrow();
     expect(() => parseSeedScore({ status: 200, data: {} }, "x")).toThrow();
     expect(parseSeedScore({ status: 200, data: { credit_score: { overall_seedfi_score: 700 } } }, "x").score).toBe(700);
+    // Shape returned by SeedFi staging (verified live): wrapped in { status, data }, with validity_date and is_dummy_data.
+    const live = parseSeedScore({ status: 200, data: { credit_score: { overall_seedfi_score: 544.0, reviewed_seedfi_score: 444.0, user_has_credit_history: true, validity_date: "2026-12-12T22:48:00.360104", cached: false, is_dummy_data: true } } }, "c1");
+    expect([live.score, live.overallScore, live.validUntil, live.isDummyData]).toEqual([444, 544, "2026-12-12", true]);
   });
 
   it("validates the Seed Score inputs before calling SeedFi", async () => {

@@ -80,7 +80,7 @@ export class TestBureau implements CreditBureau {
   async assess(input: CreditInput): Promise<CreditResult> {
     this.calls.push(input);
     if (this.fail) throw this.fail;
-    return { reference: input.customerId, score: this.score!, overallScore: this.score!, hasCreditHistory: true, validUntil: null, components: {} };
+    return { reference: input.customerId, score: this.score!, overallScore: this.score!, hasCreditHistory: true, validUntil: null, isDummyData: false, components: {} };
   }
 }
 

@@ -60,6 +60,8 @@ All are disabled until configured; dependent actions show a clear "not configure
 | Paystack Direct Debit | `PAYSTACK_DIRECT_DEBIT_ENABLED` | Authorisation initialise/verify (`/customer/authorization/*`, channel `direct_debit`). The mandate is Active only when Paystack's verification says so. **Confirm Direct Debit and settlement are enabled on the bank's Paystack integration before turning this on.** Collections against the mandate are not part of this release. |
 | Email | existing mail settings | Customer receipts and confirmations copy the team mailbox (default altbox@altbank.ng). The contract OTP email is sent directly and never stored; OTPs are stored only as HMACs, expire (`ALTPHONES_OTP_TTL_SECONDS`) and allow `ALTPHONES_OTP_MAX_ATTEMPTS` tries. |
 
+SeedFi staging was verified live (12 Nov 2026) with the Alt Mall account and key `AltMall_ARAF_stg_Nov2026`: the four documented test personas returned their documented scores through ARAF's credit check (Theodore Stone 384 Fail, Nathan Smith 532 Fair, John Doe reviewed 444 / overall 544 Fail, Jane Doe 400 Fail). Staging responses carry `is_dummy_data: true`, which ARAF stores and shows as "SeedFi test data". The API key is a secret: set `SEEDFI_API_KEY` in each deployment's environment settings, never in the repository. Production needs a separate key on `https://loanengine.theseedfi.com` after SeedFi's go-live sign-off.
+
 Alternative Bank account verification has no API: the officer confirms it manually and it is labelled **Officer confirmed**. The internal debit mandate is likewise **Officer Confirmed**, never "API verified".
 
 BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digits are shown or audited. The Direct Debit authorisation code is encrypted.

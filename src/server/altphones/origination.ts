@@ -238,13 +238,13 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: CreditCheckInput) 
         seedfi_score: result.score,
         seedfi_overall_score: result.overallScore,
         seedfi_has_history: result.hasCreditHistory,
-        seedfi_details: JSON.stringify({ components: result.components, validUntil: result.validUntil }),
+        seedfi_details: JSON.stringify({ components: result.components, validUntil: result.validUntil, isDummyData: result.isDummyData }),
         seedfi_outcome: outcome,
         seedfi_bands: JSON.stringify(bands),
         seedfi_assessed_at: ctx.now,
         seedfi_last_error: null,
       },
-      details: { reference: result.reference, reviewedScore: result.score, overallScore: result.overallScore, hasCreditHistory: result.hasCreditHistory, outcome, bands },
+      details: { reference: result.reference, isDummyData: result.isDummyData, reviewedScore: result.score, overallScore: result.overallScore, hasCreditHistory: result.hasCreditHistory, outcome, bands },
     });
     return { outcome, message: outcome === "FAIL" ? `Seed Score ${result.score}: below the approval threshold. This credit application has been closed.` : `Seed Score ${result.score}: ${outcome === "PASS" ? "Pass" : "Fair"}.`, lockVersion: app.lock_version };
   });

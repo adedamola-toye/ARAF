@@ -781,6 +781,8 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                           <span className={`badge ${app.seedfi_outcome === "FAIL" ? "badge-red" : app.seedfi_outcome === "FAIR" ? "badge-warn" : "badge-green"}`}>{SCORE_OUTCOME_LABELS[app.seedfi_outcome as "PASS"]}</span> <span className="small">Seed Score {Number(app.seedfi_score)}</span>
                           {app.seedfi_overall_score !== null && Number(app.seedfi_overall_score) !== Number(app.seedfi_score) && <div className="small">Overall {Number(app.seedfi_overall_score)}, reviewed down to {Number(app.seedfi_score)}</div>}
                           {app.seedfi_has_history !== null && <div className="small muted">{app.seedfi_has_history ? "Has credit history" : "No credit history"}</div>}
+                          {app.seedfi_details?.isDummyData && <span className="badge badge-warn">SeedFi test data</span>}
+                          {app.seedfi_details?.validUntil && <div className="small muted">Score valid until {app.seedfi_details.validUntil}</div>}
                           <div className="small muted">
                             {app.seedfi_reference} · {formatLagos(app.seedfi_assessed_at)}
                           </div>

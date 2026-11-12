@@ -85,6 +85,8 @@ export interface CreditResult {
   overallScore: number;
   hasCreditHistory: boolean | null;
   validUntil: string | null;
+  /** SeedFi marks staging/test responses with is_dummy_data: true. */
+  isDummyData: boolean;
   components: Record<string, unknown>;
 }
 export interface CreditBureau {
@@ -115,6 +117,7 @@ export function parseSeedScore(body: unknown, customerId: string): CreditResult 
     overallScore: Math.round(overall * 100) / 100,
     hasCreditHistory: typeof cs.user_has_credit_history === "boolean" ? cs.user_has_credit_history : null,
     validUntil: typeof validity === "string" ? validity.slice(0, 10) : null,
+    isDummyData: cs.is_dummy_data === true || data.is_dummy_data === true,
     components,
   };
 }
