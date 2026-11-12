@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
@@ -17,6 +18,8 @@ export const metadata = { title: "My Action Queue" };
 
 export default async function QueuePage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const { session, roles: myRoles } = await requireUser();
+  // Employees whose only role is staff applicant have no work queue: take them to their requests.
+  if (myRoles.length === 1 && myRoles[0] === "STAFF_APPLICANT") redirect("/staff-request");
   const sp = await searchParams;
   const wallet = myRoles.includes("RM") ? await walletToday(db, session.staffId, new Date()) : null;
   const rmAssigned = myRoles.includes("RM")

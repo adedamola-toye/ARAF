@@ -9,6 +9,9 @@ import { runMonthlyReport, runWeeklyDigest } from "./schedules";
 import { runSlaEscalations } from "../domain/sla";
 import { expireStaleDrafts } from "../domain/retail";
 import { refreshArrears } from "../domain/retail-ops";
+import { expireStaffOffers, remindStaffOffers, retryBlockedOffers } from "../staff/offer";
+import { processStaffDocumentation } from "../staff/pipeline";
+import { rescanStaffDocuments } from "../staff/documents";
 
 /** Retry scans for files left in quarantine (e.g. scanner unavailable at upload time). */
 export async function rescanQuarantined(now = new Date()) {
@@ -44,5 +47,11 @@ export async function workerTick(now = new Date()) {
   results.slaEscalations = await runSlaEscalations(now);
   results.draftsExpired = await expireStaleDrafts(now);
   results.arrearsChanged = await refreshArrears(db, now);
+  // Staff Personal Financing: server-side offer deadlines, reminders, blocked offers, scans, documentation.
+  results.staffOffersExpired = await expireStaffOffers(now);
+  results.staffOfferReminders = await remindStaffOffers(now);
+  results.staffOffersIssued = await retryBlockedOffers(now);
+  await rescanStaffDocuments(now);
+  results.staffDocumentation = await processStaffDocumentation(now);
   return results;
 }

@@ -1,161 +1,208 @@
 /*
- * Retail Asset Factory landing page. Ported from the approved reference
- * (retail_asset_factory_fixed / responsive v25) and scoped to this page so it never
- * affects the signed-in application. Values are kept as in the reference.
+ * Retail Asset Factory landing page: the approved V39 design ("PIGGYVEST 1").
+ * GENERATED from retail_asset_factory_v39_piggyvest_theme_fixed.html: every V39 style block, in
+ * order, scoped to .page. Theme selectors use the attributes set by src/lib/theme.ts instead of
+ * V39's radio-button :has() rules; System rules apply only when System resolves to dark (V39 showed
+ * the dark switcher on a light page). Fonts are self-hosted by next/font. Do not hand-edit values.
  */
-.page {
-  min-height: 100vh;
-  background: #f7f9ff;
-  color: #152b59;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  font-size: 16px;
-  line-height: normal;
-  overflow-x: clip;
-  min-width: 0;
-}
-.page *,
-.page *::before,
-.page *::after { box-sizing: border-box; }
-.page a { color: inherit; text-decoration: none; }
-.page img { max-width: 100%; }
-.page h1, .page h2, .page h3, .page p { letter-spacing: normal; }
+/* Neutralise application-wide element styles so V39 renders exactly as in the reference. */
+.page { display: block; font-size: 16px; line-height: normal; letter-spacing: normal; }
+.page h1, .page h2, .page h3 { font-family: inherit; color: inherit; line-height: normal; letter-spacing: normal; }
+.page h1 { font-size: 2em; margin: 0.67em 0; font-weight: bold; }
+.page h2 { font-size: 1.5em; margin: 0.83em 0; font-weight: bold; }
+.page h3 { font-size: 1.17em; margin: 1em 0; font-weight: bold; }
+.page p { margin: 1em 0; }
+.page .theme-option { margin: 0; font-size: inherit; font-weight: inherit; color: inherit; }
+.page .brand .brand-title { margin: 0; }
+.page strong { font-weight: bold; }
+.page :focus-visible { outline: revert; border-radius: 0; }
+.page *{box-sizing:border-box}.page{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{margin:0;background:#F7F9FF;color:#152B59;-webkit-font-smoothing:antialiased}.page a{color:inherit;text-decoration:none}.page .shell{max-width:1240px;margin:auto;padding:0 52px}.page header{height:102px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #DEE5F3;gap:24px}.page .brand h1,.page .brand .brand-title{margin:0;font-size:23px;letter-spacing:-.85px;line-height:1.1;font-weight:720;white-space:nowrap}.page .brand p{margin:7px 0 0;font-size:11px;color:#64718C;letter-spacing:.03em}.page .bank-logo{width:178px;height:80px;object-fit:contain;object-position:right center}.page main{padding:65px 0 78px}.page .eyebrow{font-size:11px;letter-spacing:.12em;font-weight:750;color:#153FAF;text-transform:uppercase;margin:0 0 17px}.page .intro h2{font-size:clamp(34px,4vw,52px);font-weight:690;letter-spacing:-2.3px;line-height:1.12;max-width:650px;margin:0 0 18px}.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)){font-size:15px;line-height:1.75;color:#64718C;max-width:480px;margin:0}.page .roles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.page .role{display:flex;flex-direction:column;justify-content:space-between;min-height:218px;padding:25px 25px 27px;background:white;border:1px solid #DEE5F3;border-radius:12px;transition:transform .18s,box-shadow .18s,border-color .18s}.page .role:hover{transform:translateY(-3px);box-shadow:0 14px 35px #14243A10;border-color:#153FAF}.page .role:focus-visible{outline:3px solid #153FAF;outline-offset:3px}.page .role-top{display:flex;align-items:center;justify-content:space-between}.page .role-num{font-size:12px;font-weight:650;color:#64718C}.page .arrow{font-size:22px;color:#153FAF}.page .role h3{font-size:19px;font-weight:680;letter-spacing:-.6px;margin:0 0 9px}.page .role p{font-size:13px;color:#64718C;line-height:1.55;margin:0;max-width:235px}.page .section-label{font-size:12px;letter-spacing:.09em;font-weight:720;text-transform:uppercase;margin:0 0 19px}.page .access-note{display:flex;align-items:center;gap:9px;color:#64718C;font-size:12px;margin:20px 0 0}.page .access-note:before{content:'●';font-size:8px;color:#153FAF}.page footer{border-top:1px solid #DEE5F3;min-height:95px;display:flex;align-items:center;justify-content:space-between;gap:25px}.page footer p{font-size:12px;color:#64718C;line-height:1.65;margin:0}.page footer img{height:43px;width:58px;object-fit:contain}.page .notice{min-height:19px;color:#153FAF;font-size:12px;margin:14px 0 0}@media(max-width:820px){.page .shell{padding:0 22px}.page header{height:88px}.page .bank-logo{width:120px;height:65px}.page .brand h1,.page .brand .brand-title{font-size:clamp(14px,3.2vw,20px)}.page .brand p{font-size:9px}.page main{padding:38px 0 48px}.page .intro h2{font-size:36px;letter-spacing:-1.6px}.page .roles{grid-template-columns:1fr}.page .role{min-height:145px}}@media(max-width:390px){.page .bank-logo{width:96px}.page .brand h1,.page .brand .brand-title{font-size:14px}}.page .hero{display:grid;grid-template-columns:1.18fr .82fr;align-items:center;gap:35px;margin-bottom:58px}.page .photo{height:305px;border-radius:24px;overflow:hidden;position:relative;background:#E8E5D9}.page .photo img{width:100%;height:100%;object-fit:cover;object-position:center 39%}.page .photo:after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent 75%,#FFFFFF18)}.page .roles .role:first-child{background:#173B9D;color:white;border-color:#173B9D}.page .roles .role:first-child p,.page .roles .role:first-child .role-num{color:#DCE5FF}.page .roles .role:first-child .arrow{color:white}@media(max-width:820px){.page .hero{grid-template-columns:1fr;gap:24px;margin-bottom:35px}.page .photo{height:220px}}
+/* Muted, role-specific surfaces: distinct without competing with bank branding. */
+.page .roles .role{box-shadow:none;transform:none;transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease}
+.page .roles .role:nth-child(1){background:#1D438E;color:#fff;border-color:#1D438E}
+.page .roles .role:nth-child(1) .role-num,.page .roles .role:nth-child(1) p{color:#E1E9FA}
+.page .roles .role:nth-child(1) .arrow{color:#fff}
+.page .roles .role:nth-child(2){background:#E7F2EB;color:#204C3A;border-color:#D4E8DA}
+.page .roles .role:nth-child(2) .role-num,.page .roles .role:nth-child(2) p{color:#496A59}
+.page .roles .role:nth-child(2) .arrow{color:#204C3A}
+.page .roles .role:nth-child(3){background:#F7EBDD;color:#684A2D;border-color:#EADBC8}
+.page .roles .role:nth-child(3) .role-num,.page .roles .role:nth-child(3) p{color:#80664C}
+.page .roles .role:nth-child(3) .arrow{color:#684A2D}
+.page .roles .role:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(17,32,61,.08)}
+@media(prefers-reduced-motion:reduce){.page .roles .role{transition:none}.page .roles .role:hover{transform:none}}
 
-.shell { width: 100%; max-width: 1240px; margin: auto; padding: 0 52px; }
+.page .intro h2 em, .page .hero h2 em, .page h2 em { font-style: italic !important; font-weight: inherit; }
+.page .arrow{font-family:Arial,Helvetica,sans-serif;font-size:31px;font-weight:400;line-height:1;display:inline-flex;align-items:center;justify-content:center;width:24px;height:28px}
 
-/* Header */
-.header { height: 102px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #dee5f3; gap: 24px; }
-.page .brand h1, .page .brand .brandTitle { margin: 0; font-size: 23px; letter-spacing: -0.85px; line-height: 1.1; font-weight: 720; white-space: nowrap; color: #152b59; }
-.page .brand p { margin: 7px 0 0; font-size: 11px; color: #64718c; letter-spacing: 0.03em; line-height: normal; }
-.bankLogo { width: 178px; height: 80px; object-fit: contain; object-position: right center; display: block; }
+/* Footer brand lockup — fixed dimensions, no overlapping assets */
+.page footer{gap:32px;padding:22px 0;min-height:108px}
+.page .footer-copy{display:flex;flex-direction:column;gap:4px;min-width:0}
+.page .footer-copy p{margin:0;line-height:1.45}
+.page .footer-copy p:last-child{white-space:nowrap}
+.page .footer-logos{display:flex;align-items:center;justify-content:flex-end;gap:25px;flex-shrink:0}
+.page .footer-logos img{display:block;object-fit:contain;flex:none}
+.page .footer-logos .footer-bank-logo{width:150px;height:62px}
+.page .footer-logos .footer-nifi-logo{width:70px;height:57px}
+@media(max-width:600px){.page footer{align-items:flex-start;gap:16px;flex-wrap:wrap}.page .footer-logos{gap:16px}.page .footer-logos .footer-bank-logo{width:120px;height:50px}.page .footer-logos .footer-nifi-logo{width:54px;height:48px}}
 
-/* Hero */
-.main { padding: 65px 0 78px; }
-.hero { display: grid; grid-template-columns: 1.18fr 0.82fr; align-items: center; gap: 35px; margin-bottom: 58px; }
-.hero > * { min-width: 0; }
-.page .eyebrow { font-size: 11px; letter-spacing: 0.12em; font-weight: 750; color: #153faf; text-transform: uppercase; margin: 0 0 17px; line-height: normal; }
-.page .intro h2 { font-size: clamp(34px, 4vw, 52px); font-weight: 690; letter-spacing: -2.3px; line-height: 1.12; max-width: 650px; margin: 0 0 18px; overflow-wrap: normal; color: #152b59; }
-.page .intro h2 em { font-style: italic; font-weight: inherit; }
-.page .intro > p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)) { font-size: 15px; line-height: 1.75; color: #64718c; max-width: 480px; margin: 0; }
-.photo { height: 305px; border-radius: 24px; overflow: hidden; position: relative; background: #e8e5d9; }
-.photo img { width: 100%; height: 100%; object-fit: cover; object-position: center 39%; display: block; }
-.photo::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 75%, #ffffff18); pointer-events: none; }
+/* V25 responsive hardening: desktop, laptop, tablets and phones */
+.page{min-width:0}.page{min-width:0;overflow-x:clip}.page img{max-width:100%}.page .shell{width:100%;max-width:1240px}.page .hero>*{min-width:0}.page .intro h2{overflow-wrap:normal}.page .role{min-width:0}.page .role h3,.page .role p{overflow-wrap:break-word}.page .footer-logos{min-width:0}
+@media (min-width:821px) and (max-width:1100px){.page .shell{padding-inline:32px}.page .hero{gap:24px;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr)}.page .intro h2{font-size:clamp(32px,3.7vw,46px);letter-spacing:-1.7px}.page .role{padding:22px;min-height:210px}.page .role h3{font-size:17px}.page .roles{gap:12px}}
+@media (min-width:701px) and (max-width:820px){.page .hero{grid-template-columns:minmax(0,1fr) minmax(0,.85fr);gap:22px}.page .photo{height:260px}.page .roles{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.page .role{min-height:210px;padding:20px}.page .role h3{font-size:17px}.page .intro h2{font-size:clamp(29px,4vw,36px);letter-spacing:-1.3px}}
+@media (max-width:700px){.page .hero{grid-template-columns:minmax(0,1fr)}.page .roles{grid-template-columns:1fr}.page .role{min-height:148px}.page .intro h2{font-size:clamp(30px,7vw,40px);letter-spacing:-1.35px}.page .footer-logos{max-width:100%}}
+@media (max-width:480px){.page .shell{padding-inline:18px}.page header{height:auto;min-height:82px;padding-block:13px;gap:10px}.page .brand{min-width:0}.page .brand h1,.page .brand .brand-title{font-size:clamp(14px,4vw,19px);white-space:normal;letter-spacing:-.5px}.page .brand p{font-size:9px;line-height:1.35}.page .bank-logo{width:clamp(80px,25vw,110px);height:55px;flex-shrink:0}.page .intro h2{font-size:clamp(30px,8vw,38px);line-height:1.15}.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)){font-size:14px}.page .photo{height:190px;border-radius:16px}.page .role{padding:20px;min-height:145px}.page .role h3{font-size:18px}.page footer{gap:16px}.page .footer-copy p:last-child{white-space:normal}.page .footer-logos{width:100%;justify-content:flex-start;gap:16px}}
+@media (max-width:340px){.page .shell{padding-inline:14px}.page .brand h1,.page .brand .brand-title{font-size:13px}.page .bank-logo{width:76px}.page .intro h2{font-size:29px}.page .footer-logos .footer-bank-logo{width:108px}.page .footer-logos .footer-nifi-logo{width:48px}}
+@media (hover:none){.page .roles .role:hover{transform:none;box-shadow:none}}
 
-/* Workspace cards */
-.page .sectionLabel { font-size: 12px; letter-spacing: 0.09em; font-weight: 720; text-transform: uppercase; margin: 0 0 19px; line-height: normal; color: #152b59; }
-.roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-.page .role {
-  display: flex; flex-direction: column; justify-content: space-between; min-height: 218px; min-width: 0;
-  padding: 25px 25px 27px; border: 1px solid #dee5f3; border-radius: 12px;
-  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
-}
-.page .role:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(17, 32, 61, 0.08); }
-.page .role:active { transform: translateY(0); box-shadow: 0 3px 10px rgba(17, 32, 61, 0.08); }
-.page .role:focus-visible { outline: 3px solid #153faf; outline-offset: 3px; border-radius: 12px; }
-.roleTop { display: flex; align-items: center; justify-content: space-between; }
-.roleNum { font-size: 12px; font-weight: 650; }
-.arrow { font-family: Arial, Helvetica, sans-serif; font-size: 31px; font-weight: 400; line-height: 1; display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 28px; }
-.page .role h3 { font-size: 19px; font-weight: 680; letter-spacing: -0.6px; margin: 0 0 9px; line-height: normal; overflow-wrap: break-word; color: inherit; }
-.page .role p { font-size: 13px; line-height: 1.55; margin: 0; max-width: 235px; overflow-wrap: break-word; }
 
-.page .rm { background: #1d438e; color: #fff; border-color: #1d438e; }
-.page .rm .roleNum, .page .rm p { color: #e1e9fa; }
-.page .rm .arrow { color: #fff; }
-.page .delight { background: #e7f2eb; color: #204c3a; border-color: #d4e8da; }
-.page .delight .roleNum, .page .delight p { color: #496a59; }
-.page .delight .arrow { color: #204c3a; }
-.page .staff { background: #f7ebdd; color: #684a2d; border-color: #eadbc8; }
-.page .staff .roleNum, .page .staff p { color: #80664c; }
-.page .staff .arrow { color: #684a2d; }
+.page{color-scheme:light}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page{color-scheme:dark}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page{background:#101820;color:#F5F7FA}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page header,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page footer{border-color:#354553}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .brand p,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)),:global(html[data-theme-preference="dark"]:not(#raf-has)) .page footer p,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .access-note{color:#C1CBD5}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .eyebrow,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .notice{color:#9DBBFF}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(1){background:#204991;border-color:#4265A4}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(2){background:#234238;border-color:#416757;color:#F1F8F3}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) p,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) .role-num{color:#D0E7D8}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) .arrow{color:#F1F8F3}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(3){background:#4B392A;border-color:#705742;color:#FFF2E3}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) p,:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) .role-num{color:#F0D9C1}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) .arrow{color:#FFF2E3}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .roles .role:hover{box-shadow:0 9px 22px #0005}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .bank-logo{background:#fff;border-radius:9px;padding:7px}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page footer img{background:#fff;border-radius:6px;padding:3px}
+.page .theme-switcher{display:flex;align-items:center;gap:3px;padding:4px;background:#E8EDF5;border:1px solid #D6DFED;border-radius:999px;flex-shrink:0}.page .theme-switcher button{appearance:none;border:0;background:transparent;color:#425572;border-radius:999px;padding:8px 12px;font:600 12px Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap}.page .theme-switcher button[aria-pressed="true"]{background:white;color:#172B54;box-shadow:0 1px 5px #152B5922}.page .theme-switcher button:focus-visible{outline:2px solid #648CFF;outline-offset:2px}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-switcher{background:#22303C;border-color:#40505D}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-switcher button{color:#D4E0EB}:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-switcher button[aria-pressed="true"]{background:#40576C;color:white}.page .header-actions{display:flex;align-items:center;gap:16px;min-width:0}.page .header-actions .bank-logo{flex-shrink:0}@media(max-width:740px){.page header{height:auto!important;min-height:100px;flex-wrap:wrap;gap:10px!important;padding:14px 0}.page .header-actions{width:100%;justify-content:space-between;flex-direction:row-reverse}.page .header-actions .bank-logo{height:48px;width:125px}.page .theme-switcher button{padding:7px 10px}}@media(max-width:360px){.page .theme-switcher button{padding:7px 8px;font-size:11px}.page .header-actions .bank-logo{width:100px}}@media(prefers-reduced-motion:no-preference){.page,.page .brand p,.page .intro>p,.page .eyebrow,.page footer,.page .role{transition:background-color .2s,color .2s,border-color .2s}}
 
-.page .accessNote { display: flex; align-items: center; gap: 9px; color: #64718c; font-size: 12px; margin: 20px 0 33px; line-height: normal; } /* 33px keeps the reference spacing where its demo-only notice line sat */
-.page .accessNote::before { content: "●"; font-size: 8px; color: #153faf; }
+@media (prefers-color-scheme:dark){
+.page{color-scheme:light}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page{color-scheme:dark}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page{background:#101820;color:#F5F7FA}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page header,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page footer{border-color:#354553}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .brand p,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)),:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page footer p,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .access-note{color:#C1CBD5}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .eyebrow,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .notice{color:#9DBBFF}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(1){background:#204991;border-color:#4265A4}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(2){background:#234238;border-color:#416757;color:#F1F8F3}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) p,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) .role-num{color:#D0E7D8}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(2) .arrow{color:#F1F8F3}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(3){background:#4B392A;border-color:#705742;color:#FFF2E3}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) p,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) .role-num{color:#F0D9C1}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:nth-child(3) .arrow{color:#FFF2E3}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .roles .role:hover{box-shadow:0 9px 22px #0005}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .bank-logo{background:#fff;border-radius:9px;padding:7px}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page footer img{background:#fff;border-radius:6px;padding:3px}
+.page .theme-switcher{display:flex;align-items:center;gap:3px;padding:4px;background:#E8EDF5;border:1px solid #D6DFED;border-radius:999px;flex-shrink:0}.page .theme-switcher button{appearance:none;border:0;background:transparent;color:#425572;border-radius:999px;padding:8px 12px;font:600 12px Inter,system-ui,sans-serif;cursor:pointer;white-space:nowrap}.page .theme-switcher button[aria-pressed="true"]{background:white;color:#172B54;box-shadow:0 1px 5px #152B5922}.page .theme-switcher button:focus-visible{outline:2px solid #648CFF;outline-offset:2px}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-switcher{background:#22303C;border-color:#40505D}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-switcher button{color:#D4E0EB}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-switcher button[aria-pressed="true"]{background:#40576C;color:white}.page .header-actions{display:flex;align-items:center;gap:16px;min-width:0}.page .header-actions .bank-logo{flex-shrink:0}@media(max-width:740px){.page header{height:auto!important;min-height:100px;flex-wrap:wrap;gap:10px!important;padding:14px 0}.page .header-actions{width:100%;justify-content:space-between;flex-direction:row-reverse}.page .header-actions .bank-logo{height:48px;width:125px}.page .theme-switcher button{padding:7px 10px}}@media(max-width:360px){.page .theme-switcher button{padding:7px 8px;font-size:11px}.page .header-actions .bank-logo{width:100px}}@media(prefers-reduced-motion:no-preference){.page,.page .brand p,.page .intro>p,.page .eyebrow,.page footer,.page .role{transition:background-color .2s,color .2s,border-color .2s}}
+}
 
-/* Footer */
-.footer { border-top: 1px solid #dee5f3; display: flex; align-items: center; justify-content: space-between; gap: 32px; padding: 22px 0; min-height: 108px; }
-.footerCopy { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.page .footerCopy p { font-size: 12px; color: #64718c; margin: 0; line-height: 1.45; }
-.page .footerCopy p:last-child { white-space: nowrap; }
-.footerLogos { display: flex; align-items: center; justify-content: flex-end; gap: 25px; flex-shrink: 0; min-width: 0; }
-.footerLogos img { display: block; object-fit: contain; flex: none; }
-.footerBankLogo { width: 150px; height: 62px; }
-.footerNifiLogo { width: 70px; height: 57px; }
+.page .theme-switcher{display:flex;align-items:center;gap:3px;padding:3px;border-radius:12px;background:#eef1f5;flex-shrink:0}
+.page .theme-option{position:relative;display:inline-flex;cursor:pointer;align-items:center;justify-content:center;min-height:35px;border-radius:9px;white-space:nowrap}
+.page .theme-option input{position:absolute;inset:0;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+.page .theme-option span{display:block;padding:8px 11px;color:#52606d;font-size:12px;font-weight:600;border-radius:9px;pointer-events:none}
+.page .theme-option input:checked+span{background:#fff;color:#152B59;box-shadow:0 1px 4px #0002}
+.page .theme-option input:focus-visible+span{outline:3px solid #4388e8;outline-offset:2px}
+:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-switcher,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-switcher{background:#263744}
+:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-option span,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-option span{color:#cbd5df}
+:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .theme-option input:checked+span,:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .theme-option input:checked+span{background:#435568;color:#fff}
+@media(max-width:650px){.page .header-actions{gap:6px;min-width:0}.page .theme-option span{padding:7px 6px;font-size:10px}.page .theme-switcher{gap:0}.page .bank-logo{max-width:95px}}
+@media(max-width:380px){.page .theme-option span{font-size:9px;padding:7px 4px}.page .bank-logo{max-width:78px}}
 
-/* Responsive (reference breakpoints) */
-@media (max-width: 820px) {
-  .shell { padding: 0 22px; }
-  .header { height: 88px; }
-  .bankLogo { width: 120px; height: 65px; }
-  .page .brand h1, .page .brand .brandTitle { font-size: clamp(14px, 3.2vw, 20px); }
-  .page .brand p { font-size: 9px; }
-  .main { padding: 38px 0 48px; }
-  .hero { grid-template-columns: 1fr; gap: 24px; margin-bottom: 35px; }
-  .photo { height: 220px; }
-}
-@media (max-width: 600px) {
-  .footer { align-items: flex-start; gap: 16px; flex-wrap: wrap; }
-  .footerLogos { gap: 16px; }
-  .footerBankLogo { width: 120px; height: 50px; }
-  .footerNifiLogo { width: 54px; height: 48px; }
-}
-@media (max-width: 390px) {
-  .bankLogo { width: 96px; }
-  .page .brand h1, .page .brand .brandTitle { font-size: 14px; }
-}
-@media (min-width: 821px) and (max-width: 1100px) {
-  .shell { padding-inline: 32px; }
-  .hero { gap: 24px; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); }
-  .page .intro h2 { font-size: clamp(32px, 3.7vw, 46px); letter-spacing: -1.7px; }
-  .page .role { padding: 22px; min-height: 210px; }
-  .page .role h3 { font-size: 17px; }
-  .roles { gap: 12px; }
-}
-@media (min-width: 701px) and (max-width: 820px) {
-  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr); gap: 22px; }
-  .photo { height: 260px; }
-  .roles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-  .page .role { min-height: 210px; padding: 20px; }
-  .page .role h3 { font-size: 17px; }
-  .page .intro h2 { font-size: clamp(29px, 4vw, 36px); letter-spacing: -1.3px; }
-}
-@media (max-width: 700px) {
-  .hero { grid-template-columns: minmax(0, 1fr); }
-  .roles { grid-template-columns: 1fr; }
-  .page .role { min-height: 148px; }
-  .page .intro h2 { font-size: clamp(30px, 7vw, 40px); letter-spacing: -1.35px; }
-  .footerLogos { max-width: 100%; }
-}
-@media (max-width: 480px) {
-  .shell { padding-inline: 18px; }
-  .header { height: auto; min-height: 82px; padding-block: 13px; gap: 10px; }
-  .brand { min-width: 0; }
-  .page .brand h1, .page .brand .brandTitle { font-size: clamp(14px, 4vw, 19px); white-space: normal; letter-spacing: -0.5px; }
-  .page .brand p { font-size: 9px; line-height: 1.35; }
-  .bankLogo { width: clamp(80px, 25vw, 110px); height: 55px; flex-shrink: 0; }
-  .page .intro h2 { font-size: clamp(30px, 8vw, 38px); line-height: 1.15; }
-  .page .intro > p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)) { font-size: 14px; }
-  .photo { height: 190px; border-radius: 16px; }
-  .page .role { padding: 20px; min-height: 145px; }
-  .page .role h3 { font-size: 18px; }
-  .footer { gap: 16px; }
-  .page .footerCopy p:last-child { white-space: normal; }
-  .footerLogos { width: 100%; justify-content: flex-start; gap: 16px; }
-}
-@media (max-width: 340px) {
-  .shell { padding-inline: 14px; }
-  .page .brand h1, .page .brand .brandTitle { font-size: 13px; }
-  .bankLogo { width: 76px; }
-  .page .intro h2 { font-size: 29px; }
-  .footerBankLogo { width: 108px; }
-  .footerNifiLogo { width: 48px; }
-}
-@media (hover: none) { .page .role:hover { transform: none; box-shadow: none; } }
-@media (prefers-reduced-motion: reduce) { .page .role { transition: none; } .page .role:hover { transform: none; } }
 
-/* Authentication screens (sign-in, code entry, session ended, errors) reuse this layout. */
-.page a.brand { display: block; }
-.authHero { align-items: center; margin-bottom: 0; }
-.authHero .photo { height: 420px; }
-@media (max-width: 820px) { .authHero .photo { height: 260px; } }
-@media (max-width: 700px) { .authHero { grid-template-columns: minmax(0, 1fr); } .authHero .photo { height: 200px; } }
-@media (max-width: 480px) { .authHero .photo { height: 170px; } }
+/* V30 — refined Inter typography, fluid layouts and reliable theme contrast */
+.page{font-synthesis:none;text-rendering:optimizeLegibility;-webkit-text-size-adjust:100%}
+.page{width:100%;min-height:100%;margin:0}
+.page{font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-weight:450;letter-spacing:-.012em}
+.page .shell{max-width:1440px;padding-inline:clamp(22px,4.2vw,68px)}
+.page header{height:clamp(82px,10vh,104px)}
+.page .brand h1,.page .brand .brand-title{font-size:clamp(19px,1.65vw,24px);font-weight:750;letter-spacing:-.055em}
+.page .brand p{font-size:11px;letter-spacing:.015em;font-weight:500}
+.page main{padding-block:clamp(30px,5.5vh,66px) clamp(35px,5vh,70px)}
+.page .hero{grid-template-columns:minmax(0,1.12fr) minmax(0,.88fr);gap:clamp(24px,3.8vw,56px);margin-bottom:clamp(28px,4.5vh,55px)}
+.page .intro h2{font-size:clamp(34px,3.65vw,54px);font-weight:700;letter-spacing:-.058em;line-height:1.115;max-width:730px}
+.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)){font-size:clamp(14px,1.05vw,16px);line-height:1.7;max-width:500px}
+.page .eyebrow,.page .section-label{font-weight:750;letter-spacing:.09em}
+.page .photo{height:clamp(220px,30vh,340px);border-radius:20px}
+.page .roles{gap:clamp(12px,1.4vw,20px)}
+.page .role{min-height:clamp(165px,20vh,220px);padding:clamp(19px,2vw,28px);border-radius:13px}
+.page .role h3{font-size:clamp(17px,1.4vw,20px);font-weight:700;letter-spacing:-.038em}
+.page .role p{font-size:13px;line-height:1.58;font-weight:450}
+.page .role-num{font-weight:650}.page .access-note{line-height:1.5}
+.page footer{min-height:88px;padding-block:18px}
+.page .theme-option span{font-family:inherit;font-weight:650}
+@media(min-width:1100px) and (min-height:700px){.page .shell{min-height:100dvh;display:flex;flex-direction:column}.page main{flex:1;display:flex;flex-direction:column;justify-content:center}}
+@media(min-width:821px) and (max-height:780px){.page main{padding-block:24px 28px}.page .hero{margin-bottom:25px}.page .photo{height:clamp(180px,28vh,245px)}.page .role{min-height:150px}.page .intro h2{font-size:clamp(32px,3.4vw,46px)}.page footer{min-height:70px;padding-block:10px}}
+@media(min-width:701px) and (max-width:1024px){.page .shell{padding-inline:clamp(24px,3vw,36px)}.page .hero{grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:22px}.page .intro h2{font-size:clamp(32px,4vw,43px)}.page .photo{height:clamp(220px,28vw,290px)}.page .roles{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.page .role{min-height:180px;padding:18px}.page .role h3{font-size:17px}.page .role p{font-size:12px}}
+@media(max-width:700px){.page .shell{padding-inline:clamp(17px,4vw,26px)}.page .hero{grid-template-columns:1fr;gap:22px;margin-bottom:30px}.page .intro h2{font-size:clamp(32px,7.8vw,42px)}.page .photo{height:clamp(185px,34vw,270px)}.page .roles{grid-template-columns:1fr}.page .role{min-height:145px;padding:20px}.page main{padding-block:30px 42px}}
+@media(max-width:380px){.page .brand h1,.page .brand .brand-title{font-size:15px}.page .intro h2{font-size:31px}}
+/* Theme is driven by an explicit root attribute, including Safari/iPadOS. */
+:global(html[data-theme="dark"]) .page{color-scheme:dark}
+:global(html[data-theme="dark"]) .page{background:#101820;color:#F5F7FA}
+:global(html[data-theme="dark"]) .page header,:global(html[data-theme="dark"]) .page footer{border-color:#354553}
+:global(html[data-theme="dark"]) .page .brand p,:global(html[data-theme="dark"]) .page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)),:global(html[data-theme="dark"]) .page footer p,:global(html[data-theme="dark"]) .page .access-note{color:#C1CBD5}
+:global(html[data-theme="dark"]) .page .eyebrow,:global(html[data-theme="dark"]) .page .notice{color:#9DBBFF}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(1){background:#204991;border-color:#4265A4;color:white}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(1) p,:global(html[data-theme="dark"]) .page .roles .role:nth-child(1) .role-num{color:#E1E9FA}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(2){background:#234238;border-color:#416757;color:#F1F8F3}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(2) p,:global(html[data-theme="dark"]) .page .roles .role:nth-child(2) .role-num{color:#D0E7D8}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(2) .arrow{color:#F1F8F3}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(3){background:#4B392A;border-color:#705742;color:#FFF2E3}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(3) p,:global(html[data-theme="dark"]) .page .roles .role:nth-child(3) .role-num{color:#F0D9C1}
+:global(html[data-theme="dark"]) .page .roles .role:nth-child(3) .arrow{color:#FFF2E3}
+:global(html[data-theme="dark"]) .page .bank-logo,:global(html[data-theme="dark"]) .page footer img{background:#fff;border-radius:8px;padding:5px}
+:global(html[data-theme="dark"]) .page .theme-switcher{background:#263744;border-color:#40505D}
+:global(html[data-theme="dark"]) .page .theme-option span{color:#CBD5DF}
+:global(html[data-theme="dark"]) .page .theme-option input:checked+span{background:#435568;color:white}
+:global(html[data-theme="light"]) .page{color-scheme:light}
+:global(html[data-theme="light"]) .page{background:#F7F9FF;color:#152B59}
+:global(html[data-theme="light"]) .page header,:global(html[data-theme="light"]) .page footer{border-color:#DEE5F3}
+:global(html[data-theme="light"]) .page .brand p,:global(html[data-theme="light"]) .page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)),:global(html[data-theme="light"]) .page footer p,:global(html[data-theme="light"]) .page .access-note{color:#64718C}
+:global(html[data-theme="light"]) .page .eyebrow,:global(html[data-theme="light"]) .page .notice{color:#153FAF}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(1){background:#1D438E;color:white;border-color:#1D438E}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(1) p,:global(html[data-theme="light"]) .page .roles .role:nth-child(1) .role-num{color:#E1E9FA}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(2){background:#E7F2EB;color:#204C3A;border-color:#D4E8DA}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(2) p,:global(html[data-theme="light"]) .page .roles .role:nth-child(2) .role-num{color:#496A59}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(2) .arrow{color:#204C3A}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(3){background:#F7EBDD;color:#684A2D;border-color:#EADBC8}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(3) p,:global(html[data-theme="light"]) .page .roles .role:nth-child(3) .role-num{color:#80664C}
+:global(html[data-theme="light"]) .page .roles .role:nth-child(3) .arrow{color:#684A2D}
+:global(html[data-theme="light"]) .page .theme-switcher{background:#EEF1F5;border-color:#D6DFED}
+:global(html[data-theme="light"]) .page .theme-option span{color:#52606D}
+:global(html[data-theme="light"]) .page .theme-option input:checked+span{background:white;color:#152B59}
+:global(html[data-theme="light"]) .page .bank-logo,:global(html[data-theme="light"]) .page footer img{background:transparent;padding:0}
+
+/* V32 — approved typography, no layout or image changes */
+.page{--raf-heading:'Space Grotesk','Arial',sans-serif;--raf-body:'Plus Jakarta Sans',Arial,sans-serif}
+.page,.page button,.page input,.page select{font-family:var(--raf-body)!important}
+.page .brand h1,.page .brand .brand-title,.page .intro h2,.page .role h3,.page .section-label{font-family:var(--raf-heading)!important}
+.page .intro h2{font-weight:700;letter-spacing:-.048em;line-height:1.1}
+.page .brand h1,.page .brand .brand-title{font-weight:700;letter-spacing:-.04em}
+.page .role h3{font-weight:700;letter-spacing:-.032em}
+.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)){font-size:15px;line-height:1.72;letter-spacing:-.008em}
+.page .role p{font-size:13.5px;line-height:1.6}
+.page .role-num,.page .eyebrow,.page .section-label{font-weight:700;letter-spacing:.065em}
+@media(min-width:1100px) and (max-height:850px){.page main{padding-top:30px;padding-bottom:35px}.page .hero{margin-bottom:27px}.page .photo{height:235px}.page .role{min-height:166px;padding:19px}.page .intro h2{font-size:clamp(33px,3.5vw,45px)}.page footer{min-height:70px;padding:12px 0}}
+@media(min-width:701px) and (max-height:850px){.page main{padding-top:25px;padding-bottom:28px}.page .hero{margin-bottom:24px}.page .role{min-height:165px}.page .photo{height:220px}}
+
+
+.page{--raf-heading:'Space Grotesk',sans-serif;--raf-body:'Plus Jakarta Sans',sans-serif}
+.page .brand h1,.page .brand .brand-title,.page .intro h2,.page .role h3,.page .section-label{font-family:var(--raf-heading)!important}
+.page,.page button,.page input,.page select,.page .theme-option span{font-family:var(--raf-body)!important}
+.page .intro h2{font-weight:700;letter-spacing:-.058em;line-height:1.08;text-wrap:balance}
+.page .brand h1,.page .brand .brand-title{font-weight:700;letter-spacing:-.052em}
+.page .role h3{font-weight:700;letter-spacing:-.045em}
+.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)){font-weight:450;line-height:1.78}
+.page .role p{font-weight:450;line-height:1.65}
+.page .role-num,.page .section-label,.page .eyebrow{font-weight:700}
+@media(min-width:1100px) and (max-height:850px){.page main{padding-top:30px;padding-bottom:35px}.page .hero{margin-bottom:27px}.page .photo{height:235px}.page .role{min-height:166px;padding:19px}}
+@media(max-width:700px){.page .intro h2{letter-spacing:-.045em}.page .role h3{font-size:19px}}
+
+/* PiggyVest-inspired styling; NOT verified as PiggyVest's exact font. */
+.page{--raf-display:var(--font-nunito-sans),ui-rounded,system-ui,sans-serif;--raf-body:var(--font-dm-sans),system-ui,sans-serif}
+.page{font-family:var(--raf-body)!important}
+.page .brand h1,.page .brand .brand-title,.page .intro h2,.page .role h3,.page .section-label{font-family:var(--raf-display)!important}
+.page .brand h1,.page .brand .brand-title{font-weight:900!important;letter-spacing:-.065em!important}
+.page .intro h2{font-weight:900!important;letter-spacing:-.055em!important;line-height:1.095!important;text-wrap:balance}
+.page .role h3{font-weight:850!important;letter-spacing:-.045em!important;font-size:clamp(19px,1.6vw,22px)!important}
+.page .intro>p:not(.eyebrow):not(:global(.auth-eyebrow)):not(:global(.auth-feedback)),.page .role p{font-family:var(--raf-body)!important;font-weight:450;letter-spacing:-.012em}
+.page .eyebrow,.page .section-label,.page .role-num,.page .theme-option span{font-family:var(--raf-display)!important;font-weight:800!important}
+.page .role{border-radius:16px!important}
+@media(min-width:1101px) and (min-height:720px){.page main{padding-top:clamp(30px,4vh,56px)!important;padding-bottom:clamp(25px,4vh,60px)!important}.page .hero{margin-bottom:clamp(26px,4vh,50px)!important}.page .photo{height:clamp(230px,32vh,305px)!important}.page .role{min-height:clamp(165px,22vh,218px)!important}}
+@media(max-width:700px){.page .intro h2{font-size:clamp(30px,7.5vw,40px)!important}.page .role h3{font-size:20px!important}}
+
+
+/* Keep the Alternative Bank mark anchored to the far right of the header. */
+.page header .header-actions{margin-left:auto;width:auto;display:flex;justify-content:flex-end;flex-direction:row;flex-shrink:0}
+.page header .header-actions .bank-logo{display:block;object-position:right center;margin-left:auto}
+/* Low-profile appearance control in the footer, not the hero/header. */
+.page footer{position:relative;flex-wrap:wrap}
+.page .appearance-menu{position:relative;margin-left:auto;align-self:center;font-family:inherit;z-index:5}
+.page .appearance-menu summary{list-style:none;display:inline-flex;align-items:center;gap:6px;padding:7px 9px;border-radius:9px;cursor:pointer;font-size:11px;font-weight:600;color:#78849a;opacity:.78;transition:opacity .15s,background .15s}
+.page .appearance-menu summary::-webkit-details-marker{display:none}
+.page .appearance-menu summary:hover,.page .appearance-menu[open] summary{opacity:1;background:rgba(120,132,154,.10)}
+.page .appearance-menu summary:focus-visible{outline:2px solid #6686cc;outline-offset:3px}
+.page .appearance-menu summary span:first-child{font-size:15px}
+.page .appearance-panel{position:absolute;right:0;bottom:calc(100% + 9px);padding:13px;background:#fff;border:1px solid #dee5f3;border-radius:13px;box-shadow:0 12px 35px rgba(20,40,70,.16);min-width:228px}
+.page .appearance-caption{font-size:10px;letter-spacing:.09em;font-weight:750;color:#64718c;margin:0 0 10px}
+.page .appearance-panel .theme-switcher{display:flex;flex-wrap:nowrap;width:max-content;max-width:100%;gap:2px}
+.page .appearance-panel .theme-option span{font-size:11px;padding:8px 9px}
+:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .appearance-panel{background:#1b2935;border-color:#40505d}
+:global(html[data-theme-preference="dark"]:not(#raf-has)) .page .appearance-menu summary{color:#c2cedc}
+@media(prefers-color-scheme:dark){:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .appearance-panel{background:#1b2935;border-color:#40505d}:global(html[data-theme-preference="system"][data-theme="dark"]:not(#raf-has)) .page .appearance-menu summary{color:#c2cedc}}
+@media(max-width:740px){.page header{flex-wrap:nowrap!important;min-height:82px!important;gap:10px!important}.page header .header-actions{width:auto!important;flex-direction:row!important;justify-content:flex-end!important}.page header .header-actions .bank-logo{width:clamp(85px,22vw,125px);height:52px}.page footer .appearance-menu{margin-left:0}.page footer .appearance-panel{right:auto;left:0}}
+@media(max-width:380px){.page header .header-actions .bank-logo{width:82px}}
+
+
+/* V39 corrections (found in browser verification; everything else above is V39 verbatim):
+   1. The footer "Appearance" control was #78849A at 78% opacity on #F7F9FF (below 3.6:1, WCAG AA needs 4.5:1).
+      It now uses V39's own secondary text colour at full opacity (4.9:1). Dark mode already passed.
+   2. (in the selectors above) System-mode switcher styling applies only when System resolves to dark. */
+:global(html[data-theme="light"]) .page .appearance-menu summary, .page .appearance-menu summary { color: #64718c; opacity: 1; }
+:global(html[data-theme="dark"]) .page .appearance-menu summary { color: #c2cedc; }

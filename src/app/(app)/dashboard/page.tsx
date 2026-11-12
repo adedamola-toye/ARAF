@@ -87,37 +87,45 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       <div className="grid-2">
         <section className="card" aria-labelledby="h-mix">
           <h2 id="h-mix">Applications by product, profile and channel</h2>
-          <table className="data small">
-            <tbody>
-              {[...byProduct].map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td className="num">{v}</td></tr>)}
-              {[...byProfile].map(([k, v]) => <tr key={k}><th scope="row">{PROFILE_LABELS[k as CustomerProfile] ?? k}</th><td className="num">{v}</td></tr>)}
-              {[...byChannel].map(([k, v]) => <tr key={k}><th scope="row">via {ROLE_LABELS[k as Role] ?? k}</th><td className="num">{v}</td></tr>)}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data small">
+              <tbody>
+                {[...byProduct].map(([k, v]) => <tr key={k}><th scope="row">{k}</th><td className="num">{v}</td></tr>)}
+                {[...byProfile].map(([k, v]) => <tr key={k}><th scope="row">{PROFILE_LABELS[k as CustomerProfile] ?? k}</th><td className="num">{v}</td></tr>)}
+                {[...byChannel].map(([k, v]) => <tr key={k}><th scope="row">via {ROLE_LABELS[k as Role] ?? k}</th><td className="num">{v}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
         </section>
         <section className="card" aria-labelledby="h-stage">
           <h2 id="h-stage">By stage</h2>
-          <table className="data small">
-            <tbody>{[...byStage].map(([k, v]) => <tr key={k}><th scope="row">{STAGE_LABELS[k as Stage] ?? k}</th><td className="num">{v}</td></tr>)}</tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data small">
+              <tbody>{[...byStage].map(([k, v]) => <tr key={k}><th scope="row">{STAGE_LABELS[k as Stage] ?? k}</th><td className="num">{v}</td></tr>)}</tbody>
+            </table>
+          </div>
         </section>
         <section className="card" aria-labelledby="h-tat">
           <h2 id="h-tat">Stage turnaround (completed steps)</h2>
-          <table className="data small">
-            <thead><tr><th>Stage</th><th className="right">Steps</th><th className="right">Average h</th><th className="right">Longest h</th></tr></thead>
-            <tbody>{d.turnaround.map((t) => <tr key={t.stage}><td>{t.label}</td><td className="num">{t.n}</td><td className="num">{t.avg_hours}</td><td className="num">{t.max_hours}</td></tr>)}</tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data small">
+              <thead><tr><th>Stage</th><th className="right">Steps</th><th className="right">Average h</th><th className="right">Longest h</th></tr></thead>
+              <tbody>{d.turnaround.map((t) => <tr key={t.stage}><td>{t.label}</td><td className="num">{t.n}</td><td className="num">{t.avg_hours}</td><td className="num">{t.max_hours}</td></tr>)}</tbody>
+            </table>
+          </div>
           <p className="small muted">Open items: {d.ageing.under1d} under 1 day · {d.ageing.d1to3} 1–3 days · {d.ageing.d3to7} 3–7 days · {d.ageing.over7d} over 7 days · {d.ageing.unassigned} unassigned.</p>
         </section>
         <section className="card" aria-labelledby="h-dsr">
           <h2 id="h-dsr">DSR failures and exceptions</h2>
-          <table className="data small">
-            <tbody>
-              <tr><th scope="row">Preliminary DSR / eligibility failures</th><td className="num">{d.dsr.fail_prelim}</td></tr>
-              <tr><th scope="row">Final assessment failures</th><td className="num">{d.dsr.fail_final}</td></tr>
-              {d.exceptionsByType.map((e) => <tr key={`${e.type}${e.status}`}><th scope="row">{e.type} exceptions {e.status.toLowerCase()}</th><td className="num">{e.n}</td></tr>)}
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data small">
+              <tbody>
+                <tr><th scope="row">Preliminary DSR / eligibility failures</th><td className="num">{d.dsr.fail_prelim}</td></tr>
+                <tr><th scope="row">Final assessment failures</th><td className="num">{d.dsr.fail_final}</td></tr>
+                {d.exceptionsByType.map((e) => <tr key={`${e.type}${e.status}`}><th scope="row">{e.type} exceptions {e.status.toLowerCase()}</th><td className="num">{e.n}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
         </section>
         <section className="card" aria-labelledby="h-reasons">
           <h2 id="h-reasons">Decline and correction reasons</h2>
@@ -129,17 +137,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </section>
         <section className="card" aria-labelledby="h-ops">
           <h2 id="h-ops">Outstanding items and operations</h2>
-          <table className="data small">
-            <tbody>
-              <tr><th scope="row">Awaiting initiator correction</th><td className="num">{d.outstanding.corrections}</td></tr>
-              <tr><th scope="row">Documents rejected by reviewers</th><td className="num">{d.outstanding.rejected_docs}</td></tr>
-              <tr><th scope="row">Payments not yet confirmed or reconciled</th><td className="num">{d.outstanding.payments_uncertain}</td></tr>
-              <tr><th scope="row">Open fulfilment tasks</th><td className="num">{d.outstanding.fulfilment_open}</td></tr>
-              <tr><th scope="row">Suspended</th><td className="num">{d.outstanding.suspended}</td></tr>
-              {d.paymentStatus.map((p) => <tr key={`${p.payment_status}${p.fulfilment_status}`}><th scope="row">Payment {p.payment_status.toLowerCase()} · fulfilment {p.fulfilment_status.toLowerCase().replace("_", " ")}</th><td className="num">{p.n}</td></tr>)}
-              <tr><th scope="row">Vendor Financing POS deployment</th><td className="num">{d.pos.map((p) => `${p.status.toLowerCase()} ${p.n}`).join(" · ") || "—"}</td></tr>
-            </tbody>
-          </table>
+          <div className="table-scroll">
+            <table className="data small">
+              <tbody>
+                <tr><th scope="row">Awaiting initiator correction</th><td className="num">{d.outstanding.corrections}</td></tr>
+                <tr><th scope="row">Documents rejected by reviewers</th><td className="num">{d.outstanding.rejected_docs}</td></tr>
+                <tr><th scope="row">Payments not yet confirmed or reconciled</th><td className="num">{d.outstanding.payments_uncertain}</td></tr>
+                <tr><th scope="row">Open fulfilment tasks</th><td className="num">{d.outstanding.fulfilment_open}</td></tr>
+                <tr><th scope="row">Suspended</th><td className="num">{d.outstanding.suspended}</td></tr>
+                {d.paymentStatus.map((p) => <tr key={`${p.payment_status}${p.fulfilment_status}`}><th scope="row">Payment {p.payment_status.toLowerCase()} · fulfilment {p.fulfilment_status.toLowerCase().replace("_", " ")}</th><td className="num">{p.n}</td></tr>)}
+                <tr><th scope="row">Vendor Financing POS deployment</th><td className="num">{d.pos.map((p) => `${p.status.toLowerCase()} ${p.n}`).join(" · ") || "—"}</td></tr>
+              </tbody>
+            </table>
+          </div>
         </section>
         <section className="card" aria-labelledby="h-port">
           <h2 id="h-port">Portfolio</h2>

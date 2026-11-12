@@ -161,6 +161,23 @@ export const config = {
   get workerPollMs() {
     return int("WORKER_POLL_MS", 5000);
   },
+  /**
+   * Microsoft SharePoint (Microsoft Graph, app-only client credentials) for completed staff financing
+   * archives. Disabled unless SHAREPOINT_ENABLED=true and every value below is set. The client secret
+   * is read on the server only and is never sent to the browser.
+   */
+  get sharepoint() {
+    return {
+      enabled: bool("SHAREPOINT_ENABLED", false),
+      tenantId: str("SHAREPOINT_TENANT_ID", ""),
+      clientId: str("SHAREPOINT_CLIENT_ID", ""),
+      clientSecret: str("SHAREPOINT_CLIENT_SECRET", ""),
+      driveId: str("SHAREPOINT_DRIVE_ID", ""),
+      rootFolder: str("SHAREPOINT_ROOT_FOLDER", "ARAF Staff Financing").replace(/^\/+|\/+$/g, ""),
+      authorityHost: str("SHAREPOINT_AUTHORITY_HOST", "https://login.microsoftonline.com").replace(/\/$/, ""),
+      graphBaseUrl: str("SHAREPOINT_GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0").replace(/\/$/, ""),
+    };
+  },
 };
 
 /** Development keys published in .env.example; refused when APP_ENV=production. */

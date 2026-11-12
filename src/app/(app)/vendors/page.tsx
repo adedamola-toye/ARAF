@@ -38,24 +38,26 @@ export default async function Vendors() {
               {canVerify && <StatusToggle kind="vendor" id={v.id} active={v.status === "ACTIVE"} />}
             </div>
             <p className="small muted" style={{ marginTop: 0 }}>{v.email ?? "no email"} · captured by {v.created_by_name ?? "system"}</p>
-            <table className="data small">
-              <thead><tr><th>Bank · account</th><th>Account name</th><th>Status</th><th>Verification</th><th /></tr></thead>
-              <tbody>
-                {accounts.filter((a: { vendor_id: string }) => a.vendor_id === v.id).map((a: { id: string; bank: string; account_number: string; account_name: string; status: string; verification_status: string; verification_note: string | null; verified_by_name: string | null; verified_at: Date | null; created_by: string; created_by_name: string | null; payment_supported: boolean }) => (
-                  <tr key={a.id}>
-                    <td>{a.bank} · <span className="mono">{a.account_number}</span>{a.payment_supported ? "" : <div className="muted">payment route not supported</div>}</td>
-                    <td>{a.account_name}</td>
-                    <td>{a.status.toLowerCase()}{canVerify && <StatusToggle kind="account" id={a.id} active={a.status === "ACTIVE"} />}</td>
-                    <td>
-                      <span className={`badge ${a.verification_status === "VERIFIED" ? "badge-green" : a.verification_status === "FAILED" ? "badge-red" : "badge-warn"}`}>{a.verification_status === "UNAVAILABLE" ? "pending (no name enquiry)" : a.verification_status.toLowerCase()}</span>
-                      {a.verified_by_name && <div className="muted">{a.verified_by_name}, {formatLagos(a.verified_at)}: {a.verification_note}</div>}
-                      <div className="muted">captured by {a.created_by_name ?? "system"}</div>
-                    </td>
-                    <td>{canVerify && a.verification_status !== "VERIFIED" && a.created_by !== session.staffId ? <VerifyAccountForm accountId={a.id} /> : null}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div className="table-scroll">
+              <table className="data small">
+                <thead><tr><th>Bank · account</th><th>Account name</th><th>Status</th><th>Verification</th><th /></tr></thead>
+                <tbody>
+                  {accounts.filter((a: { vendor_id: string }) => a.vendor_id === v.id).map((a: { id: string; bank: string; account_number: string; account_name: string; status: string; verification_status: string; verification_note: string | null; verified_by_name: string | null; verified_at: Date | null; created_by: string; created_by_name: string | null; payment_supported: boolean }) => (
+                    <tr key={a.id}>
+                      <td>{a.bank} · <span className="mono">{a.account_number}</span>{a.payment_supported ? "" : <div className="muted">payment route not supported</div>}</td>
+                      <td>{a.account_name}</td>
+                      <td>{a.status.toLowerCase()}{canVerify && <StatusToggle kind="account" id={a.id} active={a.status === "ACTIVE"} />}</td>
+                      <td>
+                        <span className={`badge ${a.verification_status === "VERIFIED" ? "badge-green" : a.verification_status === "FAILED" ? "badge-red" : "badge-warn"}`}>{a.verification_status === "UNAVAILABLE" ? "pending (no name enquiry)" : a.verification_status.toLowerCase()}</span>
+                        {a.verified_by_name && <div className="muted">{a.verified_by_name}, {formatLagos(a.verified_at)}: {a.verification_note}</div>}
+                        <div className="muted">captured by {a.created_by_name ?? "system"}</div>
+                      </td>
+                      <td>{canVerify && a.verification_status !== "VERIFIED" && a.created_by !== session.staffId ? <VerifyAccountForm accountId={a.id} /> : null}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </section>
         ))}
       </div>

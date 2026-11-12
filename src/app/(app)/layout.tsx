@@ -1,8 +1,8 @@
-import { BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
+import { BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
 import { requireUser } from "../_lib/auth";
-import { currentTheme } from "../_lib/theme";
-import { Footer, Wordmark } from "@/components/Brand";
-import { ThemeToggle } from "@/components/ThemeToggle";
+import { themePreference } from "../_lib/theme";
+import { BankMark, Footer, Wordmark } from "@/components/Brand";
+import { AppearanceOptions } from "@/components/Appearance";
 import { IdleWatcher } from "@/components/IdleWatcher";
 import { MobileNavToggle, NavLink, WorkspaceSelect } from "@/components/NavLink";
 import { ROLE_LABELS, isInitiatorRole, type Role } from "@/server/domain/roles";
@@ -10,12 +10,13 @@ import { config } from "@/server/config";
 import { db } from "@/server/db";
 import { signOutAction, switchWorkspaceAction } from "./shell-actions";
 import { retailScope as retailScopeFor } from "@/server/retail-reports";
+import { viewsFor, staffActionCount } from "@/server/staff/views";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, roles } = await requireUser();
-  const theme = await currentTheme();
+  const theme = await themePreference();
   const ws = session.activeRole as Role | null;
   const queueCount = Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id = $1", [session.staffId])).rows[0].n);
   const isInitiatorWs = isInitiatorRole(ws);
@@ -25,13 +26,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isAdmin = roles.includes("SUPER_ADMIN");
   const canReport = roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN");
   const exceptions = isAdmin ? Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id IS NULL")).rows[0].n) : 0;
+  const staffViews = viewsFor(new Set(roles));
+  const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
+  const myOfferCount = Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n);
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
       <nav className="sidenav" id="sidenav" aria-label="Main navigation">
         <div className="brand-block desktop-only">
           <Wordmark href="/queue" />
-          <span className="wordmark-app">Retail Asset Factory</span>
+          <BankMark />
         </div>
         <div className="nav-section">
           <span className="nav-title">Work</span>
@@ -77,6 +81,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
+        <div className="nav-section">
+          <span className="nav-title">Staff financing</span>
+          <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>
+            My staff financing
+          </NavLink>
+          {staffViews.length > 0 && (
+            <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
+              Staff financing queues
+            </NavLink>
+          )}
+        </div>
         {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
           <div className="nav-section">
             <span className="nav-title">Reporting</span>
@@ -105,6 +120,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
               Products and rules
+            </NavLink>
+            <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
+              Staff financing settings
             </NavLink>
             <NavLink href="/admin/locations" icon={<MapPin {...ic} />}>
               Outlet locations
@@ -150,10 +168,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="mobile-only">
             <Wordmark href="/queue" />
           </span>
-          <span className="small muted desktop-only">{ws ? `${ROLE_LABELS[ws]} workspace` : ""}</span>
+          {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
-          <ThemeToggle initial={theme} />
           <details className="menu">
             <summary aria-label={`Profile menu for ${session.fullName}`}>
               <span className="avatar" aria-hidden="true">
@@ -171,6 +188,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ) : (
                 <span className="badge">{ws ? ROLE_LABELS[ws] : ""}</span>
               )}
+              <div className="menu-section">
+                <p className="menu-caption">Appearance</p>
+                <AppearanceOptions initial={theme} />
+              </div>
               <div className="small muted">Sessions end after 5 minutes of inactivity.</div>
               <form action={signOutAction}>
                 <button className="btn btn-block">Sign out</button>

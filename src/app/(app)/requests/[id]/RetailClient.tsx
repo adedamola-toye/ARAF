@@ -74,7 +74,7 @@ export function FinalAssessmentForm({ applicationId, defaults }: { applicationId
       <input type="hidden" name="turnoverForCap" value={turnover} />
       <div className="grid-2">
         <div className="field">
-          <label htmlFor="fa-income">Verified {defaults.denominatorLabel}</label>
+          <label htmlFor="fa-income">{/^verified\b/i.test(defaults.denominatorLabel) ? defaults.denominatorLabel.replace(/^v/, "V") : `Verified ${defaults.denominatorLabel}`}</label>
           <AmountInput id="fa-income" value={income} onChange={setIncome} />
         </div>
         <div className="field">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AuthScene } from "@/components/Brand";
 import { safeNext } from "@/lib/paths";
 import { ClearSession } from "./ClearSession";
+import { themePreference } from "../_lib/theme";
 
 export const metadata = { title: "Session ended" };
 
@@ -17,7 +18,7 @@ export default async function SessionExpired({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const next = safeNext(sp.next);
   return (
-    <AuthScene>
+    <AuthScene theme={await themePreference()}>
       <ClearSession />
       <h1 className="auth-h1-sm">{sp.reason === "LOGOUT" ? "Signed out" : "Session ended"}</h1>
       <p className="lede" role="alert">{REASONS[sp.reason ?? "IDLE_TIMEOUT"] ?? REASONS.IDLE_TIMEOUT}</p>

@@ -28,6 +28,9 @@ export const ROLES = [
   "PRODUCT_CONFIG_APPROVER",
   "VENDOR_MANAGER",
   "COLLECTIONS_OFFICER",
+  // Staff Personal Financing
+  "PRODUCT_MANAGER",
+  "STAFF_APPLICANT",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -68,6 +71,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   PRODUCT_CONFIG_APPROVER: "Product configuration approver",
   VENDOR_MANAGER: "Vendor register officer",
   COLLECTIONS_OFFICER: "Collections and servicing officer",
+  PRODUCT_MANAGER: "Product Manager (staff financing)",
+  STAFF_APPLICANT: "Staff member (personal financing)",
 };
 
 /** Roles whose holders review retail cases across the organisation (dashboards and case visibility). */
