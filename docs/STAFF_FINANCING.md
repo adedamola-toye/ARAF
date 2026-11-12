@@ -42,7 +42,7 @@ Staff member goes to `/staff-request`), Offer templates (now also lists the staf
 | `staff_financing_settings` | Versioned, append-only: deduction rate (v1: 2%), optional min/max amount, tenor options, documents required at submission |
 | `staff_requests` | One row per request: applicant snapshot, figures (gross, rate, deduction, net), tenor, acknowledgements, review assignments, approval and frozen `approved_terms` + SHA-256, offer issue/deadline, signed offer, disbursement record, documentation status and retry state |
 | `staff_request_documents` | Private object storage keys (no personal data in keys), scan status, category, uploader |
-| `staff_request_reviews` | Append-only decisions: stage, action, checklist (PM), recommendation, comments, designated Unit Head, status change |
+| `staff_request_reviews` | Append-only decisions: stage, action, checklist (PM), recommendation, comments, the Unit Head the request was routed to, status change |
 | `staff_request_events` | Append-only status history: action, previous/new status, actor, role, queue, outcome, comments, document references |
 | `staff_request_assignments` | Disbursement assignment history (random or admin reassignment, eligible count, reason); one active assignment per request |
 | `staff_request_archives` | The ZIP: filename, storage key, SHA-256, size, manifest |
@@ -76,9 +76,9 @@ and an optimistic lock inside a database transaction.
 | Action | Applicant | Product Manager | Unit Head | Divisional Head | Disbursement Officer | Legal / Shariah | Super Admin |
 |---|---|---|---|---|---|---|---|
 | Create, edit, submit own request | ✓ | | | | | | |
-| View request | own | submitted requests | designated / decided | after Unit Head approval | assigned | after handover | all |
+| View request | own | submitted requests | the route's Unit Head | after Unit Head approval | assigned | after handover | all |
 | Start review, checklist, forward / return / decline | | ✓ (not own) | | | | | release only |
-| Approve and forward / return / decline | | | designated only | | | | |
+| Approve and forward / return / decline | | | configured route Unit Head only | | | | |
 | Final approval / return / decline; amendment | | | | ✓ (not own) | | | |
 | Sign and return offer | ✓ | | | | | | |
 | Review documents, return, process, complete disbursement | | | | | assigned only | | |
@@ -91,6 +91,13 @@ assignment excludes the applicant and earlier approvers. Refused attempts are re
 New roles: **Product Manager (staff financing)** and **Staff member (personal financing)**; employees with no
 other role need the latter to sign in. Existing roles reused: Unit Head, Divisional Head, Disbursement
 Officer 1/2, Legal and Shariah reviewers.
+
+Routing positions: the staff route has **one Unit Head**, set by a Super Admin in Staff financing settings
+(`unit_head_staff_id`, versioned and audited; only active Unit Head role holders can be chosen). The Product
+Manager does not choose; forwarding is blocked (and Super Admins alerted) until it is set. Requests waiting
+for the Unit Head follow whoever is configured now. The **Divisional Head** role has a single holder in the
+whole system (granting it to a second person is refused until the first is revoked); every final approval
+goes to that person's queue.
 
 ## 6. Status transitions
 
@@ -173,7 +180,7 @@ If nobody holds a reviewer role, Super Admins are alerted.
 
 Applicant: submitted, returned, declined, approved, offer issued, deadline reminder (4 hours before),
 expired, signed offer received, signed offer returned, disbursed. Queues: Product Managers on submission,
-the designated Unit Head, Divisional Heads, the assigned Disbursement Officer, Legal and Shariah. Super
+the route's Unit Head, the Divisional Head, the assigned Disbursement Officer, Legal and Shariah. Super
 Admins: blocked offers, no eligible officer, SharePoint failures, missing reviewers. Emails carry the
 reference, the step and a sign-in link; never amounts or account numbers.
 
@@ -208,9 +215,9 @@ console errors or WCAG AA contrast failures.
 - **Payroll / core banking / identity**: not connected; staff ID, phone and salary account are entered by the
   applicant and verified manually by the Product Manager.
 - **Provisioning**: every applicant must be provisioned (Users & roles) with at least the Staff member role.
-- **Authority assumptions to confirm**: the Product Manager may decline (as specified); the Unit Head is chosen
-  by the Product Manager from Unit Head role holders (the one whose unit matches is suggested); any Divisional
-  Head may give final approval; Disbursement Officer 1 and 2 roles are both eligible; a Divisional Head may
+- **Authority assumptions to confirm**: the Product Manager may decline (as specified); one Unit Head is
+  configured for the staff route and receives every forwarded request; the single Divisional Head gives every
+  final approval; Disbursement Officer 1 and 2 roles are both eligible; a Divisional Head may
   withdraw an approval for amendment before disbursement starts; a signed offer returned by the Disbursement
   Officer keeps the original 24-hour deadline.
 - **Settings**: amount limits, tenor options and mandatory documents are not specified and are empty until a

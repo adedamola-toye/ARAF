@@ -8,9 +8,8 @@ import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
 import { formatLagos, lagosDate } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
-import { viewableRequest, currentSettings, settingsById } from "@/server/staff/core";
+import { viewableRequest, currentSettings, settingsById, routeUnitHead, routeDivisionalHead } from "@/server/staff/core";
 import { requestDetail, staffDocLink } from "@/server/staff/views";
-import { eligibleUnitHeads } from "@/server/staff/requests";
 import { eligibleDisbursementOfficers, disbursementControls } from "@/server/staff/disbursement";
 import { activeStaffTemplate } from "@/server/staff/offer";
 import { sharePointConfigured } from "@/server/staff/sharepoint";
@@ -308,12 +307,12 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           </section>,
         );
       } else if (status === "UNDER_PM_REVIEW" && req.pm_reviewer_id === me) {
-        const heads = await eligibleUnitHeads(db, req);
+        const uhPos = await routeUnitHead(db, req);
         panels.push(
           <section key="pm" className="card action-panel stack">
             <p className="eyebrow">Your action · Product Manager</p>
             <h2 style={{ margin: 0 }}>Review and decide</h2>
-            <PmReviewForm id={req.id} lockVersion={lockVersion} netLabel={net} unitHeads={heads.map((h) => ({ id: h.id, label: `${h.full_name}${h.business_unit ? ` (${h.business_unit})` : ""}`, suggested: h.matchesUnit }))} />
+            <PmReviewForm id={req.id} lockVersion={lockVersion} netLabel={net} unitHead={{ name: uhPos.name, problem: uhPos.problem }} />
             <SimpleAction action={releasePmAction} hidden={{ id: req.id }} label="Release to queue" className="btn btn-ghost btn-sm" />
           </section>,
         );
@@ -321,22 +320,24 @@ export default async function StaffRequestPage({ params, searchParams }: { param
         panels.push(<InfoCard key="pm-o" title="Under review" text={`Being reviewed by ${d.nameOf(req.pm_reviewer_id)} since ${formatLagos(req.pm_claimed_at)}.`} />);
       }
     }
-    if (!isApplicant && as.has("UNIT_HEAD") && status === "UNDER_UNIT_HEAD_REVIEW" && req.unit_head_id === me) {
+    const uhNow = status === "UNDER_UNIT_HEAD_REVIEW" ? await routeUnitHead(db, req) : null;
+    if (!isApplicant && as.has("UNIT_HEAD") && uhNow?.id === me) {
       panels.push(
         <section key="uh" className="card action-panel stack">
           <p className="eyebrow">Your action · Unit Head</p>
           <h2 style={{ margin: 0 }}>Decide on this request</h2>
-          <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="UH" netLabel={net} />
+          {uhNow.problem ? <p className="small err" style={{ margin: 0 }}>{uhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="UH" netLabel={net} />}
         </section>,
       );
     }
+    const dhNow = status === "UNDER_DIVISIONAL_HEAD_REVIEW" ? await routeDivisionalHead(db, req) : null;
     if (!isApplicant && as.has("DIVISIONAL_HEAD")) {
       if (status === "UNDER_DIVISIONAL_HEAD_REVIEW") {
         panels.push(
           <section key="dh" className="card action-panel stack">
             <p className="eyebrow">Your action · Divisional Head (final approval)</p>
             <h2 style={{ margin: 0 }}>Final decision</h2>
-            <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="DH" netLabel={net} />
+            {dhNow?.problem ? <p className="small err" style={{ margin: 0 }}>{dhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="DH" netLabel={net} />}
           </section>,
         );
       } else if (["APPROVED", "AWAITING_SIGNED_OFFER", "ASSIGNED_FOR_DISBURSEMENT"].includes(status)) {
@@ -451,6 +452,8 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           </div>,
         );
       }
+      if (status === "UNDER_UNIT_HEAD_REVIEW" && uhNow?.problem) ops.push(<p key="uhp" className="small err" style={{ margin: 0 }}>{uhNow.problem} <Link href="/admin/staff-financing">Staff financing settings</Link></p>);
+      if (status === "UNDER_DIVISIONAL_HEAD_REVIEW" && dhNow?.problem) ops.push(<p key="dhp" className="small err" style={{ margin: 0 }}>{dhNow.problem}</p>);
       if (status === "UNDER_PM_REVIEW") ops.push(<SimpleAction key="rel" action={releasePmAction} hidden={{ id: req.id }} label="Release Product Manager review" className="btn btn-sm" />);
       if (ops.length) {
         panels.push(

@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
-import { roleHolders, DISBURSEMENT_ROLES } from "@/server/staff/core";
+import { roleHolders, routeUnitHead, routeDivisionalHead, DISBURSEMENT_ROLES } from "@/server/staff/core";
 import { activeStaffTemplate, STAFF_OFFER_PLACEHOLDERS, REQUIRED_STAFF_OFFER_PLACEHOLDERS } from "@/server/staff/offer";
 import { documentLibrary } from "@/server/staff/sharepoint";
 import { config } from "@/server/config";
@@ -29,6 +29,9 @@ export default async function StaffFinancingAdmin() {
     ["Shariah reviewer", ["SHARIAH_REVIEWER"]],
   ];
   const counts = await Promise.all(coverage.map(async ([, r]) => (await roleHolders(db, r)).length));
+  const uh = await routeUnitHead(db);
+  const dh = await routeDivisionalHead(db);
+  const unitHeads = await roleHolders(db, ["UNIT_HEAD"]);
   return (
     <>
       <PageHeader
@@ -43,6 +46,8 @@ export default async function StaffFinancingAdmin() {
           <h2 id="set-h" style={{ margin: 0 }}>Settings in force · version {cur.version}</h2>
           <table className="kv">
             <tbody>
+              <tr><th>Unit Head (staff route)</th><td>{uh.problem ? <span className="err">{uh.problem}</span> : <strong>{uh.name}</strong>}</td></tr>
+              <tr><th>Divisional Head (only one in the system)</th><td>{dh.problem ? <span className="err">{dh.problem}</span> : <><strong>{dh.name}</strong> <span className="small muted">· every final approval goes to this queue</span></>}</td></tr>
               <tr><th>Deduction</th><td>{bpsLabel(cur.deduction_rate_bps)} of the gross amount</td></tr>
               <tr><th>Amount limits</th><td>{cur.min_amount_kobo ? formatNairaKobo(cur.min_amount_kobo) : "no minimum"} – {cur.max_amount_kobo ? formatNairaKobo(cur.max_amount_kobo) : "no maximum"}</td></tr>
               <tr><th>Tenor options</th><td>{cur.tenor_options_months.length ? cur.tenor_options_months.map((t: number) => `${t} months`).join(", ") : "Not collected"}</td></tr>
@@ -52,7 +57,7 @@ export default async function StaffFinancingAdmin() {
           </table>
           <details>
             <summary className="btn btn-sm">Save a new version</summary>
-            <StaffSettingsForm current={{ deductionPercent: (cur.deduction_rate_bps / 100).toString(), minAmount: cur.min_amount_kobo ? String(Number(cur.min_amount_kobo) / 100) : "", maxAmount: cur.max_amount_kobo ? String(Number(cur.max_amount_kobo) / 100) : "", tenorOptions: cur.tenor_options_months.join(", "), requiredDocuments: cur.required_document_types }} categories={APPLICANT_SUPPORTING_CATEGORIES.map((c) => ({ code: c, label: STAFF_DOC_CATEGORIES[c] }))} />
+            <StaffSettingsForm current={{ deductionPercent: (cur.deduction_rate_bps / 100).toString(), minAmount: cur.min_amount_kobo ? String(Number(cur.min_amount_kobo) / 100) : "", maxAmount: cur.max_amount_kobo ? String(Number(cur.max_amount_kobo) / 100) : "", tenorOptions: cur.tenor_options_months.join(", "), requiredDocuments: cur.required_document_types, unitHeadId: cur.unit_head_staff_id ?? "" }} unitHeads={unitHeads.map((u) => ({ id: u.id, label: u.full_name }))} categories={APPLICANT_SUPPORTING_CATEGORIES.map((c) => ({ code: c, label: STAFF_DOC_CATEGORIES[c] }))} />
           </details>
           <details>
             <summary className="small">History</summary>

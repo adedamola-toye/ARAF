@@ -81,7 +81,7 @@ export const RETAIL_ORG_VIEW_ROLES: readonly Role[] = ["HEAD_OF_RETAIL_SALES", "
 export const TEAM_SCOPED_ROLES: readonly Role[] = ["RM", "TEAM_LEAD", "DELIGHT_OFFICER"];
 
 /** Positions that may be held by at most one active person at a time. */
-export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"];
+export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH", "DIVISIONAL_HEAD"];
 
 /** Nigeria's 36 states plus the Federal Capital Territory. */
 export const REGIONS = [

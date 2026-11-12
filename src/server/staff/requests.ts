@@ -24,8 +24,10 @@ import {
   notifyRole,
   notifyStaff,
   requireActor,
-  roleHolders,
   settingsById,
+  routeUnitHead,
+  routeDivisionalHead,
+  alertOperations,
   transition,
   recordEvent,
   type StaffRequestRow,
@@ -212,7 +214,10 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
       expectStatus(req, ["DRAFT", "RETURNED_FOR_CORRECTION"], "Submission");
       checkLock(req, opts.lockVersion);
       const settings = await settingsById(tx, req.settings_id);
-      if ((await currentSettings(tx)).id !== settings.id) throw conflict("The staff financing settings changed since you last saved. Save the form again to see the updated figures, then submit.");
+      // Only a change that affects the figures or the submission rules requires a re-save.
+      const cur = await currentSettings(tx);
+      const terms = (x: typeof cur) => JSON.stringify([x.deduction_rate_bps, x.min_amount_kobo, x.max_amount_kobo, x.tenor_options_months, x.required_document_types]);
+      if (cur.id !== settings.id && terms(cur) !== terms(settings)) throw conflict("The staff financing settings changed since you last saved. Save the form again to see the updated figures, then submit.");
       const problems = await submissionProblems(tx, req);
       if (Object.keys(problems).length) throw invalid("Complete the highlighted items before submitting.", problems);
       const f = computeStaffFinancing(Number(req.gross_kobo), settings.deduction_rate_bps);
@@ -276,14 +281,6 @@ export async function releasePmReview(ctx: Ctx, id: string) {
   );
 }
 
-/** Unit Heads the Product Manager may designate (excludes the applicant and the reviewing PM). */
-export async function eligibleUnitHeads(q: Db, req: StaffRequestRow) {
-  const exclude = new Set([req.applicant_id, req.pm_reviewer_id].filter(Boolean));
-  const all = (await roleHolders(q, ["UNIT_HEAD"])).filter((h) => !exclude.has(h.id));
-  const unit = (req.unit ?? "").trim().toLowerCase();
-  return all.map((h) => ({ ...h, matchesUnit: !!unit && (h.business_unit ?? "").trim().toLowerCase() === unit }));
-}
-
 export interface PmChecklist {
   accountVerified: boolean;
   salaryHistoryReviewed: boolean;
@@ -298,7 +295,6 @@ export interface PmDecisionInput {
   monthlyRepayment?: string;
   recommendation?: string;
   comments?: string;
-  unitHeadId?: string;
   confirmed?: boolean;
   lockVersion?: number | null;
 }
@@ -337,9 +333,12 @@ export async function pmDecision(ctx: Ctx, id: string, input: PmDecisionInput) {
         if (missing.length) throw gate(`Forwarding is blocked until every check is confirmed: ${missing.join("; ")}.`);
         if (!input.confirmed) throw invalid("Confirm that you want to forward this request to the Unit Head.", { confirmed: "Confirmation required." });
         if (!recommendation) throw invalid("Enter your recommendation for the Unit Head.", { recommendation: "Recommendation required." });
-        const heads = await eligibleUnitHeads(tx, req);
-        const uh = heads.find((h) => h.id === input.unitHeadId);
-        if (!uh) throw invalid("Choose the designated Unit Head.", { unitHeadId: "Choose an eligible Unit Head." });
+        // The staff route has one configured Unit Head; the Product Manager does not choose.
+        const uh = await routeUnitHead(tx, req);
+        if (uh.problem || !uh.id) {
+          await alertOperations(tx, ctx, req, "NO_ROUTE_UNIT_HEAD", "Staff financing route has no usable Unit Head", [`${req.ref} cannot be forwarded: ${uh.problem}`]);
+          throw gate(`Forwarding is blocked: ${uh.problem}`);
+        }
         designated = uh.id;
         set.unit_head_id = uh.id;
         to = "UNDER_UNIT_HEAD_REVIEW";
@@ -403,14 +402,18 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       const req = await lockRequest(tx, id);
       expectStatus(req, ["UNDER_UNIT_HEAD_REVIEW"], "The Unit Head decision");
       checkLock(req, input.lockVersion);
-      if (req.unit_head_id !== ctx.actor?.staffId) throw forbidden("Only the designated Unit Head can decide this request.");
-      await requireActor(tx, ctx, req, "UNIT_HEAD", { allowSelfIn: [req.unit_head_id] });
+      // Pending requests follow the Unit Head configured for the route now.
+      const uh = await routeUnitHead(tx, req);
+      if (uh.id !== ctx.actor?.staffId) throw forbidden("Only the Unit Head configured for the staff financing route can decide this request.");
+      if (uh.problem) throw gate(uh.problem);
+      await requireActor(tx, ctx, req, "UNIT_HEAD", { allowSelfIn: [req.unit_head_id, uh.id] });
       const comments = (input.comments ?? "").trim();
       let to: StaffStatus;
       let set: Record<string, unknown> = {};
       if (input.action === "APPROVE") {
         if (!input.confirmed) throw invalid("Confirm that you approve and forward the request to the Divisional Head.", { confirmed: "Confirmation required." });
         to = "UNDER_DIVISIONAL_HEAD_REVIEW";
+        set.unit_head_id = ctx.actor!.staffId;
       } else {
         if (comments.length < 3) throw invalid("A reason is required; the applicant will see it.", { comments: "Reason required." });
         to = input.action === "RETURN" ? "RETURNED_FOR_CORRECTION" : "DECLINED";
@@ -420,7 +423,12 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       const fresh = await transition(tx, ctx, req, { action: `UNIT_HEAD_${input.action}`, to, role: "UNIT_HEAD", outcome: input.action, comments: comments || null, set });
       await afterDecisionNotices(tx, ctx, fresh, input.action, comments);
       if (input.action === "APPROVE") {
-        await notifyRole(tx, ctx, fresh, "QUEUE_DIVISIONAL_HEAD", ["DIVISIONAL_HEAD"], "Staff financing request awaiting final approval", [`Staff financing request ${req.ref} awaits Divisional Head final approval.`], [req.applicant_id, req.pm_reviewer_id, req.unit_head_id]);
+        const dh = await routeDivisionalHead(tx, fresh);
+        if (dh.problem || !dh.id) {
+          await alertOperations(tx, ctx, fresh, "NO_DIVISIONAL_HEAD", "Staff financing request cannot reach a Divisional Head", [`${req.ref} awaits final approval but ${dh.problem}`]);
+        } else {
+          await notifyStaff(tx, ctx, fresh, "QUEUE_DIVISIONAL_HEAD", [dh.id], "Staff financing request awaiting final approval", [`Staff financing request ${req.ref} awaits your final approval as Divisional Head.`]);
+        }
       }
       return fresh;
     }),

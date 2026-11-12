@@ -38,6 +38,19 @@ export const PROFILE = {
   purpose: "Household equipment",
 };
 
+/** Configure the route's Unit Head (keeps the other settings in force). */
+export async function configureRouteUnitHead(email = STAFF.unitHead, now = new Date()) {
+  const { proposeStaffSettings } = await import("../staff/settings");
+  const cur = (await db.query("SELECT * FROM staff_financing_settings ORDER BY version DESC LIMIT 1")).rows[0];
+  await proposeStaffSettings(await ctxFor(STAFF.admin, now), {
+    deductionPercent: String(cur.deduction_rate_bps / 100),
+    tenorOptions: cur.tenor_options_months.join(","),
+    requiredDocuments: cur.required_document_types,
+    unitHeadId: await sid(email),
+    reason: "Synthetic: Unit Head for the staff route",
+  });
+}
+
 export async function approveStaffTemplate(now = new Date()) {
   const t = (await db.query("SELECT id, production_approved FROM offer_templates WHERE applicant_type = 'STAFF' AND status = 'ACTIVE'")).rows[0];
   if (t && !t.production_approved) await approveTemplate(await ctxFor(STAFF.admin, now), t.id);
@@ -61,9 +74,11 @@ export async function submittedStaffRequest(opts: { amount?: string; email?: str
 export const ALL_CHECKS = { accountVerified: true, salaryHistoryReviewed: true, repaymentWithinLimit: true };
 
 export async function pmForward(id: string, now = new Date()) {
+  const configured = (await db.query("SELECT unit_head_staff_id FROM staff_financing_settings ORDER BY version DESC LIMIT 1")).rows[0].unit_head_staff_id;
+  if (!configured) await configureRouteUnitHead();
   const ctx = await ctxFor(STAFF.pm, now);
   await claimPmReview(ctx, id);
-  await pmDecision(ctx, id, { action: "FORWARD", checklist: ALL_CHECKS, recommendation: "Recommend approval; checks completed manually.", unitHeadId: await sid(STAFF.unitHead), confirmed: true, lockVersion: await lv(id) });
+  await pmDecision(ctx, id, { action: "FORWARD", checklist: ALL_CHECKS, recommendation: "Recommend approval; checks completed manually.", confirmed: true, lockVersion: await lv(id) });
 }
 export async function unitHeadApprove(id: string, now = new Date()) {
   await unitHeadDecision(await ctxFor(STAFF.unitHead, now), id, { action: "APPROVE", comments: "Supported.", confirmed: true, lockVersion: await lv(id) });

@@ -2,13 +2,25 @@
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { staffSettingsAction, staffTemplateAction } from "../../staff-request/actions";
 
-export function StaffSettingsForm({ current, categories }: { current: { deductionPercent: string; minAmount: string; maxAmount: string; tenorOptions: string; requiredDocuments: string[] }; categories: { code: string; label: string }[] }) {
+export function StaffSettingsForm({ current, categories, unitHeads }: { current: { deductionPercent: string; minAmount: string; maxAmount: string; tenorOptions: string; requiredDocuments: string[]; unitHeadId: string }; categories: { code: string; label: string }[]; unitHeads: { id: string; label: string }[] }) {
   return (
     <ActionForm action={staffSettingsAction} className="stack" >
       {(state) => {
         const err = (k: string) => state.fields?.[k];
         return (
           <>
+            <div className="field">
+              <label htmlFor="sf-uh">Unit Head for the staff route</label>
+              <select id="sf-uh" name="unitHeadId" defaultValue={current.unitHeadId} aria-invalid={!!err("unitHeadId")}>
+                <option value="">Not configured (forwarding is blocked)</option>
+                {unitHeads.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+              <span className={err("unitHeadId") ? "err" : "hint"}>{err("unitHeadId") ?? "Every request the Product Manager forwards goes to this person, who must hold the Unit Head role."}</span>
+            </div>
             <div className="grid-2">
               <div className="field">
                 <label htmlFor="sf-d">Deduction (% of gross)</label>

@@ -34,6 +34,7 @@ export interface StaffSettings {
   max_amount_kobo: string | null;
   tenor_options_months: number[];
   required_document_types: string[];
+  unit_head_staff_id: string | null;
   reason: string;
   created_at: Date;
 }
@@ -187,7 +188,8 @@ export async function requestAccess(q: Db, staffId: string, req: StaffRequestRow
   if (roles.has("PRODUCT_MANAGER") && req.submission_count > 0) as.add("PRODUCT_MANAGER");
   if (roles.has("UNIT_HEAD")) {
     const acted = await q.query("SELECT 1 FROM staff_request_reviews WHERE request_id = $1 AND actor_id = $2", [req.id, staffId]);
-    if (req.unit_head_id === staffId || acted.rowCount) as.add("UNIT_HEAD");
+    const configured = req.status === "UNDER_UNIT_HEAD_REVIEW" && (await currentSettings(q)).unit_head_staff_id === staffId;
+    if (req.unit_head_id === staffId || acted.rowCount || configured) as.add("UNIT_HEAD");
   }
   if (roles.has("DIVISIONAL_HEAD")) {
     const reached = await q.query("SELECT 1 FROM staff_request_reviews WHERE request_id = $1 AND stage = 'UNIT_HEAD' AND action = 'APPROVE'", [req.id]);
@@ -264,4 +266,43 @@ export async function notifyRole(q: Db, ctx: Ctx, req: StaffRequestRow, kind: st
 export async function alertOperations(q: Db, ctx: Ctx, req: StaffRequestRow, kind: string, subject: string, lines: string[], dedupeSuffix = "") {
   const admins = await roleHolders(q, ["SUPER_ADMIN"]);
   return notify(q, ctx, req, `EXCEPTION_${kind}`, admins.map((a) => a.email), subject, lines, dedupeSuffix);
+}
+
+// ------------------------------------------------------------------ route positions
+
+export interface RoutePosition {
+  id: string | null;
+  name: string | null;
+  /** Why nobody can act in this position for the request (null when someone can). */
+  problem: string | null;
+}
+
+/**
+ * The Unit Head for the staff route: the one person configured in the settings in force, who must be
+ * active and hold the Unit Head role. Pending requests follow the configured person.
+ */
+export async function routeUnitHead(q: Db, req?: StaffRequestRow | null): Promise<RoutePosition> {
+  const s = await currentSettings(q);
+  if (!s.unit_head_staff_id) return { id: null, name: null, problem: "No Unit Head is configured for the staff financing route. A Super Admin must set one in Staff financing settings." };
+  const p = (
+    await q.query<{ full_name: string; ok: boolean }>(
+      `SELECT s.full_name, (s.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM role_assignments ra WHERE ra.staff_id = s.id AND ra.role = 'UNIT_HEAD' AND ra.active)) AS ok FROM staff s WHERE s.id = $1`,
+      [s.unit_head_staff_id],
+    )
+  ).rows[0];
+  if (!p?.ok) return { id: s.unit_head_staff_id, name: p?.full_name ?? null, problem: `The configured Unit Head (${p?.full_name ?? "unknown"}) is not active or no longer holds the Unit Head role.` };
+  if (req && (req.applicant_id === s.unit_head_staff_id || req.pm_reviewer_id === s.unit_head_staff_id)) {
+    return { id: s.unit_head_staff_id, name: p.full_name, problem: `Separation of duties: the configured Unit Head (${p.full_name}) is the applicant or the reviewing Product Manager on this request. A Super Admin must configure a different Unit Head.` };
+  }
+  return { id: s.unit_head_staff_id, name: p.full_name, problem: null };
+}
+
+/** The single Divisional Head in the system (the role can have only one active holder). */
+export async function routeDivisionalHead(q: Db, req?: StaffRequestRow | null): Promise<RoutePosition> {
+  const h = (await roleHolders(q, ["DIVISIONAL_HEAD"]))[0];
+  if (!h) return { id: null, name: null, problem: "Nobody holds the Divisional Head role. A Super Admin must assign it." };
+  if (req && [req.applicant_id, req.pm_reviewer_id, req.unit_head_id].includes(h.id)) {
+    return { id: h.id, name: h.full_name, problem: `Separation of duties: the Divisional Head (${h.full_name}) is the applicant or has already acted on this request.` };
+  }
+  return { id: h.id, name: h.full_name, problem: null };
 }

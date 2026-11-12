@@ -109,7 +109,7 @@ export async function queueRows(q: Db, view: QueueView, staffId: string, f: Queu
       conds.push("r.submission_count > 0", "r.applicant_id <> $1");
       break;
     case "uh":
-      conds.push("(r.unit_head_id = $1 OR EXISTS (SELECT 1 FROM staff_request_reviews x WHERE x.request_id = r.id AND x.actor_id = $1 AND x.stage = 'UNIT_HEAD'))", "r.applicant_id <> $1");
+      conds.push("(r.unit_head_id = $1 OR (r.status = 'UNDER_UNIT_HEAD_REVIEW' AND (SELECT unit_head_staff_id FROM staff_financing_settings ORDER BY version DESC LIMIT 1) = $1) OR EXISTS (SELECT 1 FROM staff_request_reviews x WHERE x.request_id = r.id AND x.actor_id = $1 AND x.stage = 'UNIT_HEAD'))", "r.applicant_id <> $1");
       break;
     case "dh":
       conds.push("EXISTS (SELECT 1 FROM staff_request_reviews x WHERE x.request_id = r.id AND x.stage = 'UNIT_HEAD' AND x.action = 'APPROVE')", "r.applicant_id <> $1");
@@ -130,7 +130,7 @@ export async function queueRows(q: Db, view: QueueView, staffId: string, f: Queu
   // Items needing the viewer's action first, then most recently updated.
   const actionable: Record<QueueView, string> = {
     pm: "r.status = 'SUBMITTED' OR (r.status = 'UNDER_PM_REVIEW' AND r.pm_reviewer_id = $1)",
-    uh: "r.status = 'UNDER_UNIT_HEAD_REVIEW' AND r.unit_head_id = $1",
+    uh: "r.status = 'UNDER_UNIT_HEAD_REVIEW' AND (SELECT unit_head_staff_id FROM staff_financing_settings ORDER BY version DESC LIMIT 1) = $1",
     dh: "r.status = 'UNDER_DIVISIONAL_HEAD_REVIEW'",
     do: "r.status IN ('ASSIGNED_FOR_DISBURSEMENT','DISBURSEMENT_IN_PROGRESS') AND r.disbursement_officer_id = $1",
     docs: "r.documentation_status IN ('SENT_TO_LEGAL_SHARIAH','RECEIVED_BY_LEGAL_SHARIAH')",
@@ -164,7 +164,7 @@ export async function queueMetrics(q: Db, view: QueueView, staffId: string) {
       );
     case "uh":
       return one(
-        `SELECT count(*) FILTER (WHERE status = 'UNDER_UNIT_HEAD_REVIEW' AND unit_head_id = $1) AS awaiting,
+        `SELECT count(*) FILTER (WHERE status = 'UNDER_UNIT_HEAD_REVIEW' AND (SELECT unit_head_staff_id FROM staff_financing_settings ORDER BY version DESC LIMIT 1) = $1) AS awaiting,
                 (SELECT count(*) FROM staff_request_reviews WHERE stage = 'UNIT_HEAD' AND actor_id = $1 AND action = 'APPROVE') AS approved,
                 (SELECT count(*) FROM staff_request_reviews WHERE stage = 'UNIT_HEAD' AND actor_id = $1 AND action = 'RETURN') AS returned,
                 (SELECT count(*) FROM staff_request_reviews WHERE stage = 'UNIT_HEAD' AND actor_id = $1 AND action = 'DECLINE') AS declined,
@@ -227,7 +227,7 @@ export function isStatus(s: string): s is StaffStatus {
 export async function staffActionCount(q: Db, staffId: string, roles: Set<string>): Promise<number> {
   const parts: string[] = [];
   if (roles.has("PRODUCT_MANAGER")) parts.push("(status = 'SUBMITTED' OR (status = 'UNDER_PM_REVIEW' AND pm_reviewer_id = $1))");
-  if (roles.has("UNIT_HEAD")) parts.push("(status = 'UNDER_UNIT_HEAD_REVIEW' AND unit_head_id = $1)");
+  if (roles.has("UNIT_HEAD")) parts.push("(status = 'UNDER_UNIT_HEAD_REVIEW' AND (SELECT unit_head_staff_id FROM staff_financing_settings ORDER BY version DESC LIMIT 1) = $1)");
   if (roles.has("DIVISIONAL_HEAD")) parts.push("(status = 'UNDER_DIVISIONAL_HEAD_REVIEW')");
   if (DISBURSEMENT_ROLES.some((r) => roles.has(r))) parts.push("(status IN ('ASSIGNED_FOR_DISBURSEMENT','DISBURSEMENT_IN_PROGRESS') AND disbursement_officer_id = $1)");
   if (!parts.length) return 0;

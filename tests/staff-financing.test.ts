@@ -11,6 +11,7 @@ import {
   PROFILE,
   ALL_CHECKS,
   approveStaffTemplate,
+  configureRouteUnitHead,
   submittedStaffRequest,
   pmForward,
   unitHeadApprove,
@@ -27,7 +28,7 @@ import { startDisbursement, completeDisbursement, reassignDisbursementOfficer } 
 import { advanceDocumentation, processStaffDocumentation, readArchive, confirmHandoverReceipt, completeHandoverReview } from "@/server/staff/pipeline";
 import { setDocumentLibraryForTests } from "@/server/staff/sharepoint";
 import { viewableRequest } from "@/server/staff/core";
-import { grantRole } from "@/server/domain/admin";
+import { grantRole, revokeRole } from "@/server/domain/admin";
 
 const lv = async (id: string) => (await reqRow(id)).lock_version;
 const HOUR = 3600_000;
@@ -217,8 +218,8 @@ describe("Scenario B: incomplete Product Manager checklist", () => {
     const id = await submittedStaffRequest();
     const ctx = await ctxFor(STAFF.pm);
     await claimPmReview(ctx, id);
-    const uh = await sid(STAFF.unitHead);
-    const base = { action: "FORWARD" as const, recommendation: "ok", unitHeadId: uh, confirmed: true };
+    await configureRouteUnitHead();
+    const base = { action: "FORWARD" as const, recommendation: "ok", confirmed: true };
     await expect(pmDecision(ctx, id, { ...base, checklist: { accountVerified: false, salaryHistoryReviewed: false, repaymentWithinLimit: false }, lockVersion: await lv(id) })).rejects.toMatchObject({ code: "GATE" });
     await expect(pmDecision(ctx, id, { ...base, checklist: { accountVerified: true, salaryHistoryReviewed: true, repaymentWithinLimit: false }, lockVersion: await lv(id) })).rejects.toThrow(/50% of take-home pay/);
     await expect(pmDecision(ctx, id, { ...base, confirmed: false, checklist: ALL_CHECKS, lockVersion: await lv(id) })).rejects.toMatchObject({ code: "VALIDATION" });
@@ -417,7 +418,7 @@ describe("Scenario H: unauthorised actions and separation of duties", () => {
     // The applicant also holds every review role: still refused on their own request.
     const admin = await ctxFor(STAFF.admin);
     const me = await sid(STAFF.applicant);
-    for (const role of ["PRODUCT_MANAGER", "UNIT_HEAD", "DIVISIONAL_HEAD", "DISBURSEMENT_OFFICER_1"]) await grantRole(admin, { staffId: me, role });
+    for (const role of ["PRODUCT_MANAGER", "UNIT_HEAD", "DISBURSEMENT_OFFICER_1"]) await grantRole(admin, { staffId: me, role });
     const id = await submittedStaffRequest();
     const self = await ctxFor(STAFF.applicant);
     await expect(claimPmReview(self, id)).rejects.toThrow(/own financing request/);
@@ -431,7 +432,7 @@ describe("Scenario H: unauthorised actions and separation of duties", () => {
     await expect(readStaffDocument(other, doc.id, "view")).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("only the designated Unit Head decides; one person cannot fill two positions; workflow steps cannot be skipped", async () => {
+  it("only the configured Unit Head decides; one person cannot fill two positions; workflow steps cannot be skipped", async () => {
     const id = await submittedStaffRequest();
     // Unit Head cannot act before the PM has forwarded.
     await expect(unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true })).rejects.toMatchObject({ code: "CONFLICT" });
@@ -439,11 +440,16 @@ describe("Scenario H: unauthorised actions and separation of duties", () => {
     // A second Unit Head who was not designated is refused.
     const admin = await ctxFor(STAFF.admin);
     await grantRole(admin, { staffId: await sid("hou@altbank.ng"), role: "UNIT_HEAD" });
-    await expect(unitHeadDecision(await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/designated Unit Head/);
+    await expect(unitHeadDecision(await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/configured for the staff financing route/);
     // The PM cannot also be the Divisional Head on the same request.
-    await grantRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" });
+    // The Divisional Head position has one holder: move it to the PM, who is then refused (separation of duties).
     await unitHeadApprove(id);
+    await expect(grantRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" })).rejects.toThrow(/already has an active holder/);
+    await revokeRole(admin, { staffId: await sid(STAFF.divHead), role: "DIVISIONAL_HEAD" });
+    await grantRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" });
     await expect(divisionalHeadDecision(await ctxFor(STAFF.pm), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/Separation of duties/);
+    await revokeRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" });
+    await grantRole(admin, { staffId: await sid(STAFF.divHead), role: "DIVISIONAL_HEAD" });
     // Disbursement Officers who reviewed are excluded from random assignment.
     await grantRole(admin, { staffId: await sid(STAFF.divHead), role: "DISBURSEMENT_OFFICER_1" });
     await approveStaffTemplate();
@@ -496,5 +502,40 @@ describe("approved terms are locked; amendments need reapproval", () => {
     // The previous terms remain in the history
     const ev = (await db.query("SELECT details FROM staff_request_events WHERE request_id = $1 AND action = 'APPROVAL_WITHDRAWN_FOR_AMENDMENT'", [id])).rows[0];
     expect(ev.details.previousTerms.netKobo).toBe(98_000_000);
+  });
+});
+
+describe("route positions: one configured Unit Head, one Divisional Head", () => {
+  it("forwarding is blocked (and operations alerted) until a Unit Head is configured for the route", async () => {
+    const id = await submittedStaffRequest();
+    const pm = await ctxFor(STAFF.pm);
+    await claimPmReview(pm, id);
+    await expect(pmDecision(pm, id, { action: "FORWARD", checklist: ALL_CHECKS, recommendation: "ok", confirmed: true, lockVersion: await lv(id) })).rejects.toThrow(/No Unit Head is configured/);
+    expect((await db.query("SELECT kind FROM notification_outbox WHERE kind = 'STAFF_FIN_EXCEPTION_NO_ROUTE_UNIT_HEAD'")).rowCount).toBe(0); // rolled back with the refused forward
+    // Only holders of the Unit Head role can be configured.
+    const { proposeStaffSettings } = await import("@/server/staff/settings");
+    await expect(proposeStaffSettings(await ctxFor(STAFF.admin), { deductionPercent: "2", unitHeadId: await sid("hou@altbank.ng"), reason: "test" })).rejects.toMatchObject({ fields: { unitHeadId: expect.any(String) } });
+    await configureRouteUnitHead();
+    await pmDecision(pm, id, { action: "FORWARD", checklist: ALL_CHECKS, recommendation: "ok", confirmed: true, lockVersion: await lv(id) });
+    const r = await reqRow(id);
+    expect([r.status, r.unit_head_id]).toEqual(["UNDER_UNIT_HEAD_REVIEW", await sid(STAFF.unitHead)]);
+    expect((await db.query("SELECT to_addresses FROM notification_outbox WHERE kind = 'STAFF_FIN_QUEUE_UNIT_HEAD' AND staff_request_id = $1", [id])).rows[0].to_addresses).toEqual([STAFF.unitHead]);
+  });
+
+  it("pending requests follow a newly configured Unit Head; the previous one can no longer decide", async () => {
+    const id = await submittedStaffRequest();
+    await pmForward(id);
+    const admin = await ctxFor(STAFF.admin);
+    await grantRole(admin, { staffId: await sid("hou@altbank.ng"), role: "UNIT_HEAD" });
+    await configureRouteUnitHead("hou@altbank.ng");
+    await expect(unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await unitHeadDecision(await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) });
+    const r = await reqRow(id);
+    expect([r.status, r.unit_head_id]).toEqual(["UNDER_DIVISIONAL_HEAD_REVIEW", await sid("hou@altbank.ng")]);
+    // Every final approval goes to the one Divisional Head.
+    expect((await db.query("SELECT to_addresses FROM notification_outbox WHERE kind = 'STAFF_FIN_QUEUE_DIVISIONAL_HEAD' AND staff_request_id = $1", [id])).rows[0].to_addresses).toEqual([STAFF.divHead]);
+    const { queueRows } = await import("@/server/staff/views");
+    const dhQueue = await queueRows(db, "dh", await sid(STAFF.divHead), {});
+    expect(dhQueue.rows.map((x) => x.id)).toContain(id);
   });
 });

@@ -384,10 +384,10 @@ export function ConfirmButton({ label, title, body, className = "btn btn-primary
 
 // ------------------------------------------------------------------ Product Manager
 
-export function PmReviewForm({ id, lockVersion, unitHeads, netLabel }: { id: string; lockVersion: number; unitHeads: { id: string; label: string; suggested: boolean }[]; netLabel: string }) {
+export function PmReviewForm({ id, lockVersion, unitHead, netLabel }: { id: string; lockVersion: number; unitHead: { name: string | null; problem: string | null }; netLabel: string }) {
   const [checks, setChecks] = useState({ accountVerified: false, salaryHistoryReviewed: false, repaymentWithinLimit: false });
   const all = checks.accountVerified && checks.salaryHistoryReviewed && checks.repaymentWithinLimit;
-  const [uh, setUh] = useState(unitHeads.find((u) => u.suggested)?.id ?? (unitHeads.length === 1 ? unitHeads[0].id : ""));
+  const uh = !unitHead.problem && !!unitHead.name;
   const [rec, setRec] = useState("");
   const formId = `pm-${id}`;
   const box = (k: keyof typeof checks, label: string, hint: string) => (
@@ -432,18 +432,8 @@ export function PmReviewForm({ id, lockVersion, unitHeads, netLabel }: { id: str
             <label htmlFor={`${formId}-rec`}>Recommendation to the Unit Head</label>
             <textarea id={`${formId}-rec`} name="recommendation" rows={2} value={rec} onChange={(e) => setRec(e.target.value)} />
           </div>
-          <div className="field">
-            <label htmlFor={`${formId}-uh`}>Designated Unit Head</label>
-            <select id={`${formId}-uh`} name="unitHeadId" value={uh} onChange={(e) => setUh(e.target.value)}>
-              <option value="">Choose…</option>
-              {unitHeads.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label}
-                  {u.suggested ? " (matches applicant's unit)" : ""}
-                </option>
-              ))}
-            </select>
-            {!unitHeads.length && <span className="err">No eligible Unit Head is configured. Ask a Super Admin to assign the role.</span>}
+          <div className={`summary-box small ${unitHead.problem ? "err" : ""}`}>
+            {unitHead.problem ? unitHead.problem : <>Forwards to the Unit Head for the staff route: <strong>{unitHead.name}</strong></>}
           </div>
           <div className="field">
             <label htmlFor={`${formId}-c`}>Comments to the applicant (required to return or decline)</label>
@@ -457,12 +447,12 @@ export function PmReviewForm({ id, lockVersion, unitHeads, netLabel }: { id: str
               label="Forward to Unit Head"
               title="Forward to the Unit Head?"
               confirmLabel="Confirm and forward"
-              body={<p>You confirm all three checks were completed manually. The request ({netLabel} net) goes to {unitHeads.find((u) => u.id === uh)?.label ?? "the Unit Head"}.</p>}
+              body={<p>You confirm all three checks were completed manually. The request ({netLabel} net) goes to {unitHead.name}, Unit Head for the staff route.</p>}
             />
             <DecisionButton value="RETURN" label="Return for correction" />
             <DecisionButton value="DECLINE" label="Decline request" danger />
           </div>
-          {!all && <p className="small muted" style={{ margin: 0 }}>Forwarding is disabled until all three checks are confirmed, a recommendation is written and a Unit Head is chosen.</p>}
+          {!all && <p className="small muted" style={{ margin: 0 }}>Forwarding is disabled until all three checks are confirmed and a recommendation is written.</p>}
         </div>
       )}
     </ActionForm>
