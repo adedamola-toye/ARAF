@@ -20,6 +20,7 @@ import {
   officerEmail,
   disburse,
   MemoryLibrary,
+  passStaffCreditCheck,
 } from "@/server/demo/staff-scenario";
 import { createStaffDraft, saveStaffDraft, submitStaffRequest, claimPmReview, pmDecision, unitHeadDecision, divisionalHeadDecision, amendApproval } from "@/server/staff/requests";
 import { uploadStaffDocument, readStaffDocument } from "@/server/staff/documents";
@@ -69,6 +70,7 @@ describe("calculator", () => {
     await expect(submitStaffRequest(ctx, id, { lockVersion: await lv(id) })).rejects.toMatchObject({ code: "VALIDATION", fields: { acknowledgement: expect.any(String) } });
     await saveStaffDraft(ctx, id, { ...PROFILE, amount: "1,500,000.00", acknowledgedNetKobo: "147000000", acceptDeclaration: true, lockVersion: await lv(id) });
     expect((await reqRow(id)).deduction_acknowledged_at).not.toBeNull();
+    await passStaffCreditCheck(ctx, id);
     await submitStaffRequest(ctx, id, { lockVersion: await lv(id), acknowledgedNetKobo: "147000000" });
     const r = await reqRow(id);
     expect([r.status, r.gross_kobo, r.deduction_kobo, r.net_kobo, r.deduction_rate_bps]).toEqual(["SUBMITTED", "150000000", "3000000", "147000000", 200]);
@@ -245,6 +247,7 @@ describe("Scenario C: returned request", () => {
     await expect(submitStaffRequest(me, id, { lockVersion: await lv(id) })).rejects.toMatchObject({ fields: { acknowledgement: expect.any(String) } });
     await saveStaffDraft(me, id, { ...PROFILE, amount: "800,000", acknowledgedNetKobo: String(78_400_000), acceptDeclaration: true, lockVersion: await lv(id) });
     await uploadStaffDocument(me, { requestId: id, category: "PAYSLIP", filename: "payslip-aug.pdf", data: makePdf("Payslip August") });
+    await passStaffCreditCheck(me, id);
     await submitStaffRequest(me, id, { lockVersion: await lv(id) });
     r = await reqRow(id);
     expect([r.status, r.submission_count, r.pm_reviewer_id, r.net_kobo]).toEqual(["SUBMITTED", 2, null, "78400000"]);
@@ -253,6 +256,7 @@ describe("Scenario C: returned request", () => {
     await pmForward(id);
     await unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "RETURN", comments: "Clarify the purpose.", lockVersion: await lv(id) });
     expect((await reqRow(id)).status).toBe("RETURNED_FOR_CORRECTION");
+    await passStaffCreditCheck(me, id);
     await submitStaffRequest(me, id, { lockVersion: await lv(id) });
     expect((await reqRow(id)).status).toBe("SUBMITTED");
     // Returns and declines require a reason.
@@ -496,6 +500,7 @@ describe("approved terms are locked; amendments need reapproval", () => {
     expect([r.status, r.approved_at, r.offer_document_id]).toEqual(["RETURNED_FOR_CORRECTION", null, null]);
     const me = await ctxFor(STAFF.applicant);
     await saveStaffDraft(me, id, { ...PROFILE, amount: "600,000", acknowledgedNetKobo: String(58_800_000), acceptDeclaration: true, lockVersion: await lv(id) });
+    await passStaffCreditCheck(me, id);
     await submitStaffRequest(me, id, { lockVersion: await lv(id) });
     r = await reqRow(id);
     expect([r.status, r.net_kobo]).toEqual(["SUBMITTED", "58800000"]);

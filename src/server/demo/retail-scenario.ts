@@ -10,6 +10,9 @@ import { uploadDocument } from "../domain/documents";
 import { proposeProductConfig, decideProductConfig, effectiveConfig, INITIAL_PRODUCT_CONFIGS, type ProductConfig } from "../domain/products";
 import { createRetailDraft, saveRetailDraft, saveProposal, recordFinalAssessment, PROPOSAL_FIELDS, type ProposalContent } from "../domain/retail";
 import { submitApplication, performTaskAction } from "../domain/workflow";
+import type { Ctx } from "../context";
+import { retailCreditStatus, runRetailCreditCheck } from "../domain/retail-credit";
+import { CREDIT_PERSON, ensureTestBureau } from "./altphones-scenario";
 import { generateOffer } from "../domain/offer";
 import { recordPaymentEvent, recordFulfilmentTask } from "../domain/retail-ops";
 import { addDaysToDateString, lagosDate } from "../time";
@@ -168,7 +171,10 @@ export async function createRetailCase(o: RetailCaseOpts) {
     const rmCtx = await ctxFor(o.channel === "DO" ? (o.assignedRm ?? "rm.bola@altbank.ng") : initiatorEmail, now);
     await saveProposal(rmCtx, id, fullProposal());
   }
-  if (o.submit !== false) await submitApplication(ctx, id, randomUUID());
+  if (o.submit !== false) {
+    await passRetailCreditChecks(ctx, id);
+    await submitApplication(ctx, id, randomUUID());
+  }
   return id;
 }
 
@@ -265,3 +271,11 @@ export async function completeAll(id: string, now = new Date()) {
 }
 
 export { act, openTaskOf, performTaskAction };
+
+/** Run (test-bureau) SeedFi credit checks for the applicant or every director so the request can be submitted. */
+export async function passRetailCreditChecks(ctx: Ctx, id: string) {
+  await ensureTestBureau();
+  for (const p of await retailCreditStatus(db, id, ctx.now)) {
+    if (!p.current) await runRetailCreditCheck(ctx, id, p.key, CREDIT_PERSON);
+  }
+}

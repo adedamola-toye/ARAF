@@ -35,6 +35,7 @@ import { isRetailInitiatorRole, ROLE_LABELS, type Role } from "./roles";
 import { routeForAmount } from "./routing";
 import { STAGE_LABELS, type Stage } from "./stages";
 import { recordRequestLedger, noteLatestRequestedAmount } from "./wallet";
+import { retailCreditBlockers } from "./retail-credit";
 import {
   activeCorrection,
   completeTask,
@@ -308,6 +309,7 @@ export async function retailReadiness(q: Db, appId: string, now: Date): Promise<
   if (!cfg) blockers.push("This product has no approved configuration.");
   if (!rules) blockers.push("The selected customer profile is not enabled for this product.");
   for (const g of blockedBy) blockers.push(`Configuration required: ${g.label}.`);
+  blockers.push(...(await retailCreditBlockers(q, appId, now)));
 
   // --- customer
   const T = app.applicant_type;
@@ -569,6 +571,8 @@ function firstBusinessStage(app: AppRow): Stage {
 
 export async function submitRetail(tx: Tx, ctx: Ctx, app: AppRow): Promise<ActionResult> {
   const { cfg, rules, data } = await finaliseRetailVersion(tx, ctx, app);
+  const credit = await retailCreditBlockers(tx, app.id, ctx.now);
+  if (credit.length) throw gate(credit.join(" "));
   const docs = await currentCleanDocuments(tx, app.id);
   await storeAssessment(tx, ctx, app, "PRELIMINARY", cfg, rules, preliminaryInput(app.applicant_type, data, docs), app.initiator_role);
   (app as { submitted_at: Date | null }).submitted_at = ctx.now;

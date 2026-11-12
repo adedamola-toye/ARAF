@@ -17,6 +17,10 @@ import { BeneficiaryProposalForm, ExceptionRequestForm, ProposalForm } from "./R
 type Case = Awaited<ReturnType<typeof getCase>>;
 const k2s = (k: number | null | undefined) => (k === null || k === undefined ? "" : koboToNairaString(k).replace(/\.00$/, ""));
 
+import { CreditCheckPanel } from "@/components/CreditCheckPanel";
+import { retailCreditStatus } from "@/server/domain/retail-credit";
+import { retailCreditAction } from "../../retail-actions";
+
 export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; staffId: string; sessionId: string; mode: "INITIATOR" | "ASSIGNED_RM" }) {
   const app = c.app;
   const now = new Date();
@@ -101,6 +105,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
   const afsApplies = !!rules?.afs?.thresholdKobo && Number(data.requestedAmountKobo ?? 0) > rules.afs.thresholdKobo;
   const evidence = docs.filter((d) => ["EXCEPTION_EVIDENCE", "AFS", "BUSINESS_OPERATIONS_EVIDENCE", "BANK_STATEMENT"].includes(d.category) && d.scan_status === "CLEAN").map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename}` }));
   const pre = readiness.preliminary;
+  const credit = await retailCreditStatus(db, app.id, now);
   return (
     <>
       {header}
@@ -190,6 +195,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
         }}
       />
       <div className="form-after stack">
+        <CreditCheckPanel persons={credit} action={retailCreditAction} hidden={{ applicationId: app.id }} canRun subjectNoun="the customer" />
         {proposalCard}
         {uploads}
         {readiness.config?.config.beneficiaryRequired && (

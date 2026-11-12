@@ -7,6 +7,7 @@ import { submitApplication, performTaskAction } from "@/server/domain/workflow";
 import { proposeBeneficiary } from "@/server/domain/vendors";
 import { recordPaymentEvent, recordFulfilmentTask, recordRepayment, recordServicingAction, closeFacility, decideRestructure } from "@/server/domain/retail-ops";
 import { reviewDocument } from "@/server/domain/documents";
+import { runRetailCreditCheck } from "@/server/domain/retail-credit";
 import { invalid } from "@/server/errors";
 import { parseNairaToKobo } from "@/server/money";
 import type { ApplicantType } from "@/server/domain/application-data";
@@ -303,6 +304,23 @@ export async function reviewDocumentAction(_p: ActionState, fd: FormData): Promi
     const decision = str(fd, "decision") === "REJECTED" ? "REJECTED" : "ACCEPTED";
     await reviewDocument(ctx, str(fd, "documentId"), decision, str(fd, "reason"));
     return { ok: true, message: decision === "REJECTED" ? "Document marked as rejected." : "Document accepted.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+export async function retailCreditAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const r = await runRetailCreditCheck(ctx, str(fd, "applicationId"), str(fd, "personKey"), {
+      firstName: str(fd, "firstName"),
+      lastName: str(fd, "lastName"),
+      dateOfBirth: str(fd, "dateOfBirth"),
+      gender: str(fd, "gender"),
+      phone: str(fd, "phone"),
+      consent: fd.get("consent") === "on",
+    });
+    return { ok: r.outcome !== "UNAVAILABLE", error: r.outcome === "UNAVAILABLE" ? r.message : null, message: r.outcome === "UNAVAILABLE" ? null : r.message, nonce: Date.now() };
   } catch (e) {
     return toActionError(e);
   }

@@ -33,6 +33,7 @@ import {
   type StaffRequestRow,
 } from "./core";
 import { issueOffer } from "./offer";
+import { staffCreditProblem } from "./credit";
 
 const MAX_GROSS_KOBO = 100_000_000_000 * 100; // ₦100bn sanity ceiling against typing errors; product limits come from settings
 
@@ -190,6 +191,8 @@ export async function submissionProblems(q: Db, req: StaffRequestRow): Promise<R
   if (settings.tenor_options_months.length && !req.tenor_months) p.tenorMonths = "Choose a repayment tenor.";
   if (!req.deduction_acknowledged_at) p.acknowledgement = `Confirm that you have read the ${bpsLabel(settings.deduction_rate_bps)} deduction and the net amount you will receive.`;
   if (!req.declaration_accepted_at) p.declaration = "Accept the declaration and consent.";
+  const credit = await staffCreditProblem(q, req.id, new Date());
+  if (credit) p.creditCheck = credit;
   if (settings.required_document_types.length) {
     const docs = (await q.query<{ category: string }>("SELECT DISTINCT category FROM staff_request_documents WHERE request_id = $1 AND removed_at IS NULL AND scan_status = 'CLEAN'", [req.id])).rows.map((r) => r.category);
     const missing = settings.required_document_types.filter((c) => !docs.includes(c));

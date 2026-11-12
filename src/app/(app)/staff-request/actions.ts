@@ -18,6 +18,7 @@ import { submitSignedOffer, retryOfferFor, createStaffTemplateVersion } from "@/
 import { reviewDisbursementDocumentation, returnSignedOffer, startDisbursement, completeDisbursement, reassignDisbursementOfficer } from "@/server/staff/disbursement";
 import { confirmHandoverReceipt, completeHandoverReview, retryDocumentationNow } from "@/server/staff/pipeline";
 import { proposeStaffSettings } from "@/server/staff/settings";
+import { runStaffCreditCheck } from "@/server/staff/credit";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const lock = (fd: FormData) => (fd.get("lockVersion") ? Number(fd.get("lockVersion")) : null);
@@ -151,3 +152,13 @@ export const staffSettingsAction = async (_p: ActionState, fd: FormData) =>
       }),
     "New settings version saved. It applies to drafts and resubmissions from now on.",
   );
+
+export async function staffCreditAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const r = await runStaffCreditCheck(ctx, s(fd, "id"), { bvn: s(fd, "bvn"), firstName: s(fd, "firstName"), lastName: s(fd, "lastName"), dateOfBirth: s(fd, "dateOfBirth"), gender: s(fd, "gender"), phone: s(fd, "phone"), consent: on(fd, "consent") });
+    return { ok: r.outcome !== "UNAVAILABLE", error: r.outcome === "UNAVAILABLE" ? r.message : null, message: r.outcome === "UNAVAILABLE" ? null : r.message, nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

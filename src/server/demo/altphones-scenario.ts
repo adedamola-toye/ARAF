@@ -150,3 +150,9 @@ export async function stockOf(locationName: string, modelId: string) {
   const r = (await db.query<{ physical: number; reserved: number }>("SELECT physical, reserved FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [await loc(locationName), modelId])).rows[0];
   return r ? { physical: r.physical, reserved: r.reserved, available: r.physical - r.reserved } : { physical: 0, reserved: 0, available: 0 };
 }
+
+/** Tests and the development demo only: use a passing test bureau when SeedFi is not configured. */
+export async function ensureTestBureau() {
+  const { creditBureau, setCreditBureauForTests } = await import("../altphones/integrations");
+  if (!creditBureau()) setCreditBureauForTests(new TestBureau(700));
+}

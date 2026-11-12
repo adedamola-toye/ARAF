@@ -1,3 +1,7 @@
+import { CreditCheckPanel, CreditSummary } from "@/components/CreditCheckPanel";
+import { isCurrentPass } from "@/server/credit/seedfi";
+import { latestStaffCheck } from "@/server/staff/credit";
+import { staffCreditAction } from "../actions";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Download, Eye, FileArchive, Info, ShieldCheck } from "lucide-react";
@@ -68,6 +72,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
   const status = req.status as StaffStatus;
   const d = await requestDetail(db, req);
   const editable = isApplicant && (status === "DRAFT" || status === "RETURNED_FOR_CORRECTION");
+  const staffCheck = editable ? await latestStaffCheck(db, req.id) : undefined;
   const settings = editable ? await currentSettings(db) : await settingsById(db, req.settings_id);
   const link = (docId: string, mode: "view" | "download") => staffDocLink(docId, me, session.sessionId, mode);
   const reviewer = !isApplicant;
@@ -164,6 +169,16 @@ export default async function StaffRequestPage({ params, searchParams }: { param
             maxKobo={settings.max_amount_kobo ? Number(settings.max_amount_kobo) : null}
             returned={status === "RETURNED_FOR_CORRECTION"}
           />
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <CreditCheckPanel
+              persons={[{ key: "APPLICANT", label: req.full_name, bvnLast4: staffCheck?.bvn_last4 ?? null, latest: staffCheck, current: isCurrentPass(staffCheck, staffCheck?.bvn_hash ?? null, new Date()) }]}
+              action={staffCreditAction}
+              hidden={{ id: req.id }}
+              canRun
+              askBvn
+              subjectNoun="you"
+            />
+          </div>
           <section className="card" style={{ marginTop: "var(--space-4)" }} aria-labelledby="docs-h">
             <div className="card-head">
               <h2 id="docs-h">Supporting documents</h2>
@@ -296,6 +311,10 @@ export default async function StaffRequestPage({ params, searchParams }: { param
       }
     }
 
+    if (!isApplicant) {
+      const check = await latestStaffCheck(db, req.id);
+      if (check) panels.push(<CreditSummary key="credit" checks={[check]} />);
+    }
     if (!isApplicant && as.has("PRODUCT_MANAGER")) {
       if (status === "SUBMITTED") {
         panels.push(
