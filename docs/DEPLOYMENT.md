@@ -13,6 +13,14 @@ This project runs as two long-lived pieces plus two managed services:
 There is no Docker and no ClamAV in this deployment. Malware scanning is disabled with
 `SCANNER_DRIVER=none`; see [Security tradeoffs](#security-tradeoffs).
 
+## Environments
+
+This page describes **production**. Do not deploy straight to live: stand up the **staging** copy
+first and sign it off. Staging uses the same topology on separate Vercel, Render and Supabase
+resources, with its own keys and synthetic data. See [STAGING.md](STAGING.md) for the full runbook,
+isolation rules and the promotion checklist. The staging worker blueprint is
+[`render.staging.yaml`](../render.staging.yaml).
+
 ## 1. Local check (one time)
 
 ```bash
@@ -142,6 +150,17 @@ Supporting larger files requires a direct-to-S3 presigned upload flow (not imple
 
 The worker runs TypeScript directly through `tsx`, which is now a runtime dependency (not a
 devDependency), so it works even when Render installs production dependencies only.
+
+## 4a. Staff Personal Financing settings
+
+- Migration `007_staff_personal_financing.sql` runs with the others (`npm run migrate`; the Render
+  worker's pre-deploy command does this).
+- The worker processes offer expiries, reminders and the documentation pipeline: it must run.
+- SharePoint is optional and off by default. To enable it, set the `SHAREPOINT_*` variables from
+  `.env.example` on the **Render worker** (it uploads; the web app only reads status). See
+  `docs/STAFF_FINANCING.md` section 8 for the Entra ID registration and permissions.
+- Before the first staff offer can be issued, a Super Admin must load the bank-approved staff offer
+  wording (Administration → Staff financing settings) and record the bank's approval on Offer templates.
 
 ## 5. First live checks
 

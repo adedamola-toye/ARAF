@@ -565,3 +565,52 @@ table.matrix td { vertical-align: top; }
 /* Loading */
 .skeleton { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; min-height: 14px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+/* ---------------------------------------------------------------- Staff Personal Financing */
+.action-bar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.action-bar .btn { flex: 0 1 auto; }
+@media (max-width: 560px) { .action-bar .btn { flex: 1 1 100%; } }
+.field-label { font-weight: 600; font-size: 12.5px; margin-bottom: 6px; color: var(--ink-2); }
+.readonly-value { min-height: var(--control-h); display: flex; align-items: center; padding: 0 12px; border-radius: var(--radius-sm); background: var(--surface-2); border: 1px dashed var(--line-strong); color: var(--ink); overflow-wrap: anywhere; }
+.block { display: block; }
+.inline-form { display: inline-flex; }
+.check-error { color: var(--danger); }
+.check-error input { outline: 2px solid var(--danger); outline-offset: 2px; }
+.empty-card { padding: 0; }
+
+.origination { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: var(--space-5); align-items: start; }
+.origination-side { position: sticky; top: 78px; }
+@media (max-width: 1100px) { .origination { grid-template-columns: minmax(0, 1fr); } .origination-side { position: static; } }
+
+.calc { background: var(--brand); color: var(--brand-ink); border-radius: var(--radius-lg); padding: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); box-shadow: var(--shadow-card); border: 1px solid var(--brand); }
+:root[data-theme="dark"] .calc { border-color: #4265a4; }
+.calc .eyebrow { color: var(--brand-soft-ink); margin: 0; }
+.calc-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.calc-head .badge { background: rgb(255 255 255 / 14%); border-color: transparent; color: var(--brand-ink); }
+.calc-rows { margin: 0; display: grid; gap: 8px; }
+.calc-rows > div { display: flex; justify-content: space-between; gap: 12px; font-size: 14px; flex-wrap: wrap; }
+.calc-rows dt { color: var(--brand-soft-ink); }
+.calc-rows dd { margin: 0; font-variant-numeric: tabular-nums; font-weight: 600; }
+.calc-net { display: flex; flex-direction: column; gap: 2px; padding-top: var(--space-3); border-top: 1px solid rgb(255 255 255 / 22%); }
+.calc-net span { font-size: 12.5px; color: var(--brand-soft-ink); }
+.calc-net strong { font-family: var(--font-display); font-size: clamp(30px, 2.4vw + 14px, 40px); font-weight: 900; letter-spacing: -0.04em; line-height: 1.05; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.calc-note { margin: 0; color: var(--brand-soft-ink) !important; }
+
+.checklist-gate { border: 1px solid var(--line); border-radius: var(--radius); padding: var(--space-3) var(--space-4) var(--space-4); margin: 0; display: grid; gap: 10px; background: var(--surface-2); }
+.checklist-gate legend { font-family: var(--font-display); font-weight: 800; font-size: 13.5px; padding: 0 6px; color: var(--ink); }
+.gate-state { margin: 0; color: var(--warn); display: flex; align-items: center; gap: 6px; font-weight: 600; }
+.gate-state.ok { color: var(--success); }
+
+.upload-row { display: flex; gap: var(--space-3); align-items: flex-end; flex-wrap: wrap; }
+.upload-row .field { flex: 1 1 200px; }
+.doc-rows { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; }
+.doc-rows li { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.doc-rows li:last-child { border-bottom: 0; }
+.doc-name { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+
+.deadline { margin: 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13.5px; }
+.countdown { display: inline-flex; align-items: center; padding: 1px 9px; border-radius: 999px; background: var(--info-bg); color: var(--info); font-weight: 600; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.countdown.soon { background: var(--warn-bg); color: var(--warn); }
+.countdown.expired { background: var(--danger-bg); color: var(--danger); }
+.staff-progress { margin-bottom: var(--space-5); }
+.alert .countdown { background: transparent; color: inherit; border: 1px solid currentColor; padding: 0 8px; }

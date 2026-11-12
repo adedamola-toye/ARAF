@@ -28,6 +28,9 @@ export const ROLES = [
   "PRODUCT_CONFIG_APPROVER",
   "VENDOR_MANAGER",
   "COLLECTIONS_OFFICER",
+  // Staff Personal Financing
+  "PRODUCT_MANAGER",
+  "STAFF_APPLICANT",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -68,6 +71,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   PRODUCT_CONFIG_APPROVER: "Product configuration approver",
   VENDOR_MANAGER: "Vendor register officer",
   COLLECTIONS_OFFICER: "Collections and servicing officer",
+  PRODUCT_MANAGER: "Product Manager (staff financing)",
+  STAFF_APPLICANT: "Staff member (personal financing)",
 };
 
 /** Roles whose holders review retail cases across the organisation (dashboards and case visibility). */
@@ -76,7 +81,7 @@ export const RETAIL_ORG_VIEW_ROLES: readonly Role[] = ["HEAD_OF_RETAIL_SALES", "
 export const TEAM_SCOPED_ROLES: readonly Role[] = ["RM", "TEAM_LEAD", "DELIGHT_OFFICER"];
 
 /** Positions that may be held by at most one active person at a time. */
-export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"];
+export const SINGLE_HOLDER_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH", "DIVISIONAL_HEAD"];
 
 /** Nigeria's 36 states plus the Federal Capital Territory. */
 export const REGIONS = [

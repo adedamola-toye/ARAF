@@ -139,7 +139,9 @@ Key guarantees:
 ## Production configuration
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the Vercel (web) + Render (worker) + Supabase
-(database and object storage) walkthrough.
+(database and object storage) walkthrough. Do not go live directly: stand up the pre-live **staging**
+environment first using [docs/STAGING.md](docs/STAGING.md) (separate Vercel project, Render worker
+blueprint `render.staging.yaml`, Supabase project and keys, synthetic data only).
 
 Set `APP_ENV=production`. Then:
 

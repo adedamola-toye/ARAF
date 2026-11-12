@@ -18,6 +18,8 @@ export interface AuditEntry {
   assignmentTo?: string | null;
   documentId?: string | null;
   documentVersion?: number | null;
+  /** Staff Personal Financing request this event belongs to. */
+  staffRequestId?: string | null;
   details?: Record<string, unknown>;
   /** Override actor (e.g. sign-in before a session exists). */
   actorId?: string | null;
@@ -38,8 +40,8 @@ export async function audit(q: Db, ctx: Ctx, e: AuditEntry): Promise<void> {
   await q.query(
     `INSERT INTO audit_events (occurred_at, actor_id, actor_email, actor_role, session_id, action, outcome,
        application_id, customer_id, stage, reason, assignment_from, assignment_to, document_id, document_version,
-       correlation_id, client_ip, user_agent, device, details)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+       correlation_id, client_ip, user_agent, device, details, staff_request_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [
       ctx.now,
       e.actorId !== undefined ? e.actorId : (ctx.actor?.staffId ?? null),
@@ -61,6 +63,7 @@ export async function audit(q: Db, ctx: Ctx, e: AuditEntry): Promise<void> {
       ctx.userAgent ? ctx.userAgent.slice(0, 512) : null,
       describeDevice(ctx.userAgent),
       JSON.stringify(sanitizeForAudit(e.details ?? {})),
+      e.staffRequestId ?? null,
     ],
   );
 }
