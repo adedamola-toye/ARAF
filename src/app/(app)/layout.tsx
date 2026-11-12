@@ -1,4 +1,4 @@
-import { BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
+import { BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { themePreference } from "../_lib/theme";
 import { BankMark, Footer, Wordmark } from "@/components/Brand";
@@ -10,6 +10,7 @@ import { config } from "@/server/config";
 import { db } from "@/server/db";
 import { signOutAction, switchWorkspaceAction } from "./shell-actions";
 import { retailScope as retailScopeFor } from "@/server/retail-reports";
+import { viewsFor, staffActionCount } from "@/server/staff/views";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
@@ -25,6 +26,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isAdmin = roles.includes("SUPER_ADMIN");
   const canReport = roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN");
   const exceptions = isAdmin ? Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id IS NULL")).rows[0].n) : 0;
+  const staffViews = viewsFor(new Set(roles));
+  const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
+  const myOfferCount = Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n);
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -77,6 +81,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
+        <div className="nav-section">
+          <span className="nav-title">Staff financing</span>
+          <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>
+            My staff financing
+          </NavLink>
+          {staffViews.length > 0 && (
+            <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
+              Staff financing queues
+            </NavLink>
+          )}
+        </div>
         {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
           <div className="nav-section">
             <span className="nav-title">Reporting</span>
@@ -105,6 +120,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
               Products and rules
+            </NavLink>
+            <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
+              Staff financing settings
             </NavLink>
             <NavLink href="/admin/locations" icon={<MapPin {...ic} />}>
               Outlet locations

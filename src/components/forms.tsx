@@ -1,5 +1,5 @@
 "use client";
-import { useActionState, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 
@@ -13,8 +13,16 @@ export interface FormState {
 }
 type Action = (prev: FormState, fd: FormData) => Promise<FormState>;
 
-export function SubmitButton({ children, className = "btn btn-primary", name, value, disabled }: { children: ReactNode; className?: string; name?: string; value?: string; disabled?: boolean }) {
+/** Pending state of the enclosing ActionForm (or of a plain form action). */
+const PendingContext = createContext(false);
+export function useActionPending() {
+  const ctx = useContext(PendingContext);
   const { pending } = useFormStatus();
+  return ctx || pending;
+}
+
+export function SubmitButton({ children, className = "btn btn-primary", name, value, disabled }: { children: ReactNode; className?: string; name?: string; value?: string; disabled?: boolean }) {
+  const pending = useActionPending();
   return (
     <button type="submit" className={className} name={name} value={value} disabled={pending || disabled} aria-disabled={pending || disabled}>
       {pending ? "Working…" : children}
@@ -66,7 +74,7 @@ export function ActionForm({
   /** After success, navigate here (e.g. the case page with ?done=1 to show the committed result). */
   doneHref?: string;
 }) {
-  const [state, formAction] = useActionState(action, {});
+  const [state, formAction, pending] = useActionState(action, {});
   const router = useRouter();
   const ref = useRef<HTMLFormElement>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
@@ -78,12 +86,27 @@ export function ActionForm({
       else if (refreshOnSuccess) router.refresh();
     }
   }, [state, refreshOnSuccess, resetOnSuccess, router, doneHref]);
+  // Submitted through onSubmit rather than the action prop: React resets uncontrolled fields after a
+  // form action, which would wipe what the user typed when the server rejects the input.
   return (
-    <form ref={ref} action={formAction} className={className} encType={encType}>
-      <input type="hidden" name="idempotencyKey" value={key} />
-      {showMessages && <FormMessages state={state} />}
-      {typeof children === "function" ? children(state) : children}
-    </form>
+    <PendingContext.Provider value={pending}>
+      <form
+        ref={ref}
+        className={className}
+        encType={encType}
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (pending) return;
+          const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+          const fd = new FormData(e.currentTarget, submitter && submitter.getAttribute("name") ? submitter : undefined);
+          startTransition(() => formAction(fd));
+        }}
+      >
+        <input type="hidden" name="idempotencyKey" value={key} />
+        {showMessages && <FormMessages state={state} />}
+        {typeof children === "function" ? children(state) : children}
+      </form>
+    </PendingContext.Provider>
   );
 }
 

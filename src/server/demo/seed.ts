@@ -60,6 +60,9 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "vendor.maker@altbank.ng", name: "Gbenga Vendor-Desk", roles: [{ role: "VENDOR_MANAGER" }], unit: "Operations" },
   { email: "vendor.checker@altbank.ng", name: "Rukky Vendor-Check", roles: [{ role: "VENDOR_MANAGER" }], unit: "Operations" },
   { email: "collections@altbank.ng", name: "Dayo Collections", roles: [{ role: "COLLECTIONS_OFFICER" }], unit: "Collections" },
+  // Staff Personal Financing (synthetic)
+  { email: "pm.staff@altbank.ng", name: "Kemi Product-Manager", roles: [{ role: "PRODUCT_MANAGER" }], unit: "Retail Products" },
+  { email: "staff.okoro@altbank.ng", name: "Adaeze Okoro", roles: [{ role: "STAFF_APPLICANT" }], unit: "Finance" },
 ];
 
 /** Synthetic outlet locations, institutions and vendors for development and tests (never seeded without --with-demo). */
@@ -125,6 +128,7 @@ export async function seedReferenceData(q: Db, opts: { includeDemo?: boolean } =
   if (!tpl.rowCount) await seedOfferTemplates(q);
   await seedInitialProductConfigs(q);
   await seedRetailOfferTemplates(q);
+  await seedStaffOfferTemplate(q);
   if (includeDemo) await seedRetailDemoReference(q, ids);
   return ids;
 }
@@ -200,6 +204,30 @@ export const RETAIL_OFFER_TEMPLATE_HTML = `<h1>Offer of {{product}} facility</h1
 <p>Repayment schedule: {{schedule}}</p>
 <p>Assessment snapshot {{assessment_id}} (configuration v{{config_version}}).</p>
 <p>DRAFT WORDING: replace with the bank-approved offer and contract text before approving this template.</p>`;
+
+export const STAFF_OFFER_TEMPLATE_HTML = `<h1>Offer of Staff Personal Financing</h1>
+<p>Reference: {{ref}} · Date: {{offer_date}}</p>
+<p>Dear {{staff_name}} (Staff ID {{staff_id}}, {{department}}, {{unit}}),</p>
+<table>
+<tr><th>Approved financing amount</th><td>{{approved_amount}}</td></tr>
+<tr><th>Deduction ({{deduction_rate}})</th><td>{{deduction_amount}}</td></tr>
+<tr><th>Net amount to be disbursed</th><td>{{net_amount}}</td></tr>
+<tr><th>Tenor</th><td>{{tenor}}</td></tr>
+<tr><th>Salary account</th><td>{{salary_account}} ({{salary_account_name}})</td></tr>
+<tr><th>Approved on</th><td>{{approval_date}}</td></tr>
+</table>
+<p>Return this letter signed by {{acceptance_deadline}}. After that time the offer lapses.</p>
+<p>DRAFT WORDING: replace with the bank-approved Legal and Shariah offer text before approving this template.</p>`;
+
+/** Draft staff offer template: ACTIVE but not approved, so no offer is issued until the bank approves its wording. */
+export async function seedStaffOfferTemplate(q: Db) {
+  await q.query(
+    `INSERT INTO offer_templates (name, version, format, applicant_type, body_html, status, production_approved, notes, activated_at)
+     SELECT 'Staff personal financing offer', 1, 'HTML', 'STAFF', $1, 'ACTIVE', false, 'Draft placeholder wording: approve only after replacing with the bank-approved text.', now()
+      WHERE NOT EXISTS (SELECT 1 FROM offer_templates WHERE applicant_type = 'STAFF')`,
+    [STAFF_OFFER_TEMPLATE_HTML],
+  );
+}
 
 export async function seedRetailOfferTemplates(q: Db) {
   const combos = [
