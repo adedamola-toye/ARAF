@@ -28,6 +28,8 @@ const tokenHash = (t: string) => hmac(`session:${t}`);
 /** Pick the workspace: the requested role if the user holds it, else an initiator role, else the first held role. */
 export function pickWorkspace(held: Role[], requested: string | null): Role | null {
   if (requested && held.includes(requested as Role)) return requested as Role;
+  // The Delight Officer / Smile Associate channel: open whichever of the two the person holds.
+  if (requested === "DELIGHT_OFFICER" && held.includes("SMILE_ASSOCIATE")) return "SMILE_ASSOCIATE";
   return (held.find((r) => (INITIATOR_ROLES as readonly string[]).includes(r)) as Role | undefined) ?? held[0] ?? null;
 }
 

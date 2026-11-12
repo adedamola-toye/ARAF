@@ -9,7 +9,7 @@ export const metadata = { title: { absolute: "Retail Asset Factory" } };
 /** Workspace entry points. Each goes through /enter/<workspace>, which reuses the existing OTP sign-in. */
 const WORKSPACES = [
   { href: "/enter/relationship-manager", num: "01", title: "Relationship Manager", text: "Originate and manage customer financing requests." },
-  { href: "/enter/delight-officer", num: "02", title: "Delight Officer", text: "Initiate and manage in-branch financing requests." },
+  { href: "/enter/delight-officer", num: "02", title: "Delight Officer / Smile Associate", text: "Sell Altphones outright or on credit." },
   { href: "/enter/staff-personal-request", num: "03", title: "Staff Personal Request", text: "Apply for financing and track your request." },
 ];
 

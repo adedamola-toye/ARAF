@@ -1,4 +1,4 @@
-import { BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
+import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { themePreference } from "../_lib/theme";
 import { BankMark, Footer, Wordmark } from "@/components/Brand";
@@ -11,6 +11,7 @@ import { db } from "@/server/db";
 import { signOutAction, switchWorkspaceAction } from "./shell-actions";
 import { retailScope as retailScopeFor } from "@/server/retail-reports";
 import { viewsFor, staffActionCount } from "@/server/staff/views";
+import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
@@ -19,7 +20,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const theme = await themePreference();
   const ws = session.activeRole as Role | null;
   const queueCount = Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id = $1", [session.staffId])).rows[0].n);
-  const isInitiatorWs = isInitiatorRole(ws);
+  const altWs = ws === "DELIGHT_OFFICER" || ws === "SMILE_ASSOCIATE";
+  const isInitiatorWs = isInitiatorRole(ws) && !altWs;
+  const alt = await altphonesAccess(db, session.staffId);
+  const altReviewCount = alt.reviewer ? await reviewQueueCount(db, session.staffId) : 0;
   const retailScope = await retailScopeFor(db, session.staffId);
   const pendingExceptions = Number((await db.query(`SELECT count(*) AS n FROM policy_exceptions pe JOIN applications a ON a.id = pe.application_id WHERE pe.status = 'REQUESTED' AND pe.requested_by <> $1 AND a.initiator_id <> $1 AND pe.approver_role IN (SELECT role FROM role_assignments WHERE staff_id = $1 AND active)`, [session.staffId])).rows[0].n);
   const isApprover = roles.some((r) => ["HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "UNIT_HEAD", "DIVISIONAL_HEAD"].includes(r)) || pendingExceptions > 0;
@@ -65,7 +69,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Exceptions
             </NavLink>
           )}
-          {retailScope && (
+          {retailScope && !altWs && (
             <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
               Retail dashboard
             </NavLink>
@@ -81,6 +85,36 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
+        {(alt.any) && (
+          <div className="nav-section">
+            <span className="nav-title">Altphones</span>
+            {alt.originator && (altWs || !isInitiatorRole(ws)) && (
+              <>
+                <NavLink href="/altphones" exact icon={<Smartphone {...ic} />}>
+                  New sale
+                </NavLink>
+                <NavLink href="/altphones/sales" icon={<ClipboardList {...ic} />}>
+                  My sales
+                </NavLink>
+              </>
+            )}
+            {(alt.reviewer || alt.pm || alt.admin) && (
+              <NavLink href="/altphones/reviews" count={altReviewCount} icon={<ClipboardCheck {...ic} />}>
+                Reviews and reports
+              </NavLink>
+            )}
+            {alt.inventory && (
+              <NavLink href="/altphones/inventory" icon={<Boxes {...ic} />}>
+                Inventory
+              </NavLink>
+            )}
+            {(alt.pm || alt.admin) && (
+              <NavLink href="/altphones/manage" icon={<Settings2 {...ic} />}>
+                Altphones settings
+              </NavLink>
+            )}
+          </div>
+        )}
         <div className="nav-section">
           <span className="nav-title">Staff financing</span>
           <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>

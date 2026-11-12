@@ -23,6 +23,7 @@
     "directory:import": "tsx scripts/import-directory.ts",
     "setup": "tsx scripts/setup.ts",
     "demo:retail": "tsx scripts/demo-retail.ts",
+    "demo:altphones": "tsx scripts/demo-altphones.ts",
     "migration:report": "tsx scripts/migration-report.ts"
   },
   "engines": {

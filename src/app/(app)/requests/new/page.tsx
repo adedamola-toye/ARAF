@@ -12,6 +12,8 @@ export const metadata = { title: "Initiate New Request" };
 
 export default async function NewRequest() {
   const { roles, session } = await requireUser();
+  // The Delight Officer / Smile Associate workspace sells Altphones only.
+  if (session.activeRole === "DELIGHT_OFFICER" || session.activeRole === "SMILE_ASSOCIATE") redirect("/altphones");
   const mine = INITIATOR_ROLES.filter((r) => roles.includes(r));
   if (!mine.length) redirect("/forbidden");
   const retailRoles = RETAIL_INITIATOR_ROLES.filter((r) => roles.includes(r));

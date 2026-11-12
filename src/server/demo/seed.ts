@@ -63,6 +63,10 @@ export const DEMO_STAFF: DemoStaff[] = [
   // Staff Personal Financing (synthetic)
   { email: "pm.staff@altbank.ng", name: "Kemi Product-Manager", roles: [{ role: "PRODUCT_MANAGER" }], unit: "Retail Products" },
   { email: "staff.okoro@altbank.ng", name: "Adaeze Okoro", roles: [{ role: "STAFF_APPLICANT" }], unit: "Finance" },
+  // Altphones (synthetic)
+  { email: "sa.tobi@altbank.ng", name: "Tobi Smile-Associate", roles: [{ role: "SMILE_ASSOCIATE", region: "LAGOS" }], region: "LAGOS", unit: "Retail" },
+  { email: "bpm@altbank.ng", name: "Bisi Performance-Manager", roles: [{ role: "BUSINESS_PERFORMANCE_MANAGER" }], unit: "Retail" },
+  { email: "pm.altphones@altbank.ng", name: "Chidi Altphones-PM", roles: [{ role: "ALTPHONES_PRODUCT_MANAGER" }], unit: "Retail Products" },
 ];
 
 /** Synthetic outlet locations, institutions and vendors for development and tests (never seeded without --with-demo). */
@@ -70,6 +74,7 @@ export const DEMO_LOCATIONS = [
   { state: "LAGOS", city: "Yaba", outletType: "ALTBOX", name: "Yaba Altbox", oss: "oss.yaba@altbank.ng", team: "RETAIL-LAGOS-1" },
   { state: "LAGOS", city: "Ikeja", outletType: "BRANCH", name: "Ikeja Branch", oss: "oss.yaba@altbank.ng", team: "RETAIL-LAGOS-1" },
   { state: "FCT (ABUJA)", city: "Wuse", outletType: "ALTSHOP", name: "Wuse Altshop", oss: null, team: "RETAIL-ABUJA-1" },
+  { state: "LAGOS", city: "Yaba", outletType: "ALTSHOP", name: "Yaba Altshop", oss: null, team: "RETAIL-LAGOS-1" },
 ];
 export const DEMO_INSTITUTIONS = [
   { code: "DEMO-001", name: "Synthetic Commercial Bank (demo only)", category: "COMMERCIAL", aliases: ["SCB demo"], payment: true },
