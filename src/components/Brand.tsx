@@ -23,8 +23,23 @@ export function Wordmark({ href = "/" }: { href?: string }) {
   );
 }
 
+/**
+ * The Alternative Bank logo on a transparent background (V40). Both variants are rendered and CSS in
+ * globals.css shows the one matching html[data-theme], which the existing theme script sets before first
+ * paint and updates on every Light / Dark / System change.
+ */
+export function BankLogo({ className, lazy }: { className?: string; lazy?: boolean }) {
+  const common = { width: 460, height: 231, decoding: "async" as const, loading: lazy ? ("lazy" as const) : undefined };
+  return (
+    <>
+      <img alt="The Alternative Bank" {...common} className={`${className ?? ""} logo-on-light`} src="/images/landing/alternative-bank-logo-light.png" />
+      <img alt="The Alternative Bank" {...common} className={`${className ?? ""} logo-on-dark`} src="/images/landing/alternative-bank-logo-dark.png" />
+    </>
+  );
+}
+
 export function BankMark() {
-  return <img className="bank-mark" src="/images/landing/alternative-bank-logo.webp" alt="The Alternative Bank" width={460} height={231} decoding="async" />;
+  return <BankLogo className="bank-mark" />;
 }
 
 export const FOOTER_TEXT = "A platform by The Alternative Bank.";
@@ -53,7 +68,7 @@ export function AuthScene({ children, theme = "system" }: { children: React.Reac
             <p>A Payments and Collections Product</p>
           </Link>
           <div className={s["header-actions"]}>
-            <img alt="The Alternative Bank" className={s["bank-logo"]} src="/images/landing/alternative-bank-logo.webp" width={460} height={231} decoding="async" />
+            <BankLogo className={s["bank-logo"]} />
           </div>
         </header>
         <main id="main">
@@ -71,7 +86,7 @@ export function AuthScene({ children, theme = "system" }: { children: React.Reac
             <p>Internal use only</p>
           </div>
           <div className={s["footer-logos"]}>
-            <img alt="The Alternative Bank" className={s["footer-bank-logo"]} src="/images/landing/alternative-bank-logo.webp" width={460} height={231} loading="lazy" />
+            <BankLogo className={s["footer-bank-logo"]} lazy />
             <img alt="NIFI" className={s["footer-nifi-logo"]} src="/images/landing/nifi-logo.png" width={210} height={165} loading="lazy" />
           </div>
           <AppearanceMenu initial={theme} classes={appearanceClasses} />

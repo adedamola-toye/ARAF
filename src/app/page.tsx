@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import s from "./landing.module.css";
 import { AppearanceMenu } from "@/components/Appearance";
-import { appearanceClasses } from "@/components/Brand";
+import { appearanceClasses, BankLogo } from "@/components/Brand";
 import { themePreference } from "./_lib/theme";
 
 export const metadata = { title: { absolute: "Retail Asset Factory" } };
@@ -25,7 +25,7 @@ export default async function Landing() {
             <p>A Payments and Collections Product</p>
           </div>
           <div className={s["header-actions"]}>
-            <img alt="The Alternative Bank" className={s["bank-logo"]} src="/images/landing/alternative-bank-logo.webp" width={460} height={231} decoding="async" />
+            <BankLogo className={s["bank-logo"]} />
           </div>
         </header>
         <main id="main">
@@ -71,7 +71,7 @@ export default async function Landing() {
             <p>Internal use only</p>
           </div>
           <div className={s["footer-logos"]}>
-            <img alt="The Alternative Bank" className={s["footer-bank-logo"]} src="/images/landing/alternative-bank-logo.webp" width={460} height={231} loading="lazy" />
+            <BankLogo className={s["footer-bank-logo"]} lazy />
             <img alt="NIFI" className={s["footer-nifi-logo"]} src="/images/landing/nifi-logo.png" width={210} height={165} loading="lazy" />
           </div>
           <AppearanceMenu initial={pref} classes={appearanceClasses} />
