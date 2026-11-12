@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import path from "node:path";
 import { loadEnv } from "./load-env";
 loadEnv();
 import { Client } from "pg";
@@ -55,8 +57,18 @@ async function checkDatabase() {
     await client.connect();
     const info = await client.query<{ db: string; usr: string }>("select current_database() as db, current_user as usr");
     record("database connect", true, `${info.rows[0].db} as ${info.rows[0].usr}`);
-    const mig = await client.query<{ n: number }>("select count(*)::int as n from schema_migrations");
-    record("migrations", mig.rows[0].n > 0, `${mig.rows[0].n} applied`);
+    const applied = new Set(
+      (await client.query<{ name: string }>("select name from schema_migrations")).rows.map((r) => r.name),
+    );
+    const files = readdirSync(path.resolve(process.cwd(), "migrations"))
+      .filter((f) => f.endsWith(".sql"))
+      .sort();
+    const pending = files.filter((f) => !applied.has(f));
+    record(
+      "migrations",
+      pending.length === 0 && applied.size > 0,
+      pending.length ? `${pending.length} pending: ${pending.join(", ")}` : `${applied.size} applied`,
+    );
     const tbl = await client.query<{ n: number }>(
       "select count(*)::int as n from information_schema.tables where table_schema = 'public'",
     );
