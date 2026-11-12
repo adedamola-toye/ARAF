@@ -5,18 +5,20 @@ import { PageHeader } from "@/components/PageHeader";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
-import { CONTRACT_PLACEHOLDERS, integrationStatus, listHolidays, listModels, MAX_ACTIVE_MODELS } from "@/server/altphones/catalogue";
+import { integrationStatus, listHolidays, listModels, MAX_ACTIVE_MODELS } from "@/server/altphones/catalogue";
 import { creditReadiness, currentSettings, roleHolders, routeUnitHead } from "@/server/altphones/core";
 import { altphonesAccess } from "@/server/altphones/views";
 import { termsFor } from "@/server/altphones/origination";
 import { IMPORT_LABELS, listImports, type ImportKind } from "@/server/altphones/imports";
 import { formatNaira, formatRateE4, MARKUP_BASIS_LABELS, SHORT_MONTH_RULE_LABELS, WEEKEND_RULE_LABELS, type MarkupBasis, type ShortMonthRule, type WeekendRule } from "@/lib/altphones";
 import { PhoneImage } from "../ui";
-import { commitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
+import { ContractEditor } from "../AltClient";
+import { CONTRACT_DRAFT } from "@/lib/altphones-contract";
+import { contractAction, commitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
 
 export const metadata = { title: "Altphones settings" };
 
-type Tab = "catalogue" | "pricing" | "policy" | "imports";
+type Tab = "catalogue" | "pricing" | "contract" | "policy" | "imports";
 
 export default async function AltManage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -25,7 +27,8 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
   if (!access.pm && !access.admin) redirect("/altphones");
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: "catalogue", label: "Catalogue", show: access.pm },
-    { key: "pricing", label: "Pricing and contract", show: access.pm || access.admin },
+    { key: "pricing", label: "Pricing", show: access.pm || access.admin },
+    { key: "contract", label: "Contract", show: access.pm || access.admin },
     { key: "policy", label: "Credit policy and routing", show: access.admin || access.pm },
     { key: "imports", label: "Imports", show: access.admin },
   ];
@@ -61,6 +64,7 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
       {tab === "catalogue" && <Catalogue />}
       {tab === "pricing" && <Pricing canEdit={access.pm} />}
       {tab === "policy" && <Policy canEdit={access.admin} />}
+      {tab === "contract" && <Contract />}
       {tab === "imports" && <Imports preview={sp.preview} />}
       <p className="small muted">
         Settings version {s.version} · {formatLagos(s.created_at)} · {s.reason}
@@ -233,13 +237,6 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
                   ))}
                 </select>
               </div>
-            </div>
-            <div className="field">
-              <label htmlFor="contractTemplate">Approved customer contract wording</label>
-              <textarea id="contractTemplate" name="contractTemplate" rows={10} className="mono" defaultValue={s.contract_template ?? ""} />
-              <span className="hint">
-                Placeholders: {CONTRACT_PLACEHOLDERS.map((p) => `{{${p}}}`).join(" ")}
-              </span>
             </div>
             <div className="field">
               <label htmlFor="reason">Approval reference</label>
@@ -458,6 +455,54 @@ async function Imports({ preview }: { preview?: string }) {
           </table>
         )}
       </section>
+    </div>
+  );
+}
+
+async function Contract() {
+  const s = await currentSettings(db);
+  const history = (
+    await db.query<{ version: number; reason: string; created_at: Date; by_name: string | null }>(
+      `SELECT v.version, v.reason, v.created_at, st.full_name AS by_name FROM altphones_settings v LEFT JOIN staff st ON st.id = v.created_by
+        WHERE v.contract_template IS DISTINCT FROM (SELECT p.contract_template FROM altphones_settings p WHERE p.version = v.version - 1)
+        ORDER BY v.version DESC LIMIT 10`,
+    )
+  ).rows.filter((h) => h.version > 1);
+  const inForce = !!s.contract_template?.trim();
+  return (
+    <div className="stack">
+      <section className="card" aria-labelledby="h-con">
+        <div className="card-head">
+          <h2 id="h-con">Customer contract</h2>
+          <span className={`badge ${inForce ? "badge-green" : "badge-warn"}`}>{inForce ? `In force · settings version ${s.version}` : "Not set — credit sales cannot reach acceptance"}</span>
+        </div>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Each customer receives this wording with their own figures and accepts it with a one-time code. Saving creates a new version; contracts already accepted keep the exact text the customer accepted.
+        </p>
+        <ActionForm action={contractAction} className="stack">
+          <ContractEditor initial={s.contract_template ?? CONTRACT_DRAFT} isDraft={!inForce} />
+          <div className="field">
+            <label htmlFor="creason">Approval reference</label>
+            <input id="creason" name="reason" required placeholder="Legal and Shariah approval reference" />
+          </div>
+          <div className="action-bar">
+            <SubmitButton>Save wording</SubmitButton>
+          </div>
+        </ActionForm>
+      </section>
+      {history.length > 0 && (
+        <section className="card" aria-labelledby="h-chist">
+          <h2 id="h-chist">Wording history</h2>
+          <ul className="alt-decisions">
+            {history.map((h) => (
+              <li key={h.version}>
+                <strong>Version {h.version}</strong> <span className="small muted">· {formatLagos(h.created_at)} · {h.by_name ?? "Migration"}</span>
+                <div className="small">{h.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }

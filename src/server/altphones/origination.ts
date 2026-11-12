@@ -60,6 +60,7 @@ import {
   settingsById,
   transition,
 } from "./core";
+import { renderContract, type ContractPlaceholder } from "@/lib/altphones-contract";
 import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
 
@@ -681,9 +682,6 @@ export async function writeSchedule(tx: Tx, app: AltApp, rows: { seq: number; du
 
 // ------------------------------------------------------------------ contract and OTP
 
-function render(tpl: string, values: Record<string, string>) {
-  return tpl.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k) => values[k] ?? "");
-}
 
 const otpHash = (challengeId: string, code: string) => hmac(`altphones-otp:${challengeId}:${code}`);
 
@@ -706,7 +704,7 @@ export async function sendContractOtp(ctx: Ctx, id: string, p: { lockVersion?: n
       if (!tpl) throw gate("The approved contract wording is not loaded. The Altphones Product Manager must load it.");
       const sched = await buildSchedule(tx, app, lagosDate(ctx.now));
       await writeSchedule(tx, app, sched, "PROVISIONAL", ctx.now);
-      const values: Record<string, string> = {
+      const values: Record<ContractPlaceholder, string> = {
         ref: app.ref,
         date: lagosDate(ctx.now),
         customer_name: app.customer_name,
@@ -730,8 +728,9 @@ export async function sendContractOtp(ctx: Ctx, id: string, p: { lockVersion?: n
         external_bank: app.external_bank_name,
         dd_reference: app.dd_reference ?? "",
         schedule: sched.map((r) => `${r.seq}. ${r.dueDate}  ${formatNaira(r.amountKobo)}`).join("\n"),
+        support_email: current.team_email,
       };
-      const body = render(tpl, values);
+      const body = renderContract(tpl, values);
       const version = Number((await tx.query<{ n: string }>("SELECT coalesce(max(version), 0) AS n FROM altphones_contracts WHERE application_id = $1", [app.id])).rows[0].n) + 1;
       const terms = { price: app.price_kobo, downPayment: app.down_payment_kobo, financed: app.financed_kobo, tenure: app.tenure_months, rateE4: app.markup_rate_e4, basis: app.markup_basis, markup: app.markup_kobo, total: app.total_repayment_kobo, instalment: app.instalment_kobo, finalInstalment: app.final_instalment_kobo, schedule: sched };
       const contract = (

@@ -587,3 +587,44 @@ describe("SeedFi Seed Score client (API documentation v2.0)", () => {
     expect(requests).toHaveLength(0);
   });
 });
+
+describe("contract wording", () => {
+  it("the starting draft uses only known placeholders and renders completely", async () => {
+    const { CONTRACT_DRAFT, unknownPlaceholders, renderContract, SAMPLE_CONTRACT_VALUES } = await import("@/lib/altphones-contract");
+    expect(unknownPlaceholders(CONTRACT_DRAFT)).toEqual([]);
+    const out = renderContract(CONTRACT_DRAFT, SAMPLE_CONTRACT_VALUES);
+    expect(out).not.toMatch(/\{\{/);
+    expect(out).toContain("Altphone L1 Series — Green");
+    expect(out).toMatch(/no interest/);
+  });
+
+  it("a Super Admin or the Altphones Product Manager can change it; others cannot; drafts and unknown placeholders are refused", async () => {
+    const { saveContract } = await import("@/server/altphones/catalogue");
+    const { CONTRACT_DRAFT } = await import("@/lib/altphones-contract");
+    const approved = CONTRACT_DRAFT.replace(/\[DRAFT FOR LEGAL AND SHARIAH REVIEW[^\]]*\]\n/, "");
+    await expect(saveContract(await ctxFor(ALT.admin), { template: CONTRACT_DRAFT, reason: "Legal memo 1" })).rejects.toMatchObject({ fields: { template: expect.stringMatching(/draft notice/) } });
+    await expect(saveContract(await ctxFor(ALT.admin), { template: approved + "\n{{loan_amount}}", reason: "Legal memo 1" })).rejects.toMatchObject({ fields: { template: expect.stringMatching(/loan_amount/) } });
+    await expect(saveContract(await ctxFor(ALT.doOfficer), { template: approved, reason: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const v1 = await saveContract(await ctxFor(ALT.admin), { template: approved, reason: "Legal and Shariah approval L-001" });
+    const v2 = await saveContract(await ctxFor(ALT.pm), { template: approved.replace("Please read it carefully.", "Please read it carefully before you agree."), reason: "Wording tweak L-002" });
+    expect(v2.version).toBe(v1.version + 1);
+    const row = (await db.query("SELECT contract_template, reason FROM altphones_settings WHERE version = $1", [v2.version])).rows[0];
+    expect(row.contract_template).toContain("before you agree");
+    expect(row.reason).toBe("Contract wording: Wording tweak L-002");
+    // pricing changes keep the wording
+    await savePricing(await ctxFor(ALT.pm), { rates: { "3": "1", "6": "1", "12": "1" }, basis: "FLAT_PER_MONTH", weekendRule: "NEXT_BUSINESS_DAY", shortMonthRule: "LAST_DAY_OF_MONTH", reason: "Rates" });
+    expect((await db.query("SELECT contract_template FROM altphones_settings ORDER BY version DESC LIMIT 1")).rows[0].contract_template).toContain("before you agree");
+  });
+
+  it("an issued contract is filled in with the customer's figures, including the team mailbox", async () => {
+    const { saveContract } = await import("@/server/altphones/catalogue");
+    const { CONTRACT_DRAFT } = await import("@/lib/altphones-contract");
+    await saveContract(await ctxFor(ALT.admin), { template: CONTRACT_DRAFT.replace(/\[DRAFT FOR LEGAL AND SHARIAH REVIEW[^\]]*\]\n/, ""), reason: "L-001" });
+    const { id } = await creditReady();
+    const body = (await db.query("SELECT c.body FROM altphones_contracts c JOIN altphones_applications a ON a.contract_id = c.id WHERE a.id = $1", [id])).rows[0].body;
+    expect(body).not.toMatch(/\{\{/);
+    expect(body).toContain("Email altbox@altbank.ng");
+    expect(body).toContain("₦116,000");
+    expect(body).toContain("Synthetic Customer");
+  });
+});

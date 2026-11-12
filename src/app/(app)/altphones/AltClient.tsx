@@ -1,5 +1,6 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { CONTRACT_PLACEHOLDER_KEYS, CONTRACT_PLACEHOLDERS, renderContract, SAMPLE_CONTRACT_VALUES, unknownPlaceholders } from "@/lib/altphones-contract";
 import { computeTerms, formatNaira, formatRateE4, type MarkupBasis } from "@/lib/altphones";
 
 /** Tenure picker with the live repayment breakdown (the server recalculates everything on save). */
@@ -98,6 +99,83 @@ export function CopyLink({ url }: { url: string }) {
       <a className="btn btn-sm btn-ghost" href={url} target="_blank" rel="noopener noreferrer">
         Open
       </a>
+    </div>
+  );
+}
+
+/**
+ * Contract wording editor: plain textarea plus a live preview with example figures and a placeholder
+ * reference (click to insert at the cursor). Unknown placeholders are highlighted before saving.
+ */
+export function ContractEditor({ initial, isDraft }: { initial: string; isDraft: boolean }) {
+  const [text, setText] = useState(initial);
+  const [view, setView] = useState<"edit" | "preview">("edit");
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const unknown = unknownPlaceholders(text);
+  const insert = (k: string) => {
+    const el = ref.current;
+    const token = `{{${k}}}`;
+    if (!el) return setText((t) => t + token);
+    const s = el.selectionStart ?? text.length;
+    const e = el.selectionEnd ?? s;
+    const next = text.slice(0, s) + token + text.slice(e);
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(s + token.length, s + token.length);
+    });
+  };
+  return (
+    <div className="alt-contract-editor">
+      <div className="tabs" role="tablist" aria-label="Contract view">
+        <button type="button" role="tab" className={`tab alt-tab-btn ${view === "edit" ? "is-on" : ""}`} aria-selected={view === "edit"} onClick={() => setView("edit")}>
+          Edit wording
+        </button>
+        <button type="button" role="tab" className={`tab alt-tab-btn ${view === "preview" ? "is-on" : ""}`} aria-selected={view === "preview"} onClick={() => setView("preview")}>
+          Preview with example figures
+        </button>
+      </div>
+      {isDraft && <p className="small alt-draft-note">This is the standard starting draft. Complete the bracketed notes with Legal and Shariah and remove the draft line before saving — saving puts it in force for new contracts.</p>}
+      <div className="alt-contract-grid">
+        <div>
+          <input type="hidden" name="template" value={text} />
+          {view === "edit" ? (
+            <>
+              <label htmlFor="template" className="sr-only">
+                Contract wording
+              </label>
+              <textarea id="template" ref={ref} value={text} onChange={(e) => setText(e.target.value)} rows={28} className="alt-contract-text" spellCheck />
+            </>
+          ) : (
+            <pre className="alt-contract-body alt-contract-preview" aria-label="Preview with example figures">
+              {renderContract(text, SAMPLE_CONTRACT_VALUES)}
+            </pre>
+          )}
+          {unknown.length > 0 && (
+            <p className="err" role="alert">
+              Unknown placeholders: {unknown.map((u) => `{{${u}}}`).join(", ")}
+            </p>
+          )}
+          <p className="small muted">
+            {text.length.toLocaleString()} characters · {(text.match(/\{\{\s*[a-z_]+\s*\}\}/g) ?? []).length} placeholders
+          </p>
+        </div>
+        <aside className="alt-placeholders" aria-label="Placeholders">
+          <p className="small" style={{ marginTop: 0 }}>
+            <strong>Placeholders</strong> — filled in for each customer. Click to insert.
+          </p>
+          <ul>
+            {CONTRACT_PLACEHOLDER_KEYS.map((k) => (
+              <li key={k}>
+                <button type="button" className="alt-ph" onClick={() => insert(k)} disabled={view !== "edit"}>
+                  <code>{`{{${k}}}`}</code>
+                  <span>{CONTRACT_PLACEHOLDERS[k]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      </div>
     </div>
   );
 }

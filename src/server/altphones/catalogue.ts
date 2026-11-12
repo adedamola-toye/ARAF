@@ -14,6 +14,7 @@ import { sha256Hex } from "../crypto";
 import { config } from "../config";
 import { ALTPHONES_TENURES, isEmail, parseRateE4, type MarkupBasis, type ShortMonthRule, type WeekendRule } from "@/lib/altphones";
 import { currentSettings, isUuid, PM_ROLE, type AltSettings } from "./core";
+import { CONTRACT_PLACEHOLDER_KEYS, unknownPlaceholders } from "@/lib/altphones-contract";
 
 export const MAX_ACTIVE_MODELS = 3;
 
@@ -133,36 +134,13 @@ export interface PricingInput {
   basis: string;
   weekendRule: string;
   shortMonthRule: string;
-  contractTemplate: string;
+  /** Omit to keep the current wording (the contract has its own editor). */
+  contractTemplate?: string;
   reason: string;
 }
 
 /** Placeholders the contract wording can use (filled from the application at generation). */
-export const CONTRACT_PLACEHOLDERS = [
-  "ref",
-  "date",
-  "customer_name",
-  "customer_email",
-  "customer_phone",
-  "phone_model",
-  "price",
-  "down_payment",
-  "financed_amount",
-  "tenure_months",
-  "markup_rate",
-  "markup_amount",
-  "total_repayment",
-  "monthly_instalment",
-  "final_instalment",
-  "repayment_day",
-  "first_repayment_date",
-  "final_repayment_date",
-  "ab_account",
-  "external_account",
-  "external_bank",
-  "dd_reference",
-  "schedule",
-] as const;
+export const CONTRACT_PLACEHOLDERS = CONTRACT_PLACEHOLDER_KEYS;
 
 async function insertVersion(q: Db, ctx: Ctx, base: AltSettings, patch: Partial<AltSettings>, reason: string) {
   const s = { ...base, ...patch };
@@ -199,7 +177,7 @@ export async function savePricing(ctx: Ctx, p: PricingInput) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   return withTx(async (tx) => {
-    if (!(await holdsRole(tx, actor.staffId, PM_ROLE))) throw forbidden("Only the Altphones Product Manager can change pricing and contract wording.");
+    if (!(await holdsRole(tx, actor.staffId, PM_ROLE))) throw forbidden("Only the Altphones Product Manager can change pricing.");
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('altphones_settings'))");
     const base = await currentSettings(tx);
     const e: Record<string, string> = {};
@@ -218,12 +196,9 @@ export async function savePricing(ctx: Ctx, p: PricingInput) {
     if (wr && !["NEXT_BUSINESS_DAY", "PREVIOUS_BUSINESS_DAY", "NO_ADJUSTMENT"].includes(wr)) e.weekendRule = "Choose a rule.";
     const sr = p.shortMonthRule || null;
     if (sr && !["LAST_DAY_OF_MONTH", "FIRST_DAY_OF_NEXT_MONTH"].includes(sr)) e.shortMonthRule = "Choose a rule.";
-    const tpl = (p.contractTemplate ?? "").trim() || null;
-    if (tpl && tpl.length > 50_000) e.contractTemplate = "The contract wording is too long.";
-    if (tpl) {
-      const unknown = [...tpl.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/g)].map((m) => m[1]).filter((k) => !(CONTRACT_PLACEHOLDERS as readonly string[]).includes(k));
-      if (unknown.length) e.contractTemplate = `Unknown placeholders: ${[...new Set(unknown)].join(", ")}.`;
-    }
+    const tpl = p.contractTemplate === undefined ? base.contract_template : p.contractTemplate.trim() || null;
+    const tplError = tpl ? contractProblem(tpl) : null;
+    if (tplError) e.contractTemplate = tplError;
     if ((p.reason ?? "").trim().length < 3) e.reason = "Record the approval this change is based on.";
     if (Object.keys(e).length) throw invalid("Check the pricing settings.", e);
     return insertVersion(tx, ctx, base, { markup_rates: rates, markup_basis: basis as MarkupBasis | null, weekend_rule: wr as WeekendRule | null, short_month_rule: sr as ShortMonthRule | null, contract_template: tpl }, p.reason.trim());
@@ -288,4 +263,37 @@ export function integrationStatus() {
     paystack: p.enabled && p.secretKey ? "CONFIGURED" : "NOT_CONFIGURED",
     directDebit: p.enabled && p.secretKey && p.directDebitEnabled ? "CONFIGURED" : "NOT_CONFIGURED",
   } as const;
+}
+
+function contractProblem(tpl: string): string | null {
+  if (tpl.length > 50_000) return "The contract wording is too long.";
+  const unknown = unknownPlaceholders(tpl);
+  if (unknown.length) return `Unknown placeholders: ${unknown.map((u) => `{{${u}}}`).join(", ")}. Use only the listed placeholders.`;
+  return null;
+}
+
+/**
+ * Contract wording: editable by a Super Admin or the Altphones Product Manager. Saved as a new settings
+ * version; applications that already accepted keep the exact text they accepted.
+ */
+export async function saveContract(ctx: Ctx, p: { template: string; reason: string }) {
+  const actor = ctx.actor;
+  if (!actor) throw forbidden();
+  return withTx(async (tx) => {
+    if (!(await holdsRole(tx, actor.staffId, "SUPER_ADMIN")) && !(await holdsRole(tx, actor.staffId, PM_ROLE))) throw forbidden("Only a Super Admin or the Altphones Product Manager can change the contract wording.");
+    await tx.query("SELECT pg_advisory_xact_lock(hashtext('altphones_settings'))");
+    const base = await currentSettings(tx);
+    const tpl = (p.template ?? "").replace(/\r\n/g, "\n").trim();
+    const e: Record<string, string> = {};
+    if (tpl.length < 200) e.template = "Enter the full contract wording.";
+    else {
+      const problem = contractProblem(tpl);
+      if (problem) e.template = problem;
+      else if (/\[DRAFT FOR LEGAL AND SHARIAH REVIEW/.test(tpl)) e.template = "Remove the draft notice once Legal and Shariah have approved the wording.";
+    }
+    if ((p.reason ?? "").trim().length < 3) e.reason = "Record the approval reference for this wording.";
+    if (Object.keys(e).length) throw invalid("Check the contract wording.", e);
+    if (tpl === (base.contract_template ?? "")) throw invalid("No change to save.", { template: "The wording is unchanged." });
+    return insertVersion(tx, ctx, base, { contract_template: tpl }, `Contract wording: ${p.reason.trim()}`);
+  });
 }
