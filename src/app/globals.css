@@ -642,7 +642,7 @@ table.matrix td { vertical-align: top; }
 .alt-phone-img--thumb.is-empty .icon { width: 22px; height: 22px; }
 .alt-phone-body { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5) var(--space-5); flex: 1; }
 .alt-phone-body h3 { margin: 0; font-size: 18px; }
-.alt-specs { margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); display: grid; gap: 3px; }
+.alt-specs { flex: 1; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--ink-2); display: grid; gap: 3px; }
 .alt-specs li { padding-left: 14px; position: relative; }
 .alt-specs li::before { content: ""; position: absolute; left: 2px; top: 0.6em; width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong); }
 .alt-price { display: flex; align-items: baseline; gap: 8px; margin-top: var(--space-1); }

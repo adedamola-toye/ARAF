@@ -6,7 +6,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 
 | Area | Status |
 |---|---|
-| Catalogue of up to 3 phones (name, photo, specifications) managed by the Altphones Product Manager | Implemented — no models, photos or specs are invented; the PM uploads them |
+| Catalogue of up to 3 phones (name, photo, specifications) managed by the Altphones Product Manager | Implemented — loaded from the approved AltPhone deck (migration 010): AltPhone Lesia L1 in Black & Gold, Green and Blue, with the deck's photos and specifications; the PM can edit or replace them |
 | Pricing ₦145,000 outright, fixed ₦29,000 down payment, ₦116,000 financed, 3/6/12 months | Implemented (settings version 1) |
 | Markup engine on the financed amount, exact kobo arithmetic, rounding in the final instalment | Implemented — **rates not yet configured** (see 6) |
 | Terms fixed per application when the down payment is requested (later pricing changes do not apply) | Implemented |
@@ -70,7 +70,7 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 2. **Repayment-date rules** — weekend/holiday rule and short-month rule (Pricing tab), and the public holiday list. The first instalment falls on the chosen repayment day in the calendar month after disbursement; confirm this matches policy.
 3. **Approved contract wording** (Pricing tab), using the listed `{{placeholders}}`.
 4. **Seedfi score bands** (Pass and Fair thresholds) and the **route Unit Head** — Super Admin, Credit policy and routing tab.
-5. **Catalogue** — the three approved phones with photos and specifications.
+5. **Catalogue** — loaded from the AltPhone deck (AltPhone Lesia L1 ×3 colours). Confirm the names and spec lines with the product team. The deck also mentions insurance cover, data bundles and flexible daily/weekly payment; those are not part of this workflow.
 6. **Locations** — import Branches, Shops and BOXes (Imports tab), then opening stock via stock requests approved by a Super Admin (or a historical stock import).
 7. **Roles** — grant Smile Associate, Business Performance Manager and Altphones Product Manager in Users & roles.
 8. **Integrations** — section 5, plus the Paystack webhook URL.

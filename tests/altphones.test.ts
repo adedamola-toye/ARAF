@@ -412,9 +412,9 @@ describe("historical imports", () => {
     const outboxBefore = (await db.query("SELECT count(*)::int AS n FROM notification_outbox")).rows[0].n;
     const csv = [
       "Reference,Type,Customer name,Customer email,Customer phone,Phone model,IMEI,Transaction date,Originating officer,Originating location,Supplying location,Tenure",
-      `LEG-1,Outright,Old Customer,old@example.com,08031234567,Altphone A (synthetic),${IMEI[0]},2026-02-01,do.ife@altbank.ng,Ikeja Branch,Ikeja Branch,`,
-      `LEG-2,Credit,Old Credit,,,Altphone A (synthetic),${IMEI[1]},15/03/2026,,Yaba Altbox,Yaba Altshop,6`,
-      `LEG-2,Credit,Dup Ref,,,Altphone A (synthetic),${IMEI[2]},2026-03-15,,Yaba Altbox,Yaba Altshop,6`,
+      `LEG-1,Outright,Old Customer,old@example.com,08031234567,AltPhone Lesia L1 — Black & Gold,${IMEI[0]},2026-02-01,do.ife@altbank.ng,Ikeja Branch,Ikeja Branch,`,
+      `LEG-2,Credit,Old Credit,,,AltPhone Lesia L1 — Black & Gold,${IMEI[1]},15/03/2026,,Yaba Altbox,Yaba Altshop,6`,
+      `LEG-2,Credit,Dup Ref,,,AltPhone Lesia L1 — Black & Gold,${IMEI[2]},2026-03-15,,Yaba Altbox,Yaba Altshop,6`,
     ].join("\n");
     const bad = await previewImport(admin, "TRANSACTIONS", "legacy.csv", Buffer.from(csv));
     expect(bad.summary).toMatchObject({ rows: 3, valid: 2, errors: 1 });
@@ -438,7 +438,7 @@ describe("historical imports", () => {
 
   it("imports historical stock movements once, as legacy ledger entries", async () => {
     const admin = await ctxFor(ALT.admin);
-    const csv = "Reference,Location,Phone model,Movement,Quantity,Date,Note\nS-1,Wuse Altshop,Altphone B (synthetic),Opening,10,2026-01-01,\nS-2,Wuse Altshop,Altphone B (synthetic),Sale,3,2026-02-01,\nS-3,Yaba Altbox,Altphone B (synthetic),Receipt,3,2026-02-01,\n";
+    const csv = "Reference,Location,Phone model,Movement,Quantity,Date,Note\nS-1,Wuse Altshop,AltPhone Lesia L1 — Green,Opening,10,2026-01-01,\nS-2,Wuse Altshop,AltPhone Lesia L1 — Green,Sale,3,2026-02-01,\nS-3,Yaba Altbox,AltPhone Lesia L1 — Green,Receipt,3,2026-02-01,\n";
     const p1 = await previewImport(admin, "STOCK", "stock.csv", Buffer.from(csv));
     expect(p1.summary).toMatchObject({ valid: 2, errors: 1 }); // BOX row refused
     const ok = await previewImport(admin, "STOCK", "stock.csv", Buffer.from(csv.split("\n").slice(0, 3).join("\n")));
@@ -471,5 +471,20 @@ describe("access", () => {
     expect([...(await viewableApp(await ctxFor(ALT.admin), db, id)).as]).toContain("ADMIN");
     expect((await db.query("SELECT 1 FROM audit_events WHERE action = 'ALTPHONES_VIEW_DENIED'")).rowCount).toBeGreaterThan(0);
     void lv;
+  });
+});
+
+describe("approved catalogue", () => {
+  it("ships the AltPhone Lesia L1 in its three colours with the deck specifications and photos", async () => {
+    const rows = (await db.query("SELECT name, specifications, image_key, active FROM altphones_models WHERE active ORDER BY sort_order")).rows;
+    expect(rows.map((r) => r.name)).toEqual(["AltPhone Lesia L1 — Black & Gold", "AltPhone Lesia L1 — Green", "AltPhone Lesia L1 — Blue"]);
+    for (const r of rows) {
+      expect(r.specifications).toContain("4GB RAM · 128GB storage");
+      expect(r.specifications).toContain("MediaTek G81");
+      expect(r.image_key).toMatch(/^static:altphones\/altphone-l1-[a-z-]+\.webp$/);
+    }
+    const { readModelImage } = await import("@/server/altphones/catalogue");
+    const id = (await db.query("SELECT id FROM altphones_models WHERE name LIKE '%Green'")).rows[0].id;
+    expect(await readModelImage(id)).toEqual({ staticPath: "/images/altphones/altphone-l1-green.webp" });
   });
 });

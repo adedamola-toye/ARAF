@@ -39,9 +39,10 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
   const now = opts.now ?? new Date();
   const pm = await ctxFor(ALT.pm, now);
   const admin = await ctxFor(ALT.admin, now);
-  const models: string[] = [];
-  for (const [i, name] of ["Altphone A (synthetic)", "Altphone B (synthetic)", "Altphone C (synthetic)"].entries()) {
-    models.push((await saveModel(pm, { name, specifications: "Synthetic specification line 1\nSynthetic specification line 2", active: true, sortOrder: String(i) })).id);
+  // The approved catalogue (migration 010); create placeholders only if it is missing.
+  const models = (await db.query<{ id: string }>("SELECT id FROM altphones_models WHERE active ORDER BY sort_order, name")).rows.map((r) => r.id);
+  for (let i = models.length; i < 3; i++) {
+    models.push((await saveModel(pm, { name: `Altphone ${i + 1} (synthetic)`, specifications: "Synthetic specification", active: true, sortOrder: String(i) })).id);
   }
   await savePricing(pm, {
     rates: opts.rates ?? { "3": "10", "6": "20", "12": "40" },

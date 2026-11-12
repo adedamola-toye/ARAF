@@ -114,10 +114,15 @@ export async function setModelImage(ctx: Ctx, modelId: string, data: Buffer) {
   return { ok: true };
 }
 
-export async function readModelImage(modelId: string): Promise<{ data: Buffer; mime: string; etag: string } | null> {
+/** A photo uploaded by the PM (private storage) or one shipped with the application ("static:<path under /images>"). */
+export async function readModelImage(modelId: string): Promise<{ data: Buffer; mime: string; etag: string } | { staticPath: string } | null> {
   if (!isUuid(modelId)) return null;
   const m = (await db.query<ModelRow>("SELECT image_key, image_mime, image_sha256 FROM altphones_models WHERE id = $1", [modelId])).rows[0];
   if (!m?.image_key) return null;
+  if (m.image_key.startsWith("static:")) {
+    const rel = m.image_key.slice(7);
+    return /^[a-z0-9/_.-]+$/i.test(rel) && !rel.includes("..") ? { staticPath: `/images/${rel}` } : null;
+  }
   return { data: await objectStore().get(m.image_key), mime: m.image_mime ?? "application/octet-stream", etag: m.image_sha256 ?? "" };
 }
 

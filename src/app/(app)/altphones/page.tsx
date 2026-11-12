@@ -82,7 +82,7 @@ export default async function AltphonesHome({ searchParams }: { searchParams: Pr
                         .split("\n")
                         .map((x) => x.trim())
                         .filter(Boolean)
-                        .slice(0, 6)
+                        .slice(0, 8)
                         .map((x) => (
                           <li key={x}>{x}</li>
                         ))}

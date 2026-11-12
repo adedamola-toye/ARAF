@@ -12,6 +12,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params;
   const img = await readModelImage(id).catch(() => null);
   if (!img) return new NextResponse("Not found", { status: 404 });
+  if ("staticPath" in img) return NextResponse.redirect(new URL(img.staticPath, req.nextUrl.origin), 302);
   if (req.headers.get("if-none-match") === `"${img.etag}"`) return new NextResponse(null, { status: 304 });
   return new NextResponse(new Uint8Array(img.data), {
     headers: { "content-type": img.mime, "cache-control": "private, max-age=300", etag: `"${img.etag}"`, "x-content-type-options": "nosniff" },
