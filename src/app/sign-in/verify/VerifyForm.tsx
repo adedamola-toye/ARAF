@@ -6,7 +6,7 @@ import { resendOtpAction, verifyOtpAction } from "../actions";
 /** Initiator categories are shown first and in bold; the choice opens a workspace the user already holds. */
 const WORKSPACES = [
   { v: "RM", l: "1. Relationship Managers", strong: true },
-  { v: "DELIGHT_OFFICER", l: "2. Delight Officers", strong: true },
+  { v: "DELIGHT_OFFICER", l: "2. Delight Officers / Smile Associates", strong: true },
   { v: "STAFF", l: "Review, credit, operations and administration staff", strong: false },
   { v: "ANM", l: "Agent Network Manager (WakeelBoost)", strong: false },
   { v: "MERCHANT_OFFICER", l: "Merchant Officer (WakeelBoost)", strong: false },

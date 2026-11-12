@@ -182,8 +182,10 @@ The pooler index and region cannot be derived; copy the exact string from **Supa
 |---|---|---|
 | `ENETUNREACH 2a05:...:5432` in Render/Vercel logs | `DATABASE_URL` is the direct IPv6 host, or the IPv4 address of a direct host | Use the shared pooler URL (session `5432` on Render, transaction `6543` on Vercel). |
 | `tenant/user postgres.<ref> not found` | Wrong pooler host index or wrong region | Copy the pooler string from the dashboard; `aws-0` and `aws-1` are not interchangeable. |
+| `(ENOIDENTIFIER) no tenant identifier provided` | Pooler username is `postgres` without `.<project-ref>`, so Supavisor cannot identify the tenant | Use `postgres.<project-ref>` in `DATABASE_URL`. |
 | `tenant/user postgres not found` / auth failure | Pooler username is `postgres` instead of `postgres.<project-ref>` | Fix the username in the connection URL. |
 | Vercel 500 on sign-in (`Server Components render`) | Env vars scoped to Preview instead of Production, wrong `DATABASE_URL`, or no redeploy after editing them | Check **Settings → Environment Variables → Production**, fix, then **Redeploy**. |
+| `column "..." of relation "..." does not exist` after deploying new code | The code has a migration the database has not applied | Run `ENV_FILE=.env.staging npm run migrate` (or `npm run doctor` to list pending migrations), then retry. |
 | `Could not find the module` / build errors | `NODE_ENV` or build cache issue | Redeploy with "Clear build cache". |
 
 `src/server/config.ts` now rejects a direct Supabase host on Vercel/Render and a pooler username

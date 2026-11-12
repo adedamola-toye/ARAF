@@ -31,6 +31,10 @@ export const ROLES = [
   // Staff Personal Financing
   "PRODUCT_MANAGER",
   "STAFF_APPLICANT",
+  // Altphones
+  "SMILE_ASSOCIATE",
+  "BUSINESS_PERFORMANCE_MANAGER",
+  "ALTPHONES_PRODUCT_MANAGER",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -73,7 +77,13 @@ export const ROLE_LABELS: Record<Role, string> = {
   COLLECTIONS_OFFICER: "Collections and servicing officer",
   PRODUCT_MANAGER: "Product Manager (staff financing)",
   STAFF_APPLICANT: "Staff member (personal financing)",
+  SMILE_ASSOCIATE: "Smile Associate (Altphones)",
+  BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
+  ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
 };
+
+/** The Delight Officer / Smile Associate channel originates Altphones only. */
+export const ALTPHONES_ORIGINATOR_ROLES = ["DELIGHT_OFFICER", "SMILE_ASSOCIATE"] as const;
 
 /** Roles whose holders review retail cases across the organisation (dashboards and case visibility). */
 export const RETAIL_ORG_VIEW_ROLES: readonly Role[] = ["HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT"];

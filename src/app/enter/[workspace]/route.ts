@@ -10,9 +10,10 @@ import { lookupSession, switchWorkspace, SESSION_COOKIE } from "@/server/auth/se
  *  - signed in without the role → the existing "forbidden" page.
  * Staff Personal Request has no workspace yet; it opens the documented integration point /staff-request.
  */
-const TARGETS: Record<string, { role: string | null; next: string }> = {
+const TARGETS: Record<string, { role: string | null; also?: string[]; next: string }> = {
   "relationship-manager": { role: "RM", next: "/queue" },
-  "delight-officer": { role: "DELIGHT_OFFICER", next: "/queue" },
+  // Delight Officer / Smile Associate channel: Altphones only.
+  "delight-officer": { role: "DELIGHT_OFFICER", also: ["SMILE_ASSOCIATE"], next: "/altphones" },
   "staff-personal-request": { role: null, next: "/staff-request" },
 };
 
@@ -26,10 +27,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
   if (r.status !== "ok") return to(`/sign-in?as=${t.role ?? "STAFF"}&next=${encodeURIComponent(t.next)}`);
   if (!t.role) return to(t.next);
   const s = r.session;
-  if (!s.roles.some((x) => x.role === t.role)) return to("/forbidden");
-  if (s.activeRole !== t.role) {
+  const role = [t.role, ...(t.also ?? [])].find((r) => s.roles.some((x) => x.role === r));
+  if (!role) return to("/forbidden");
+  if (s.activeRole !== role && !(t.also ?? []).includes(s.activeRole ?? "")) {
     ctx.actor = { staffId: s.staffId, email: s.email, name: s.fullName, sessionId: s.sessionId, activeRole: s.activeRole };
-    await switchWorkspace(ctx, s.sessionId, t.role);
+    await switchWorkspace(ctx, s.sessionId, role);
   }
   return to(t.next);
 }

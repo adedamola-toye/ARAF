@@ -15,7 +15,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<R
       </h1>
       <p className="lede">Initiate, appraise, approve and process retail financing: Vendor Financing, Alt Drive and Alt Power.</p>
       <p className="lede">
-        For <strong>Relationship Managers</strong>, <strong>Delight Officers</strong> and the review, credit and operations teams.
+        For <strong>Relationship Managers</strong>, <strong>Delight Officers / Smile Associates</strong> and the review, credit and operations teams.
       </p>
       <EmailForm as={sp.as ?? ""} next={safeNext(sp.next)} returning={!!sp.next && safeNext(sp.next) !== "/queue"} />
     </AuthScene>

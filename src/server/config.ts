@@ -118,6 +118,35 @@ export const config = {
       serverSideEncryption: str("S3_SERVER_SIDE_ENCRYPTION", "AES256") as "AES256" | "aws:kms" | "none",
     };
   },
+  /**
+   * Seedfi credit assessment (Altphones). Disabled unless SEEDFI_ENABLED=true and the endpoint and key are
+   * set. The request/response contract must be confirmed with Seedfi before go-live (docs/ALTPHONES.md).
+   */
+  get seedfi() {
+    return {
+      enabled: bool("SEEDFI_ENABLED", false),
+      baseUrl: str("SEEDFI_BASE_URL", "").replace(/\/$/, ""),
+      apiKey: str("SEEDFI_API_KEY", ""),
+      assessPath: str("SEEDFI_ASSESS_PATH", "/credit-assessments"),
+      timeoutMs: int("SEEDFI_TIMEOUT_MS", 15000),
+    };
+  },
+  /** Paystack (Altphones payments and Direct Debit). Disabled unless PAYSTACK_ENABLED=true and the secret key is set. */
+  get paystack() {
+    return {
+      enabled: bool("PAYSTACK_ENABLED", false),
+      secretKey: str("PAYSTACK_SECRET_KEY", ""),
+      baseUrl: str("PAYSTACK_BASE_URL", "https://api.paystack.co").replace(/\/$/, ""),
+      directDebitEnabled: bool("PAYSTACK_DIRECT_DEBIT_ENABLED", false),
+      timeoutMs: int("PAYSTACK_TIMEOUT_MS", 15000),
+    };
+  },
+  get altphonesOtpTtlSeconds() {
+    return int("ALTPHONES_OTP_TTL_SECONDS", 600);
+  },
+  get altphonesOtpMaxAttempts() {
+    return int("ALTPHONES_OTP_MAX_ATTEMPTS", 5);
+  },
   get maxUploadBytes() {
     return int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024);
   },

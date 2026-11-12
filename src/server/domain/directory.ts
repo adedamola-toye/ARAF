@@ -91,7 +91,7 @@ export function parseCsv(text: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
-async function parseXlsx(buf: Buffer): Promise<string[][]> {
+export async function parseXlsx(buf: Buffer): Promise<string[][]> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buf as unknown as ArrayBuffer);
   const ws = wb.worksheets.find((w) => w.rowCount > 0);
@@ -337,3 +337,21 @@ export async function searchDirectory(q: Db, term: string, page: number, size = 
 }
 
 export const DIRECTORY_TEMPLATE_CSV = "Email,Full name,Department,Group mailbox,Active\r\nfirstname.lastname@altbank.ng,Firstname Lastname,Credit Risk,No,Yes\r\nlegal@altbank.ng,Legal Department,Legal,Yes,Yes\r\n";
+
+/** Read a CSV or .xlsx upload into rows of cells (shared by other imports). */
+export async function readSpreadsheet(filename: string, data: Buffer, maxBytes = MAX_DIRECTORY_BYTES): Promise<string[][]> {
+  if (data.length === 0) throw invalid("The file is empty.");
+  if (data.length > maxBytes) throw invalid(`The file is larger than ${Math.round(maxBytes / 1048576)} MB.`);
+  const ext = filename.toLowerCase().split(".").pop();
+  const isZip = data.subarray(0, 4).toString("binary") === "PK\u0003\u0004";
+  if (ext === "xlsx" || isZip) {
+    if (!isZip) throw invalid("The .xlsx file could not be read. Save it again from Excel as .xlsx, or export it as CSV.");
+    try {
+      return await parseXlsx(data);
+    } catch {
+      throw invalid("The Excel file could not be read. Save it as .xlsx (not .xls) or export it as CSV.");
+    }
+  }
+  if (ext === "csv" || ext === "txt") return parseCsv(data.toString("utf8"));
+  throw invalid("Upload an Excel .xlsx or a .csv file.");
+}
