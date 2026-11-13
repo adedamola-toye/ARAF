@@ -206,3 +206,14 @@
    2. (in the selectors above) System-mode switcher styling applies only when System resolves to dark. */
 :global(html[data-theme="light"]) .page .appearance-menu summary, .page .appearance-menu summary { color: #64718c; opacity: 1; }
 :global(html[data-theme="dark"]) .page .appearance-menu summary { color: #c2cedc; }
+
+/* Hero photograph: the whole portrait, uncropped and unframed. Earlier rules forced the wrapper to a fixed,
+   wide height (some with !important) and filled it with object-fit: cover, which cut off the top and bottom of
+   the 760×876 photo. Height now follows the image's own proportions; no radius, border, shadow, overlay or
+   backdrop. The yellow background is the photo's own, unchanged in every theme. */
+.page .photo{height:auto!important;border-radius:0!important;overflow:visible;background:none;position:static;line-height:0}
+.page .photo:after{content:none}
+.page .photo img{display:block;width:100%;height:auto;max-width:100%;object-fit:contain;border:0;border-radius:0;box-shadow:none;filter:none}
+/* Beside the headline (tablet and desktop): scale the whole photo to fit the column and a sensible height,
+   right-aligned in its column as before. */
+@media(min-width:701px){.page .photo{display:flex;justify-content:flex-end}.page .photo img{width:auto;max-height:min(520px,max(320px,62vh))}}
