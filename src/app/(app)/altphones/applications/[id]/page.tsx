@@ -477,7 +477,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                 <div className="alt-mandate">
                   <div className="card-head">
                     <h3>Paystack Direct Debit</h3>
-                    <span className={`badge ${app.dd_status === "ACTIVE" ? "badge-green" : app.dd_status === "PENDING" ? "badge-warn" : ""}`}>{app.dd_status === "ACTIVE" ? "Active — verified by Paystack" : app.dd_status === "PENDING" ? "Awaiting customer authorisation" : "Not started"}</span>
+                    <span className={`badge ${app.dd_status === "ACTIVE" ? "badge-green" : app.dd_status === "PENDING" ? "badge-warn" : ""}`}>{app.dd_status === "ACTIVE" ? "Active — verified by Paystack" : app.dd_status === "PENDING" ? "Awaiting authorisation and bank confirmation" : "Not started"}</span>
                   </div>
                   <p className="small" style={{ marginTop: 0 }}>
                     On {app.external_bank_name} account ending {String(app.external_account_number ?? "").slice(-4)}.

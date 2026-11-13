@@ -658,7 +658,7 @@ async function applyMandateCheck(ctx: Ctx, id: string, fromWebhook: boolean) {
   return withTx(async (tx) => {
     let a = await lockApp(tx, id);
     if (a.dd_status === "ACTIVE") return { status: "ACTIVE", message: "The mandate is already active." };
-    if (!v.active) return { status: "PENDING", message: "Paystack has not confirmed the mandate yet. The customer must complete the authorisation." };
+    if (!v.active) return { status: "PENDING", message: "Paystack has not confirmed the mandate yet. If the customer has authorised it, their bank's confirmation can take some time; check again later." };
     a = await transition(tx, ctx, a, {
       action: "MANDATE_ACTIVE",
       set: { dd_status: "ACTIVE", dd_active_at: ctx.now, dd_authorization_enc: v.authorizationCode ? encryptField(v.authorizationCode) : null, dd_account_last4: v.last4, dd_bank_name: v.bank },
