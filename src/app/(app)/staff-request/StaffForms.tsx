@@ -1,4 +1,6 @@
 "use client";
+import { IncidentCard } from "@/components/Incident";
+import type { IncidentView } from "@/lib/incident-messages";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Clock, RotateCcw, Upload } from "lucide-react";
@@ -259,7 +261,7 @@ function Field({ id, label, required, defaultValue, error, hint, inputMode, auto
 
 // ------------------------------------------------------------------ uploads
 
-type Phase = { kind: "idle" } | { kind: "uploading"; pct: number } | { kind: "done"; msg: string } | { kind: "error"; msg: string };
+type Phase = { kind: "idle" } | { kind: "uploading"; pct: number } | { kind: "done"; msg: string } | { kind: "error"; msg: string; incident?: IncidentView };
 
 export function StaffUpload({ requestId, categories, title = "Upload a document" }: { requestId: string; categories: { code: string; label: string }[]; title?: string }) {
   const id = useId();
@@ -279,7 +281,7 @@ export function StaffUpload({ requestId, categories, title = "Upload a document"
     xhr.open("POST", "/api/staff-requests/upload");
     xhr.upload.onprogress = (e) => e.lengthComputable && setPhase({ kind: "uploading", pct: Math.round((e.loaded / e.total) * 100) });
     xhr.onload = () => {
-      let body: { ok?: boolean; error?: string; scanStatus?: string } = {};
+      let body: { ok?: boolean; error?: string; scanStatus?: string; incident?: IncidentView } = {};
       try {
         body = JSON.parse(xhr.responseText);
       } catch {
@@ -291,7 +293,7 @@ export function StaffUpload({ requestId, categories, title = "Upload a document"
         if (file.current) file.current.value = "";
         setName("");
         router.refresh();
-      } else setPhase({ kind: "error", msg: body.error ?? "The upload failed. Try again." });
+      } else setPhase({ kind: "error", msg: body.error ?? "The upload failed. Try again.", incident: body.incident });
     };
     xhr.onerror = () => setPhase({ kind: "error", msg: "Network error. Check your connection and retry." });
     setPhase({ kind: "uploading", pct: 0 });
@@ -333,7 +335,8 @@ export function StaffUpload({ requestId, categories, title = "Upload a document"
           <CheckCircle2 className="icon" aria-hidden="true" /> {phase.msg}
         </p>
       )}
-      {phase.kind === "error" && (
+      {phase.kind === "error" && phase.incident && <IncidentCard view={phase.incident} variant="inline" note="Your file was not stored." onRetry={send} retryLabel="Retry upload" />}
+      {phase.kind === "error" && !phase.incident && (
         <p className="err" role="alert" style={{ margin: 0 }}>
           <AlertTriangle className="icon" aria-hidden="true" /> {phase.msg}{" "}
           <button type="button" className="btn btn-sm btn-ghost" onClick={send}>

@@ -190,6 +190,21 @@ export const config = {
   get aprCalculator() {
     return str("APR_CALCULATOR", "wakeelboost-pricing@2026.1");
   },
+  /** Failures with the same fingerprint within this many minutes of the last occurrence join one incident. */
+  get incidentCorrelationMinutes() {
+    return int("INCIDENT_CORRELATION_MINUTES", 30);
+  },
+  /** Where incident alerts go (comma-separated). Empty: incidents are recorded but not routed. */
+  get incidentAlertEmails() {
+    return str("INCIDENT_ALERT_EMAILS", "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+  },
+  /** Cap on incident alert emails per hour across all incidents. */
+  get incidentAlertsPerHour() {
+    return int("INCIDENT_ALERTS_PER_HOUR", 20);
+  },
   get workerPollMs() {
     return int("WORKER_POLL_MS", 5000);
   },

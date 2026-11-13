@@ -1,4 +1,5 @@
 "use client";
+import { IncidentPanel } from "@/components/Incident";
 import Link from "next/link";
 import { useActionState, useEffect, useState } from "react";
 import { resendOtpAction, verifyOtpAction } from "../actions";
@@ -32,6 +33,7 @@ export function VerifyForm({ next, as, expiresAt, ttlMs }: { next: string; as: s
   const isError = !!(state.error || resend.error || expired);
   return (
     <>
+      {(state.incident ?? resend.incident) && <IncidentPanel key={(state.incident ? state : resend).nonce} preset={state.incident ?? resend.incident} onCheckStatus={() => location.reload()} />}
       <form action={action} className="auth-form">
         <input type="hidden" name="next" value={next} />
         <label htmlFor="code">One-time code</label>

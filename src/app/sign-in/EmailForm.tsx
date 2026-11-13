@@ -1,4 +1,5 @@
 "use client";
+import { IncidentPanel } from "@/components/Incident";
 import { useActionState, useRef } from "react";
 import { requestOtpAction } from "./actions";
 
@@ -7,6 +8,8 @@ export function EmailForm({ as, next, returning }: { as: string; next: string; r
   const input = useRef<HTMLInputElement>(null);
   const feedback = pending ? "Sending your one-time code…" : state.error ?? (returning ? "Staff sign-in. You will return to the requested case." : "Staff sign-in.");
   return (
+    <>
+      {state.incident && <IncidentPanel key={state.nonce} preset={state.incident} onCheckStatus={() => location.reload()} />}
     <form
       action={action}
       className="auth-form"
@@ -40,5 +43,6 @@ export function EmailForm({ as, next, returning }: { as: string; next: string; r
         {feedback}
       </p>
     </form>
+    </>
   );
 }
