@@ -14,6 +14,7 @@ import { assertDocx, validateDocxTemplate } from "./offer-docx";
 import type { ApplicantType } from "./application-data";
 import { objectStore } from "../storage";
 import { randomUUID } from "node:crypto";
+import { readSpreadsheet } from "./directory";
 
 async function requireSuperAdmin(tx: Tx, ctx: Ctx) {
   if (!ctx.actor || !(await holdsRole(tx, ctx.actor.staffId, "SUPER_ADMIN"))) throw forbidden("Super Admin access is required.");
@@ -293,4 +294,163 @@ export async function approveTemplate(ctx: Ctx, templateId: string) {
     if (!r.rowCount) throw conflict("Template not found or already approved.");
     await audit(tx, ctx, { action: "TEMPLATE_APPROVED", actorRole: "SUPER_ADMIN", details: { templateId, ...r.rows[0] } });
   });
+}
+
+// ------------------------------------------------------------------ bulk provisioning and bulk role assignment
+
+export const STAFF_TEMPLATE_CSV = "Full name,Email,State,Business unit\nAdaeze Example,adaeze.example@altbank.ng,LAGOS,Retail\nMusa Example,musa.example@altbank.ng,,Finance\n";
+export const MAX_BULK_STAFF_ROWS = 5000;
+
+export interface BulkStaffRow {
+  row: number;
+  email: string;
+  fullName: string;
+  region: string | null;
+  businessUnit: string | null;
+  outcome: "NEW" | "EXISTS" | "ERROR";
+  /** Not in the bank directory: added to it only when the admin chose to. */
+  addsToDirectory?: boolean;
+  message?: string;
+}
+export interface BulkStaffSummary {
+  filename: string;
+  totalRows: number;
+  toCreate: number;
+  existing: number;
+  errors: number;
+  addsToDirectory: number;
+  rows: BulkStaffRow[];
+  applied: boolean;
+  created: number;
+}
+
+/** "Lagos", "lagos state", "Abuja", "FCT" … → the state as ARAF stores it ("LAGOS", "FCT (ABUJA)"). */
+export function normaliseState(v: string): string | null {
+  const s = v.toUpperCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").replace(/\s+STATE$/, "").trim();
+  if (!s) return null;
+  if (["ABUJA", "FCT", "FCT ABUJA", "FCT (ABUJA)", "FEDERAL CAPITAL TERRITORY"].includes(s)) return "FCT (ABUJA)";
+  return s;
+}
+const headerKey = (h: string) => h.toLowerCase().replace(/[^a-z]/g, "");
+const COLS: Record<string, string[]> = {
+  email: ["email", "emailaddress", "workemail", "mail"],
+  fullName: ["fullname", "name", "staffname", "employeename"],
+  region: ["state", "region", "location"],
+  businessUnit: ["businessunit", "unit", "department", "dept"],
+};
+
+/**
+ * Bulk staff provisioning from a spreadsheet of names and emails. Rows are checked exactly like single
+ * provisioning (verified @altbank.ng email, bank directory entry, known state); people who already have a
+ * staff record are left alone. With `addToDirectory`, emails missing from the bank directory are added to it
+ * (audited) instead of being refused. Nothing is saved on a dry run; on commit, valid new rows are created in
+ * one transaction and rows with problems are skipped and reported. No roles are granted here.
+ */
+export async function bulkProvisionStaff(ctx: Ctx, p: { filename: string; data: Buffer; dryRun: boolean; addToDirectory: boolean }): Promise<BulkStaffSummary> {
+  const grid = await readSpreadsheet(p.filename, p.data);
+  const header = (grid[0] ?? []).map(headerKey);
+  const col = (k: string) => header.findIndex((h) => COLS[k].includes(h));
+  const ci = { email: col("email"), fullName: col("fullName"), region: col("region"), businessUnit: col("businessUnit") };
+  if (ci.email < 0 || ci.fullName < 0) throw invalid("The file needs an Email column and a Full name column (download the template).");
+  const body = grid.slice(1).filter((r) => r.some((c) => String(c ?? "").trim()));
+  if (body.length === 0) throw invalid("The file has no staff rows.");
+  if (body.length > MAX_BULK_STAFF_ROWS) throw invalid(`Upload at most ${MAX_BULK_STAFF_ROWS.toLocaleString()} rows at a time.`);
+
+  return adminOp(ctx, "STAFF_BULK_PROVISIONED", async (tx) => {
+    const cell = (r: string[], i: number) => (i >= 0 ? String(r[i] ?? "").replace(/\s+/g, " ").trim() : "");
+    const parsed = body.map((r, i) => ({
+      row: i + 2,
+      email: cell(r, ci.email).toLowerCase(),
+      fullName: cell(r, ci.fullName),
+      region: normaliseState(cell(r, ci.region)),
+      businessUnit: cell(r, ci.businessUnit).slice(0, 80) || null,
+    }));
+    const emails = parsed.map((x) => x.email).filter(Boolean);
+    const staffSet = new Set((await tx.query<{ email: string }>("SELECT email FROM staff WHERE email = ANY($1)", [emails])).rows.map((r) => r.email));
+    const dir = new Map((await tx.query<{ email: string; active: boolean; is_group_mailbox: boolean }>("SELECT email, active, is_group_mailbox FROM bank_directory WHERE email = ANY($1)", [emails])).rows.map((r) => [r.email, r]));
+    const seen = new Set<string>();
+    const rows: BulkStaffRow[] = parsed.map((x) => {
+      const problems: string[] = [];
+      let addsToDirectory = false;
+      if (!/^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(x.email)) problems.push(x.email ? "email is not valid" : "email is missing");
+      else if (!isStaffDomain(x.email)) problems.push(`email must be an @${config.staffEmailDomain} address`);
+      if (x.fullName.replace(/[^a-z]/gi, "").length < 2) problems.push("full name is missing");
+      if (x.region && !isRegion(x.region)) problems.push(`"${x.region}" is not a Nigerian state`);
+      if (x.email && seen.has(x.email)) problems.push("email appears more than once in the file");
+      if (x.email) seen.add(x.email);
+      if (!problems.length && staffSet.has(x.email)) return { ...x, outcome: "EXISTS" as const, message: "Already provisioned; left unchanged." };
+      if (!problems.length) {
+        const d = dir.get(x.email);
+        if (d?.is_group_mailbox) problems.push("group mailboxes cannot be staff");
+        else if (d && !d.active) problems.push("marked as no longer active in the bank directory");
+        else if (!d) {
+          if (p.addToDirectory) addsToDirectory = true;
+          else problems.push("not in the bank directory (upload the directory, or tick “Also add them to the bank directory”)");
+        }
+      }
+      return problems.length ? { ...x, outcome: "ERROR" as const, message: problems.join("; ") } : { ...x, outcome: "NEW" as const, addsToDirectory };
+    });
+    const fresh = rows.filter((r) => r.outcome === "NEW");
+    const summary: BulkStaffSummary = {
+      filename: p.filename.slice(0, 200),
+      totalRows: rows.length,
+      toCreate: fresh.length,
+      existing: rows.filter((r) => r.outcome === "EXISTS").length,
+      errors: rows.filter((r) => r.outcome === "ERROR").length,
+      addsToDirectory: fresh.filter((r) => r.addsToDirectory).length,
+      rows,
+      applied: false,
+      created: 0,
+    };
+    if (p.dryRun) return summary;
+    for (const r of fresh) {
+      if (r.addsToDirectory) {
+        await tx.query("INSERT INTO bank_directory (email, full_name, source, updated_at) VALUES ($1,$2,'staff-bulk-upload',$3) ON CONFLICT (email) DO NOTHING", [r.email, r.fullName, ctx.now]);
+      }
+      const ins = await tx.query<{ id: string }>(
+        "INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6) ON CONFLICT (email) DO NOTHING RETURNING id",
+        [r.email, r.fullName, r.region, r.businessUnit, ctx.actor!.staffId, ctx.now],
+      );
+      if (!ins.rows[0]) continue; // provisioned by someone else a moment ago
+      summary.created++;
+      await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId: ins.rows[0].id, email: r.email, region: r.region, via: "bulk upload", addedToDirectory: !!r.addsToDirectory } });
+    }
+    summary.applied = true;
+    await audit(tx, ctx, { action: "STAFF_BULK_PROVISIONED", actorRole: "SUPER_ADMIN", details: { filename: summary.filename, rows: summary.totalRows, created: summary.created, alreadyProvisioned: summary.existing, skippedWithErrors: summary.errors, addedToDirectory: summary.addsToDirectory } });
+    return summary;
+  });
+}
+
+export interface BulkGrantResult {
+  granted: number;
+  alreadyHeld: number;
+  failed: { staffId: string; name: string; message: string }[];
+}
+
+/**
+ * Assign one role to many staff at once. Each person goes through exactly the same checks and audit as a
+ * single grant (state, team, single-holder positions, recipient groups, not your own roles); anyone who
+ * cannot be given the role is reported and the rest are still granted.
+ */
+export async function bulkGrantRole(ctx: Ctx, p: { staffIds: string[]; role: string; region?: string | null; team?: string | null; businessUnit?: string | null }): Promise<BulkGrantResult> {
+  const ids = [...new Set(p.staffIds.filter((x) => /^[0-9a-f-]{36}$/i.test(x)))];
+  if (!ids.length) throw invalid("Select at least one staff member.");
+  if (ids.length > 500) throw invalid("Assign roles to at most 500 people at a time.");
+  if (!isRole(p.role)) throw invalid("Choose a role.", { role: "Required." });
+  await adminOp(ctx, "ROLE_BULK_GRANTED", async () => undefined); // Super Admin only (denials audited)
+  const names = new Map((await db.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE id = ANY($1)", [ids])).rows.map((r) => [r.id, r.full_name]));
+  const out: BulkGrantResult = { granted: 0, alreadyHeld: 0, failed: [] };
+  for (const staffId of ids) {
+    try {
+      await grantRole(ctx, { staffId, role: p.role, region: p.region || null, team: p.team || null, businessUnit: p.businessUnit || null });
+      out.granted++;
+    } catch (e) {
+      if (!(e instanceof DomainError)) throw e;
+      if (e.code === "FORBIDDEN" && /Super Admin access is required/.test(e.message)) throw e;
+      if (e.code === "CONFLICT" && /already holds this role/.test(e.message)) out.alreadyHeld++;
+      else out.failed.push({ staffId, name: names.get(staffId) ?? staffId, message: e.message });
+    }
+  }
+  await auditOutsideTx(ctx, { action: "ROLE_BULK_GRANTED", actorRole: "SUPER_ADMIN", details: { role: p.role, region: p.region || null, team: p.team || null, selected: ids.length, granted: out.granted, alreadyHeld: out.alreadyHeld, failed: out.failed.length } });
+  return out;
 }

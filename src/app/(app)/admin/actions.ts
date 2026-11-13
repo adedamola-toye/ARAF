@@ -12,6 +12,8 @@ import {
   grantRole,
   isSuperAdmin,
   provisionStaff,
+  bulkProvisionStaff,
+  bulkGrantRole,
   removeGroupMember,
   revokeRole,
   setStaffStatus,
@@ -133,6 +135,38 @@ export async function directoryImportAction(_p: ActionState, fd: FormData): Prom
       message: summary.applied ? `Directory imported: ${summary.added} added, ${summary.updated} updated, ${summary.deactivated} deactivated.` : "Preview ready. Nothing has been saved yet.",
       nonce: Date.now(),
     };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/** Bulk staff upload: "check" (nothing saved) or "provision" (valid new rows created; problems reported). */
+export async function bulkStaffAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const file = fd.get("file");
+    if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Choose the staff file first.", nonce: Date.now() };
+    const summary = await bulkProvisionStaff(ctx, {
+      filename: file.name,
+      data: Buffer.from(await file.arrayBuffer()),
+      dryRun: s(fd, "intent") !== "provision",
+      addToDirectory: fd.get("addToDirectory") === "on",
+    });
+    return { ok: true, data: summary, nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/** Assign one role to every ticked staff member. */
+export async function bulkGrantAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const r = await bulkGrantRole(ctx, { staffIds: fd.getAll("staffId").map(String), role: s(fd, "role"), region: s(fd, "region") || null, team: s(fd, "team") || null });
+    const parts = [`Assigned to ${r.granted} staff member${r.granted === 1 ? "" : "s"}`];
+    if (r.alreadyHeld) parts.push(`${r.alreadyHeld} already had it`);
+    if (r.failed.length) parts.push(`${r.failed.length} could not be assigned (see below)`);
+    return { ok: true, message: parts.join("; ") + ".", data: r, nonce: Date.now() };
   } catch (e) {
     return toActionError(e);
   }

@@ -805,3 +805,7 @@ table.matrix td { vertical-align: top; }
 .restricted p { color: var(--ink-2); line-height: 1.6; margin: 0 0 var(--space-5); }
 .restricted-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
 @media (max-width: 480px) { .restricted-actions .btn { flex: 1 1 100%; justify-content: center; } }
+/* Bulk role assignment bar (Users & roles) */
+.bulk-assign { display: grid; grid-template-columns: minmax(200px, 1.3fr) minmax(160px, 1fr) minmax(160px, 1fr) auto; gap: var(--space-3); align-items: end; padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface-2); }
+.bulk-assign .field { margin: 0; }
+@media (max-width: 820px) { .bulk-assign { grid-template-columns: 1fr; } }
