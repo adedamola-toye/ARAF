@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Security hardening: never announce the framework (X-Powered-By). Guarded by tests/security-headers.test.ts.
   poweredByHeader: false,
   serverExternalPackages: ["pg", "exceljs", "nodemailer"],
   experimental: {

@@ -12,6 +12,7 @@
     "rescan": "tsx scripts/rescan.ts",
     "migrate": "tsx scripts/migrate.ts",
     "doctor": "tsx scripts/doctor.ts",
+    "check:headers": "tsx scripts/check-headers.ts",
     "seed": "tsx scripts/seed.ts",
     "db:reset": "tsx scripts/migrate.ts --reset && tsx scripts/seed.ts",
     "demo:routes": "tsx scripts/demo-routes.ts",

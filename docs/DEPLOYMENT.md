@@ -172,6 +172,26 @@ devDependency), so it works even when Render installs production dependencies on
 4. Check the Render worker logs for outbox/digest activity.
 5. Drive one case to closure to confirm the worker sends the closure pack email.
 
+## Response headers and technology disclosure
+
+The hosting stack is **Next.js on Vercel** (web and API) and a **Render background worker** (no HTTP traffic). There is no Nginx, Apache, Express or custom Node server, so `server_tokens`, `ServerTokens`/`ServerSignature` and `app.disable("x-powered-by")` do not apply. The equivalent controls are:
+
+| Control | Where | Effect |
+|---|---|---|
+| `poweredByHeader: false` | `next.config.ts` | No `X-Powered-By` on any page, API route, redirect or error. Guarded by `tests/security-headers.test.ts`. |
+| Security headers on every route | `next.config.ts` → `headers()` | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` (unchanged). |
+| Error responses | Next.js production mode, `src/app/error.tsx` / `global-error.tsx`, API catch blocks | Unexpected failures return a bare 500 (APIs: empty body) or the incident screen: no stack traces, server paths or versions. API routes return only ARAF's own messages for expected errors. Full diagnostics stay server-side in the logs and the incident record. |
+
+**Vercel's own headers.** Vercel adds `Server: Vercel` and `x-vercel-id` / `x-vercel-cache` at its edge. They name the platform but no version, and Vercel does not allow removing them from project configuration. Vercel also sends `Strict-Transport-Security` on HTTPS; nothing in ARAF removes HSTS or a Content-Security-Policy.
+
+**Verify a deployment** (read-only, no credentials):
+
+```bash
+npm run check:headers -- https://www.araf.ng
+```
+
+It requests a page, a redirect, 404s, a 405, an unauthenticated API call and a missing static file. It fails if any response carries `X-Powered-By` or a similar banner, a `Server` header with a version, or a body that leaks a stack trace, server path or framework version. It also confirms ARAF's security headers and reports HSTS/CSP.
+
 ## Security tradeoffs
 
 - **Scanning is disabled.** `SCANNER_DRIVER=none` accepts every file and marks it clean. This is
