@@ -21,7 +21,7 @@ import {
   submitForApproval,
 } from "@/server/altphones/origination";
 import { confirmDisbursement, decide, type Decision } from "@/server/altphones/approvals";
-import { saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
+import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
 import { decideReplenishment, requestReplenishment } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
@@ -58,7 +58,7 @@ export const locationsAction = async (_p: ActionState, fd: FormData) =>
 
 export const creditCheckAction = async (_p: ActionState, fd: FormData) =>
   run(
-    (ctx) => runCreditCheck(ctx, s(fd, "id"), { bvn: s(fd, "bvn"), consent: on(fd, "consent"), lockVersion: lock(fd) }),
+    (ctx) => runCreditCheck(ctx, s(fd, "id"), { bvn: s(fd, "bvn"), firstName: s(fd, "firstName"), lastName: s(fd, "lastName"), dateOfBirth: s(fd, "dateOfBirth"), gender: s(fd, "gender"), phone: s(fd, "phone"), consent: on(fd, "consent"), lockVersion: lock(fd) }),
     (r) => (r as { message: string }).message,
   );
 
@@ -72,6 +72,7 @@ export const customerAction = async (_p: ActionState, fd: FormData) =>
         abAccount: s(fd, "abAccount"),
         externalAccount: s(fd, "externalAccount"),
         externalBank: s(fd, "externalBank"),
+        externalBankCode: s(fd, "externalBankCode"),
         tenure: s(fd, "tenure"),
         repaymentDay: s(fd, "repaymentDay"),
         accountsConfirmed: on(fd, "accountsConfirmed"),
@@ -125,7 +126,6 @@ export const pricingAction = async (_p: ActionState, fd: FormData) =>
         basis: s(fd, "basis"),
         weekendRule: s(fd, "weekendRule"),
         shortMonthRule: s(fd, "shortMonthRule"),
-        contractTemplate: String(fd.get("contractTemplate") ?? ""),
         reason: s(fd, "reason"),
       }),
     (r) => `Saved as settings version ${(r as { version: number }).version}. It applies to new sales; agreed terms are unchanged.`,
@@ -155,3 +155,6 @@ export const previewImportAction = async (_p: ActionState, fd: FormData) =>
   }, "File checked. Review the result below before importing.");
 export const commitImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => commitImport(ctx, s(fd, "importId")), (r) => `Imported ${(r as { applied: number }).applied} records.`);
 export const discardImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => discardImport(ctx, s(fd, "importId")), "Import discarded.");
+
+export const contractAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => saveContract(ctx, { template: String(fd.get("template") ?? ""), reason: s(fd, "reason") }), (r) => `Contract wording saved as settings version ${(r as { version: number }).version}. New contracts use it; contracts already accepted keep their text.`);

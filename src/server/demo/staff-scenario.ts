@@ -6,6 +6,9 @@ import { createHash } from "node:crypto";
 import { db } from "../db";
 import { ctxFor, makePdf } from "./scenario";
 import { computeStaffFinancing } from "@/lib/staff-financing";
+import { runStaffCreditCheck } from "../staff/credit";
+import { CREDIT_PERSON, ensureTestBureau } from "./altphones-scenario";
+import type { Ctx } from "../context";
 import { createStaffDraft, saveStaffDraft, submitStaffRequest, claimPmReview, pmDecision, unitHeadDecision, divisionalHeadDecision } from "../staff/requests";
 import { uploadStaffDocument } from "../staff/documents";
 import { submitSignedOffer } from "../staff/offer";
@@ -67,8 +70,15 @@ export async function submittedStaffRequest(opts: { amount?: string; email?: str
   const net = computeStaffFinancing(gross, settings.deduction_rate_bps).netKobo;
   await saveStaffDraft(ctx, id, { ...PROFILE, amount, acknowledgedNetKobo: String(net), acceptDeclaration: true, lockVersion: await lv(id) });
   await uploadStaffDocument(ctx, { requestId: id, category: "PAYSLIP", filename: "payslip-sep.pdf", data: makePdf("Synthetic payslip") });
+  await passStaffCreditCheck(ctx, id);
   await submitStaffRequest(ctx, id, { lockVersion: await lv(id), acknowledgedNetKobo: String(net) });
   return id;
+}
+
+/** Run a (test-bureau) SeedFi credit check for the applicant so the request can be submitted. */
+export async function passStaffCreditCheck(ctx: Ctx, id: string) {
+  await ensureTestBureau();
+  await runStaffCreditCheck(ctx, id, { bvn: "22222222222", ...CREDIT_PERSON });
 }
 
 export const ALL_CHECKS = { accountVerified: true, salaryHistoryReviewed: true, repaymentWithinLimit: true };

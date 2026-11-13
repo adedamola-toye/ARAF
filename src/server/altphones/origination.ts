@@ -49,6 +49,7 @@ import {
   emailCustomer,
   expectStatus,
   isUuid,
+  loadApp,
   lockApp,
   nextRef,
   notifyRole,
@@ -60,7 +61,9 @@ import {
   settingsById,
   transition,
 } from "./core";
-import { creditBureau, IntegrationUnavailable, paymentGateway, type PaymentVerification } from "./integrations";
+import { renderContract, type ContractPlaceholder } from "@/lib/altphones-contract";
+import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
+import { ALTERNATIVE_BANK_CODE, otherBanks, resolveAccount } from "./banks";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
 
 const EDITABLE: AltStatus[] = ["DRAFT"];
@@ -142,10 +145,42 @@ export async function saveLocations(ctx: Ctx, id: string, p: { modelId: string; 
 
 // ------------------------------------------------------------------ Seedfi credit assessment
 
-export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; consent: boolean; lockVersion?: number | null }) {
+export interface CreditCheckInput {
+  bvn: string;
+  firstName: string;
+  lastName: string;
+  dateOfBirth: string;
+  gender: string;
+  phone: string;
+  consent: boolean;
+  lockVersion?: number | null;
+}
+
+/** Validate the Seed Score inputs (BVN first, as the officer captures it). */
+export function validateCreditInput(p: CreditCheckInput, today: string) {
+  const e: Record<string, string> = {};
   const bvn = (p.bvn ?? "").replace(/\s/g, "");
-  if (!isBvn(bvn)) throw invalid("Enter the customer's 11-digit BVN.", { bvn: "The BVN must be exactly 11 digits." });
-  if (!p.consent) throw invalid("Confirm the customer consented to the credit check.", { consent: "The customer's consent is required." });
+  if (!isBvn(bvn)) e.bvn = "The BVN must be exactly 11 digits.";
+  const clean = (s: string) => (s ?? "").trim().replace(/\s+/g, " ");
+  const first = clean(p.firstName);
+  const last = clean(p.lastName);
+  if (first.length < 2 || first.length > 60) e.firstName = "Enter the first name as on the BVN.";
+  if (last.length < 2 || last.length > 60) e.lastName = "Enter the last name as on the BVN.";
+  const dob = (p.dateOfBirth ?? "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || Number.isNaN(new Date(`${dob}T00:00:00Z`).getTime()) || dob >= today || dob < "1900-01-01") e.dateOfBirth = "Enter the date of birth.";
+  const gender = (p.gender ?? "").toLowerCase();
+  if (gender !== "male" && gender !== "female") e.gender = "Choose the gender on the BVN record.";
+  const phone = normalisePhone(p.phone ?? "");
+  if (!phone) e.phone = "Enter a Nigerian mobile number, e.g. 0803 123 4567.";
+  if (!p.consent) e.consent = "The customer's consent is required.";
+  return { errors: e, bvn, first, last, dob, gender: gender as "male" | "female", phone: phone! };
+}
+
+export async function runCreditCheck(ctx: Ctx, id: string, p: CreditCheckInput) {
+  const v = validateCreditInput(p, lagosDate(ctx.now));
+  if (Object.keys(v.errors).length) throw invalid(v.errors.bvn ? "Enter the customer's 11-digit BVN." : "Check the customer's details for the credit check.", v.errors);
+  const bvn = v.bvn;
+  const customerId = `altphones-${hmac(`bvn:${bvn}`).slice(0, 32)}`;
   const pre = await denyOnError(ctx, id, "CREDIT_CHECK", () =>
     withTx(async (tx) => {
       let app = await lockApp(tx, id);
@@ -155,26 +190,37 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; con
       checkLock(app, p.lockVersion);
       if (app.seedfi_status === "COMPLETED") throw conflict("The credit assessment for this application is complete. Start a new sale for a different customer.");
       const s = await currentSettings(tx);
-      if (s.score_pass_min === null || s.score_fair_min === null) throw gate("Seedfi score bands are not configured. A Super Admin must record them from the approved credit policy.");
+      if (s.score_pass_min === null || s.score_fair_min === null) throw gate("Seed Score bands are not configured. A Super Admin must record them from the approved credit policy.");
       app = await transition(tx, ctx, app, {
         action: "CREDIT_CHECK_REQUESTED",
         role: app.originator_role,
-        set: { bvn_enc: encryptField(bvn), bvn_hash: hmac(`bvn:${bvn}`), bvn_last4: bvn.slice(-4) },
-        details: { bvnLast4: bvn.slice(-4) },
+        set: {
+          bvn_enc: encryptField(bvn),
+          bvn_hash: hmac(`bvn:${bvn}`),
+          bvn_last4: bvn.slice(-4),
+          customer_first_name: v.first,
+          customer_last_name: v.last,
+          customer_name: `${v.first} ${v.last}`,
+          customer_dob: v.dob,
+          customer_gender: v.gender,
+          customer_phone: v.phone,
+          seedfi_customer_id: customerId,
+        },
+        details: { bvnLast4: bvn.slice(-4), customerId },
       });
       return { app, s };
     }),
   );
   const bureau = creditBureau();
-  let result: { reference: string; score: number } | null = null;
+  let result: CreditResult | null = null;
   let failure: string | null = null;
-  if (!bureau) failure = "Seedfi is not configured. The credit check cannot be run until the integration is set up.";
+  if (!bureau) failure = "SeedFi is not configured. The credit check cannot be run until the integration is set up.";
   else {
     try {
-      result = await bureau.assess({ bvn, reference: pre.app.ref });
+      result = await bureau.assess({ customerId, firstName: v.first, lastName: v.last, bvn, dateOfBirth: v.dob, phone: v.phone, gender: v.gender, loanDurationMonths: pre.app.tenure_months ?? null });
     } catch (e) {
-      failure = e instanceof IntegrationUnavailable ? e.message : "The Seedfi request failed.";
-      if (!(e instanceof IntegrationUnavailable)) console.error("[altphones] Seedfi failure", e);
+      failure = e instanceof IntegrationUnavailable ? e.message : "The SeedFi request failed.";
+      if (!(e instanceof IntegrationUnavailable)) console.error("[altphones] SeedFi failure", e);
     }
   }
   return withTx(async (tx) => {
@@ -184,15 +230,26 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: { bvn: string; con
       return { outcome: "UNAVAILABLE" as const, message: failure!, lockVersion: app.lock_version };
     }
     const outcome = mapScore(result.score, Number(pre.s.score_pass_min), Number(pre.s.score_fair_min))!;
-    const bands = { passMin: pre.s.score_pass_min, fairMin: pre.s.score_fair_min, settingsVersion: pre.s.version };
+    const bands = { passMin: pre.s.score_pass_min, fairMin: pre.s.score_fair_min, settingsVersion: pre.s.version, scoreUsed: "reviewed_seedfi_score" };
     app = await transition(tx, ctx, app, {
       action: "CREDIT_ASSESSED",
       to: outcome === "FAIL" ? "CREDIT_DECLINED" : undefined,
       role: app.originator_role,
-      set: { seedfi_status: "COMPLETED", seedfi_reference: result.reference, seedfi_score: result.score, seedfi_outcome: outcome, seedfi_bands: JSON.stringify(bands), seedfi_assessed_at: ctx.now, seedfi_last_error: null },
-      details: { reference: result.reference, score: result.score, outcome, bands },
+      set: {
+        seedfi_status: "COMPLETED",
+        seedfi_reference: result.reference,
+        seedfi_score: result.score,
+        seedfi_overall_score: result.overallScore,
+        seedfi_has_history: result.hasCreditHistory,
+        seedfi_details: JSON.stringify({ components: result.components, validUntil: result.validUntil, isDummyData: result.isDummyData }),
+        seedfi_outcome: outcome,
+        seedfi_bands: JSON.stringify(bands),
+        seedfi_assessed_at: ctx.now,
+        seedfi_last_error: null,
+      },
+      details: { reference: result.reference, isDummyData: result.isDummyData, reviewedScore: result.score, overallScore: result.overallScore, hasCreditHistory: result.hasCreditHistory, outcome, bands },
     });
-    return { outcome, message: outcome === "FAIL" ? "The customer did not pass the credit assessment. This application has been closed." : `Credit assessment: ${outcome}.`, lockVersion: app.lock_version };
+    return { outcome, message: outcome === "FAIL" ? `Seed Score ${result.score}: below the approval threshold. This credit application has been closed.` : `Seed Score ${result.score}: ${outcome === "PASS" ? "Pass" : "Fair"}.`, lockVersion: app.lock_version };
   });
 }
 
@@ -204,6 +261,9 @@ export interface CustomerInput {
   phone: string;
   abAccount?: string;
   externalAccount?: string;
+  /** Paystack bank code of the customer's other bank (when Paystack is configured). */
+  externalBankCode?: string;
+  /** Bank name typed by the officer (only when Paystack is not configured). */
   externalBank?: string;
   tenure?: string;
   repaymentDay?: string;
@@ -211,7 +271,47 @@ export interface CustomerInput {
   lockVersion?: number | null;
 }
 
+/**
+ * Account checks for a credit customer. With Paystack configured, both accounts are looked up by name
+ * enquiry (Alternative Bank by its code 000304) and the names are stored as "Verified by Paystack"; the
+ * officer still confirms they belong to the customer. Without Paystack, the officer confirms manually.
+ */
+async function checkAccounts(p: CustomerInput, e: Record<string, string>) {
+  const ab = (p.abAccount ?? "").replace(/\s/g, "");
+  const ext = (p.externalAccount ?? "").replace(/\s/g, "");
+  if (!isNuban(ab)) e.abAccount = "Enter the 10-digit Alternative Bank account number.";
+  if (!isNuban(ext)) e.externalAccount = "Enter the 10-digit account number.";
+  if (!paymentGateway()) {
+    const bank = (p.externalBank ?? "").trim();
+    if (bank.length < 2) e.externalBank = "Enter the bank's name.";
+    if (/alternative\s*bank/i.test(bank)) e.externalBank = "This must be the customer's account at another bank.";
+    return { ab, ext, bankCode: null, bankName: bank, abName: null, extName: null, via: "OFFICER" as const };
+  }
+  const code = (p.externalBankCode ?? "").trim();
+  const bank = (await otherBanks()).find((b) => b.code === code);
+  if (!bank) e.externalBank = "Choose the customer's other bank.";
+  let abName: string | null = null;
+  let extName: string | null = null;
+  if (isNuban(ab)) {
+    const r = await resolveAccount(ab, ALTERNATIVE_BANK_CODE);
+    if (r.status === "FOUND") abName = r.accountName;
+    else if (r.status === "NOT_FOUND") e.abAccount = "No Alternative Bank account has this number.";
+    else throw gate(`The account lookup is unavailable (${r.message}). Try again in a moment.`);
+  }
+  if (bank && isNuban(ext)) {
+    const r = await resolveAccount(ext, bank.code);
+    if (r.status === "FOUND") extName = r.accountName;
+    else if (r.status === "NOT_FOUND") e.externalAccount = `No ${bank.name} account has this number.`;
+    else throw gate(`The account lookup is unavailable (${r.message}). Try again in a moment.`);
+  }
+  return { ab, ext, bankCode: bank?.code ?? null, bankName: bank?.name ?? "", abName, extName, via: "PAYSTACK" as const };
+}
+
 export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
+  const accountErrors: Record<string, string> = {};
+  let acc: Awaited<ReturnType<typeof checkAccounts>> | null = null;
+  const pre = await loadApp(db, id);
+  if (pre.kind === "CREDIT") acc = await checkAccounts(p, accountErrors);
   return denyOnError(ctx, id, "CUSTOMER", () =>
     withTx(async (tx) => {
       let app = await lockApp(tx, id);
@@ -219,7 +319,7 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
       expectStatus(app, EDITABLE, "Changing customer details");
       checkLock(app, p.lockVersion);
       if (app.kind === "CREDIT" && !(app.seedfi_status === "COMPLETED" && (app.seedfi_outcome === "PASS" || app.seedfi_outcome === "FAIR"))) throw gate("Run the credit assessment first.");
-      const e: Record<string, string> = {};
+      const e: Record<string, string> = { ...accountErrors };
       const name = (p.name ?? "").trim().replace(/\s+/g, " ");
       if (name.length < 3 || name.length > 120) e.name = "Enter the customer's full name.";
       const email = (p.email ?? "").trim().toLowerCase();
@@ -227,22 +327,19 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
       const phone = normalisePhone(p.phone ?? "");
       if (!phone) e.phone = "Enter a Nigerian mobile number, e.g. 0803 123 4567.";
       const set: Record<string, unknown> = { customer_name: name, customer_email: email, customer_phone: phone };
-      if (app.kind === "CREDIT") {
-        const ab = (p.abAccount ?? "").replace(/\s/g, "");
-        const ext = (p.externalAccount ?? "").replace(/\s/g, "");
-        const bank = (p.externalBank ?? "").trim();
-        if (!isNuban(ab)) e.abAccount = "Enter the 10-digit Alternative Bank account number.";
-        if (!isNuban(ext)) e.externalAccount = "Enter the 10-digit account number.";
-        if (bank.length < 2) e.externalBank = "Enter the bank's name.";
-        if (/alternative\s*bank/i.test(bank)) e.externalBank = "This must be the customer's account at another bank.";
+      if (app.kind === "CREDIT" && acc) {
         if (!isTenure(p.tenure)) e.tenure = "Choose 3, 6 or 12 months.";
         const day = Number(p.repaymentDay);
         if (!Number.isInteger(day) || day < 1 || day > 31) e.repaymentDay = "Choose a repayment day from 1 to 31.";
-        if (!p.accountsConfirmed) e.accountsConfirmed = "Confirm you have checked the customer's Alternative Bank account.";
+        if (!p.accountsConfirmed) e.accountsConfirmed = acc.via === "PAYSTACK" ? "Confirm both account names belong to the customer." : "Confirm you have checked the customer's Alternative Bank account.";
         Object.assign(set, {
-          ab_account_number: ab,
-          external_account_number: ext,
-          external_bank_name: bank,
+          ab_account_number: acc.ab,
+          external_account_number: acc.ext,
+          external_bank_name: acc.bankName,
+          external_bank_code: acc.bankCode,
+          ab_account_name: acc.abName,
+          external_account_name: acc.extName,
+          accounts_verified_via: acc.via,
           tenure_months: Number(p.tenure),
           repayment_day: day,
           details_confirmed_by: ctx.actor!.staffId,
@@ -254,7 +351,10 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
         action: "CUSTOMER_SAVED",
         role: app.originator_role,
         set,
-        details: app.kind === "CREDIT" ? { tenure: Number(p.tenure), repaymentDay: Number(p.repaymentDay), accountConfirmation: "OFFICER_CONFIRMED", abAccountLast4: String(p.abAccount).slice(-4), externalAccountLast4: String(p.externalAccount).slice(-4) } : {},
+        details:
+          app.kind === "CREDIT" && acc
+            ? { tenure: Number(p.tenure), repaymentDay: Number(p.repaymentDay), accountConfirmation: acc.via === "PAYSTACK" ? "PAYSTACK_NAME_ENQUIRY_AND_OFFICER" : "OFFICER_CONFIRMED", abAccountLast4: acc.ab.slice(-4), externalAccountLast4: acc.ext.slice(-4), externalBank: acc.bankName }
+            : {},
       });
       return { lockVersion: app.lock_version };
     }),
@@ -558,7 +658,7 @@ async function applyMandateCheck(ctx: Ctx, id: string, fromWebhook: boolean) {
   return withTx(async (tx) => {
     let a = await lockApp(tx, id);
     if (a.dd_status === "ACTIVE") return { status: "ACTIVE", message: "The mandate is already active." };
-    if (!v.active) return { status: "PENDING", message: "Paystack has not confirmed the mandate yet. The customer must complete the authorisation." };
+    if (!v.active) return { status: "PENDING", message: "Paystack has not confirmed the mandate yet. If the customer has authorised it, their bank's confirmation can take some time; check again later." };
     a = await transition(tx, ctx, a, {
       action: "MANDATE_ACTIVE",
       set: { dd_status: "ACTIVE", dd_active_at: ctx.now, dd_authorization_enc: v.authorizationCode ? encryptField(v.authorizationCode) : null, dd_account_last4: v.last4, dd_bank_name: v.bank },
@@ -627,9 +727,6 @@ export async function writeSchedule(tx: Tx, app: AltApp, rows: { seq: number; du
 
 // ------------------------------------------------------------------ contract and OTP
 
-function render(tpl: string, values: Record<string, string>) {
-  return tpl.replace(/\{\{\s*([a-z_]+)\s*\}\}/g, (_, k) => values[k] ?? "");
-}
 
 const otpHash = (challengeId: string, code: string) => hmac(`altphones-otp:${challengeId}:${code}`);
 
@@ -652,7 +749,7 @@ export async function sendContractOtp(ctx: Ctx, id: string, p: { lockVersion?: n
       if (!tpl) throw gate("The approved contract wording is not loaded. The Altphones Product Manager must load it.");
       const sched = await buildSchedule(tx, app, lagosDate(ctx.now));
       await writeSchedule(tx, app, sched, "PROVISIONAL", ctx.now);
-      const values: Record<string, string> = {
+      const values: Record<ContractPlaceholder, string> = {
         ref: app.ref,
         date: lagosDate(ctx.now),
         customer_name: app.customer_name,
@@ -676,8 +773,9 @@ export async function sendContractOtp(ctx: Ctx, id: string, p: { lockVersion?: n
         external_bank: app.external_bank_name,
         dd_reference: app.dd_reference ?? "",
         schedule: sched.map((r) => `${r.seq}. ${r.dueDate}  ${formatNaira(r.amountKobo)}`).join("\n"),
+        support_email: current.team_email,
       };
-      const body = render(tpl, values);
+      const body = renderContract(tpl, values);
       const version = Number((await tx.query<{ n: string }>("SELECT coalesce(max(version), 0) AS n FROM altphones_contracts WHERE application_id = $1", [app.id])).rows[0].n) + 1;
       const terms = { price: app.price_kobo, downPayment: app.down_payment_kobo, financed: app.financed_kobo, tenure: app.tenure_months, rateE4: app.markup_rate_e4, basis: app.markup_basis, markup: app.markup_kobo, total: app.total_repayment_kobo, instalment: app.instalment_kobo, finalInstalment: app.final_instalment_kobo, schedule: sched };
       const contract = (

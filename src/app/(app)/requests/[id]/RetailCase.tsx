@@ -1,3 +1,5 @@
+import { CreditSummary } from "@/components/CreditCheckPanel";
+import type { CreditCheckRow } from "@/server/credit/seedfi";
 import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { db } from "@/server/db";
@@ -499,6 +501,8 @@ export async function RetailCaseTools({ c, staffId, roles }: { c: Case; staffId:
   const out: React.ReactNode[] = [];
   const closed = ["COMPLETED", "CLOSED", "REJECTED", "WITHDRAWN", "EXPIRED"].includes(app.stage);
   const fac = (await db.query<FacilityRow>("SELECT * FROM facilities WHERE application_id = $1", [app.id])).rows[0] ?? null;
+  const checks = (await db.query<CreditCheckRow>("SELECT DISTINCT ON (person_key) * FROM credit_checks WHERE application_id = $1 ORDER BY person_key, created_at DESC", [app.id])).rows;
+  if (checks.length && app.stage !== "DRAFT") out.push(<CreditSummary key="credit" checks={checks} />);
   if (app.initiator_id === staffId && !closed && !fac) out.push(<ReasonForm key="w" kind="withdraw" hidden={{ applicationId: app.id }} label="Withdraw request" danger />);
   if ((roles.includes("SUPER_ADMIN") || roles.includes("HEAD_OF_RETAIL_SALES")) && !closed) out.push(<ReasonForm key="s" kind={app.suspended_at ? "resume" : "suspend"} hidden={{ applicationId: app.id }} label={app.suspended_at ? "Resume request" : "Suspend request"} />);
   const pending = (await db.query("SELECT * FROM policy_exceptions WHERE application_id = $1 AND status = 'REQUESTED'", [app.id])).rows.filter((e: { approver_role: string; requested_by: string }) => roles.includes(e.approver_role) && e.requested_by !== staffId && app.initiator_id !== staffId);

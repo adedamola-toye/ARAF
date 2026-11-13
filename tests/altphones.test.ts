@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor } from "@/server/demo/scenario";
 import { computeTerms, formatRateE4, imeiChecksumOk, mapScore, parseRateE4, repaymentDates } from "@/lib/altphones";
-import { ALT, appRow, CapturingMail, latestPaymentRef, loc, lv, setupAltphones, sidOf, stockOf, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
+import { ALT, appRow, CapturingMail, CREDIT_PERSON, latestPaymentRef, loc, lv, setupAltphones, sidOf, stockOf, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/altphones/integrations";
 import { setMailTransportForTests } from "@/server/notify/transport";
 import {
@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 const CUSTOMER = { name: "Synthetic Customer", email: "customer@example.com", phone: "0803 123 4567" };
-const CREDIT_CUSTOMER = { ...CUSTOMER, abAccount: "0123456789", externalAccount: "9876543210", externalBank: "Synthetic Bank", tenure: "6", repaymentDay: "25", accountsConfirmed: true };
+const CREDIT_CUSTOMER = { ...CUSTOMER, abAccount: "0123456789", externalAccount: "9876543210", externalBankCode: "058", tenure: "6", repaymentDay: "25", accountsConfirmed: true };
 
 async function outrightPaid(email = ALT.doOfficer, where = "Ikeja Branch") {
   const ctx = await ctxFor(email);
@@ -74,7 +74,7 @@ async function creditReady(email = ALT.doOfficer) {
   const ctx = await ctxFor(email);
   const sa = email === ALT.sa;
   const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-  await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+  await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
   await saveLocations(ctx, id, { modelId: models[0], originId: await loc(sa ? "Yaba Altbox" : "Ikeja Branch"), supplyId: await loc(sa ? "Yaba Altshop" : "Ikeja Branch") });
   await saveCustomer(ctx, id, CREDIT_CUSTOMER);
   await requestPayment(ctx, id, {});
@@ -107,7 +107,19 @@ describe("financing calculator", () => {
     expect(formatRateE4(125_000)).toBe("12.5%");
   });
 
-  it.todo("matches the approved Excel figures for 3, 6 and 12 months (awaiting the approved rate table)");
+  it("matches the approved figures for 3, 6 and 12 months (8.97%, 15.1%, 23.45% on ₦116,000)", () => {
+    const cases: [number, number, number, number, number, number][] = [
+      // tenure, rateE4, markup, total, monthly, final (kobo)
+      [3, 89_700, 1_040_520, 12_640_520, 4_213_507, 4_213_506],
+      [6, 151_000, 1_751_600, 13_351_600, 2_225_267, 2_225_265],
+      [12, 234_500, 2_720_200, 14_320_200, 1_193_350, 1_193_350],
+    ];
+    for (const [m, rate, markup, total, monthly, final] of cases) {
+      const t = computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: m, rateE4: rate, basis: "FLAT_TOTAL" });
+      expect([t.markupKobo, t.totalRepaymentKobo, t.instalmentKobo, t.finalInstalmentKobo]).toEqual([markup, total, monthly, final]);
+      expect(t.instalmentKobo * (m - 1) + t.finalInstalmentKobo).toBe(total);
+    }
+  });
 
   it("maps scores into configured bands and refuses unconfigured bands", () => {
     expect(mapScore(700, 600, 450)).toBe("PASS");
@@ -210,21 +222,23 @@ describe("credit assessment", () => {
   it("requires an 11-digit BVN, never treats an unavailable or failed check as a pass, and stores the BVN encrypted", async () => {
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-    await expect(runCreditCheck(ctx, id, { bvn: "1234567890", consent: true })).rejects.toMatchObject({ fields: { bvn: expect.any(String) } });
+    await expect(runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "1234567890" })).rejects.toMatchObject({ fields: { bvn: expect.any(String) } });
     setCreditBureauForTests(null);
-    const u = await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    const u = await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     expect(u.outcome).toBe("UNAVAILABLE");
     let r = await appRow(id);
     expect([r.seedfi_status, r.seedfi_outcome]).toEqual(["UNAVAILABLE", null]);
     expect(r.bvn_enc).not.toContain("22222222222");
     await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ code: "GATE" });
     setCreditBureauForTests(new TestBureau(null, new Error("timeout")));
-    expect((await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true })).outcome).toBe("UNAVAILABLE");
+    expect((await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" })).outcome).toBe("UNAVAILABLE");
     setCreditBureauForTests(new TestBureau(300));
-    const f = await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    const f = await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     expect(f.outcome).toBe("FAIL");
     r = await appRow(id);
-    expect([r.status, r.seedfi_outcome, r.seedfi_score, r.seedfi_reference]).toEqual(["CREDIT_DECLINED", "FAIL", "300.00", `SF-${r.ref}`]);
+    expect([r.status, r.seedfi_outcome, r.seedfi_score]).toEqual(["CREDIT_DECLINED", "FAIL", "300.00"]);
+    expect(r.seedfi_reference).toMatch(/^altphones-[0-9a-f]{32}$/); // stable per BVN, never the BVN itself
+    expect([r.customer_first_name, r.customer_last_name, r.customer_gender]).toEqual(["Synthetic", "Customer", "male"]);
     await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ code: "CONFLICT" });
     const logged = (await db.query("SELECT count(*)::int AS n FROM audit_events WHERE details::text LIKE '%22222222222%'")).rows[0].n;
     expect(logged).toBe(0);
@@ -284,7 +298,7 @@ describe("credit sale — Delight Officer route (Product Manager → Unit Head)"
   it("cannot submit until payment, both mandates and the contract are in place; OTP has retry limits", async () => {
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
-    await runCreditCheck(ctx, id, { bvn: "22222222222", consent: true });
+    await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
     await saveLocations(ctx, id, { modelId: models[0], originId: await loc("Ikeja Branch"), supplyId: "" });
     await saveCustomer(ctx, id, CREDIT_CUSTOMER);
     await requestPayment(ctx, id, {});
@@ -461,6 +475,56 @@ describe("historical imports", () => {
   });
 });
 
+describe("setup uploads", () => {
+  it("provisions Delight Officers and Smile Associates with their route and home location", async () => {
+    const admin = await ctxFor(ALT.admin);
+    const roles = async (email: string) =>
+      (await db.query("SELECT role FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE s.email = $1 AND ra.active AND ra.role IN ('DELIGHT_OFFICER','SMILE_ASSOCIATE') ORDER BY role", [email])).rows.map((r) => r.role);
+    const head = "Email,Full name,Route,State,Home location,Active";
+    const csv = [
+      head,
+      "new.officer@altbank.ng,Nkechi New-Officer,Delight Officer,LAGOS,Ikeja Branch,Yes",
+      "nobody@altbank.ng,Not In Directory,DO,LAGOS,,Yes",
+      "someone@gmail.com,Outside,SA,LAGOS,,Yes",
+      "new.officer2@altbank.ng,Wrong Home,SA,LAGOS,Ikeja Branch,Yes",
+      "x@altbank.ng,Bad Route,Cashier,LAGOS,,Yes",
+    ].join("\n");
+    const p = await previewImport(admin, "OFFICERS", "officers.csv", Buffer.from(csv));
+    expect(p.summary).toMatchObject({ rows: 5, valid: 1, errors: 4 });
+    await expect(commitImport(admin, p.id)).rejects.toMatchObject({ code: "VALIDATION" });
+    const ok = await previewImport(admin, "OFFICERS", "officers-ok.csv", Buffer.from(csv.split("\n").slice(0, 2).join("\n")));
+    await commitImport(admin, ok.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual(["DELIGHT_OFFICER"]);
+    const home = (await db.query("SELECT l.name FROM altphones_officer_homes h JOIN staff s ON s.id = h.staff_id JOIN locations l ON l.id = h.location_id WHERE s.email = 'new.officer@altbank.ng'")).rows[0];
+    expect(home.name).toBe("Ikeja Branch");
+    // Switching route revokes the other one; the home must suit the new route.
+    const sw = await previewImport(admin, "OFFICERS", "officers-switch.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,Yaba Altbox,Yes\n`));
+    await commitImport(admin, sw.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual(["SMILE_ASSOCIATE"]);
+    // Active = No removes Altphones access.
+    const off = await previewImport(admin, "OFFICERS", "officers-off.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,,No\n`));
+    await commitImport(admin, off.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual([]);
+    await expect(previewImport(await ctxFor(ALT.pm), "OFFICERS", "x.csv", Buffer.from(csv))).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("loads opening stock at Branches and Shops with optional IMEIs, never at a BOX, and only once", async () => {
+    const admin = await ctxFor(ALT.admin);
+    const before = await stockOf("Wuse Altshop", models[2]);
+    const csv = `Location,Phone model,Quantity,IMEIs,Note\nWuse Altshop,Altphone L1 Series — Blue,4,${IMEI[0]} ${IMEI[1]},Launch stock\nYaba Altbox,Altphone L1 Series — Blue,2,,\nWuse Altshop,Altphone L1 Series — Blue,1,,\n`;
+    const p = await previewImport(admin, "OPENING_STOCK", "opening.csv", Buffer.from(csv));
+    expect(p.summary).toMatchObject({ rows: 3, valid: 1, errors: 2 }); // BOX row and repeated location/model refused
+    const good = csv.split("\n").slice(0, 2).join("\n") + "\n";
+    const ok = await previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good));
+    await commitImport(admin, ok.id);
+    expect(await stockOf("Wuse Altshop", models[2])).toEqual({ physical: before.physical + 4, reserved: before.reserved, available: before.available + 4 });
+    expect((await db.query("SELECT count(*)::int AS n FROM altphones_devices WHERE imei = ANY($1) AND status = 'IN_STOCK'", [[IMEI[0], IMEI[1]]])).rows[0].n).toBe(2);
+    await expect(previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good))).rejects.toMatchObject({ code: "CONFLICT" });
+    const again = await previewImport(admin, "OPENING_STOCK", "opening-again.csv", Buffer.from(good.replace("Launch stock", "again")));
+    expect(again.summary).toMatchObject({ valid: 0, errors: 1 }); // IMEIs already registered
+  });
+});
+
 describe("access", () => {
   it("only the originator, the reviewers of its stages and Super Admins can open an application", async () => {
     const { id } = await creditReady(ALT.sa);
@@ -486,5 +550,184 @@ describe("approved catalogue", () => {
     const { readModelImage } = await import("@/server/altphones/catalogue");
     const id = (await db.query("SELECT id FROM altphones_models WHERE name LIKE '%Green'")).rows[0].id;
     expect(await readModelImage(id)).toEqual({ staticPath: "/images/altphones/altphone-l1-green.webp" });
+  });
+
+  it("a fresh installation records the approved markup rates as a settings version", async () => {
+    const r = (await db.query("SELECT markup_rates, markup_basis, reason FROM altphones_settings WHERE markup_rates = $1::jsonb ORDER BY version LIMIT 1", [JSON.stringify({ "3": 89700, "6": 151000, "12": 234500 })])).rows[0];
+    expect(r).toBeDefined();
+    expect(r.markup_basis).toBe("FLAT_TOTAL");
+  });
+
+  it("a fresh installation records SeedFi's documented decision bands as a settings version", async () => {
+    const v2 = (await db.query("SELECT score_pass_min, score_fair_min, reason FROM altphones_settings WHERE version = 2")).rows[0];
+    expect([v2.score_pass_min, v2.score_fair_min]).toEqual(["620.00", "530.00"]);
+    expect(v2.reason).toMatch(/SeedFi Loan Engine API documentation v2.0/);
+  });
+});
+
+describe("SeedFi Seed Score client (API documentation v2.0)", () => {
+  const PERSONAS = {
+    // Staging personas from the SeedFi documentation (section 3.2) with their documented responses.
+    "12345654321": { overall: 384, reviewed: 384, history: false }, // Theodore Stone — clean, no history
+    "09876567890": { overall: 532, reviewed: 532, history: true }, // Nathan Smith — clean, has history
+    "12345678901": { overall: 544, reviewed: 444, history: true }, // John Doe — bad credit
+  } as Record<string, { overall: number; reviewed: number; history: boolean }>;
+  const saved = { ...process.env };
+  let requests: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[];
+  beforeEach(() => {
+    requests = [];
+    Object.assign(process.env, { SEEDFI_ENABLED: "true", SEEDFI_BASE_URL: "https://stg-loan-engine.theseedfi.com", SEEDFI_API_KEY: "test-api-key" });
+    setCreditBureauForTests(undefined);
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      requests.push({ url, headers: init.headers as Record<string, string>, body });
+      const p = PERSONAS[body.bvn];
+      if (!p) return new Response(JSON.stringify({ detail: "BVN not found", status_code: 400 }), { status: 400 });
+      return new Response(
+        JSON.stringify({
+          credit_score: {
+            payment_history: { payment_history_score: 16.5, payment_history_seedfi_score: 132.0 },
+            demographics: { demographics_score: 8.0, demographics_seedfi_score: 64.0 },
+            overall_seedfi_score: p.overall,
+            reviewed_seedfi_score: p.reviewed,
+            user_has_credit_history: p.history,
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    for (const k of ["SEEDFI_ENABLED", "SEEDFI_BASE_URL", "SEEDFI_API_KEY"]) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  async function check(bvn: string) {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    const res = await runCreditCheck(ctx, id, { bvn, firstName: "Nathan", lastName: "Smith", dateOfBirth: "1990-01-15", gender: "Male", phone: "0803 123 4567", consent: true });
+    return { res, row: await appRow(id) };
+  }
+
+  it("calls the documented endpoint with the X-API-Key and the required fields", async () => {
+    await check("09876567890");
+    expect(requests).toHaveLength(1);
+    const r = requests[0];
+    expect(r.url).toBe("https://stg-loan-engine.theseedfi.com/scoring/api/v1/seed-score/calculate");
+    expect(r.headers["x-api-key"]).toBe("test-api-key");
+    expect(r.body).toMatchObject({ first_name: "Nathan", last_name: "Smith", bvn: "09876567890", date_of_birth: "1990-01-15", phone_number: "08031234567", gender: "male" });
+    expect(String(r.body.customer_id)).toMatch(/^altphones-[0-9a-f]{32}$/);
+  });
+
+  it("maps the documented personas with SeedFi's bands (Pass ≥ 620, Fair 530–619, Fail < 530) on the reviewed score", async () => {
+    const nathan = await check("09876567890");
+    expect([nathan.res.outcome, nathan.row.seedfi_score, nathan.row.seedfi_overall_score, nathan.row.seedfi_has_history]).toEqual(["FAIR", "532.00", "532.00", true]);
+    const john = await check("12345678901"); // overall 544 would be Fair, but the reviewed score 444 is used
+    expect([john.res.outcome, john.row.status, john.row.seedfi_score, john.row.seedfi_overall_score]).toEqual(["FAIL", "CREDIT_DECLINED", "444.00", "544.00"]);
+    const theodore = await check("12345654321");
+    expect(theodore.res.outcome).toBe("FAIL");
+    expect(theodore.row.seedfi_details.components.payment_history).toEqual({ payment_history_score: 16.5, payment_history_seedfi_score: 132 });
+  });
+
+  it("treats SeedFi errors and malformed scores as unavailable, never as a pass", async () => {
+    const err = await check("11111111111");
+    expect(err.res.outcome).toBe("UNAVAILABLE");
+    expect(err.row.seedfi_last_error).toMatch(/BVN not found \(HTTP 400\)/);
+    expect(err.row.seedfi_outcome).toBeNull();
+    const { parseSeedScore } = await import("@/server/altphones/integrations");
+    expect(() => parseSeedScore({ credit_score: { overall_seedfi_score: 950 } }, "x")).toThrow();
+    expect(() => parseSeedScore({ status: 200, data: {} }, "x")).toThrow();
+    expect(parseSeedScore({ status: 200, data: { credit_score: { overall_seedfi_score: 700 } } }, "x").score).toBe(700);
+    // Shape returned by SeedFi staging (verified live): wrapped in { status, data }, with validity_date and is_dummy_data.
+    const live = parseSeedScore({ status: 200, data: { credit_score: { overall_seedfi_score: 544.0, reviewed_seedfi_score: 444.0, user_has_credit_history: true, validity_date: "2026-12-12T22:48:00.360104", cached: false, is_dummy_data: true } } }, "c1");
+    expect([live.score, live.overallScore, live.validUntil, live.isDummyData]).toEqual([444, 544, "2026-12-12", true]);
+  });
+
+  it("validates the Seed Score inputs before calling SeedFi", async () => {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    await expect(runCreditCheck(ctx, id, { bvn: "09876567890", firstName: "", lastName: "Smith", dateOfBirth: "2999-01-01", gender: "x", phone: "123", consent: true })).rejects.toMatchObject({
+      fields: { firstName: expect.any(String), dateOfBirth: expect.any(String), gender: expect.any(String), phone: expect.any(String) },
+    });
+    expect(requests).toHaveLength(0);
+  });
+});
+
+describe("contract wording", () => {
+  it("the starting draft uses only known placeholders and renders completely", async () => {
+    const { CONTRACT_DRAFT, unknownPlaceholders, renderContract, SAMPLE_CONTRACT_VALUES } = await import("@/lib/altphones-contract");
+    expect(unknownPlaceholders(CONTRACT_DRAFT)).toEqual([]);
+    const out = renderContract(CONTRACT_DRAFT, SAMPLE_CONTRACT_VALUES);
+    expect(out).not.toMatch(/\{\{/);
+    expect(out).toContain("Altphone L1 Series — Green");
+    expect(out).toMatch(/no interest/);
+  });
+
+  it("a Super Admin or the Altphones Product Manager can change it; others cannot; drafts and unknown placeholders are refused", async () => {
+    const { saveContract } = await import("@/server/altphones/catalogue");
+    const { CONTRACT_DRAFT } = await import("@/lib/altphones-contract");
+    const approved = CONTRACT_DRAFT.replace(/\[DRAFT FOR LEGAL AND SHARIAH REVIEW[^\]]*\]\n/, "");
+    await expect(saveContract(await ctxFor(ALT.admin), { template: CONTRACT_DRAFT, reason: "Legal memo 1" })).rejects.toMatchObject({ fields: { template: expect.stringMatching(/draft notice/) } });
+    await expect(saveContract(await ctxFor(ALT.admin), { template: approved + "\n{{loan_amount}}", reason: "Legal memo 1" })).rejects.toMatchObject({ fields: { template: expect.stringMatching(/loan_amount/) } });
+    await expect(saveContract(await ctxFor(ALT.doOfficer), { template: approved, reason: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const v1 = await saveContract(await ctxFor(ALT.admin), { template: approved, reason: "Legal and Shariah approval L-001" });
+    const v2 = await saveContract(await ctxFor(ALT.pm), { template: approved.replace("Please read it carefully.", "Please read it carefully before you agree."), reason: "Wording tweak L-002" });
+    expect(v2.version).toBe(v1.version + 1);
+    const row = (await db.query("SELECT contract_template, reason FROM altphones_settings WHERE version = $1", [v2.version])).rows[0];
+    expect(row.contract_template).toContain("before you agree");
+    expect(row.reason).toBe("Contract wording: Wording tweak L-002");
+    // pricing changes keep the wording
+    await savePricing(await ctxFor(ALT.pm), { rates: { "3": "1", "6": "1", "12": "1" }, basis: "FLAT_PER_MONTH", weekendRule: "NEXT_BUSINESS_DAY", shortMonthRule: "LAST_DAY_OF_MONTH", reason: "Rates" });
+    expect((await db.query("SELECT contract_template FROM altphones_settings ORDER BY version DESC LIMIT 1")).rows[0].contract_template).toContain("before you agree");
+  });
+
+  it("an issued contract is filled in with the customer's figures, including the team mailbox", async () => {
+    const { saveContract } = await import("@/server/altphones/catalogue");
+    const { CONTRACT_DRAFT } = await import("@/lib/altphones-contract");
+    await saveContract(await ctxFor(ALT.admin), { template: CONTRACT_DRAFT.replace(/\[DRAFT FOR LEGAL AND SHARIAH REVIEW[^\]]*\]\n/, ""), reason: "L-001" });
+    const { id } = await creditReady();
+    const body = (await db.query("SELECT c.body FROM altphones_contracts c JOIN altphones_applications a ON a.contract_id = c.id WHERE a.id = $1", [id])).rows[0].body;
+    expect(body).not.toMatch(/\{\{/);
+    expect(body).toContain("Email altbox@altbank.ng");
+    expect(body).toContain("₦116,000");
+    expect(body).toContain("Synthetic Customer");
+  });
+});
+
+describe("account name enquiry (Paystack)", () => {
+  async function toCustomerStep() {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
+    await saveLocations(ctx, id, { modelId: models[0], originId: await loc("Ikeja Branch"), supplyId: "" });
+    return { ctx, id };
+  }
+
+  it("looks up both accounts and stores the names as verified by Paystack", async () => {
+    const { ctx, id } = await toCustomerStep();
+    await saveCustomer(ctx, id, CREDIT_CUSTOMER);
+    const r = await appRow(id);
+    expect([r.ab_account_name, r.external_account_name, r.external_bank_name, r.external_bank_code, r.accounts_verified_via]).toEqual(["SYNTHETIC CUSTOMER", "SYNTHETIC CUSTOMER 3210", "Synthetic Bank", "058", "PAYSTACK"]);
+  });
+
+  it("refuses accounts that do not exist and banks not on Paystack's list", async () => {
+    const { ctx, id } = await toCustomerStep();
+    gw.missingAccounts.add("058:9876543210");
+    gw.missingAccounts.add("000304:0123456789");
+    await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ fields: { externalAccount: expect.stringMatching(/No Synthetic Bank account/), abAccount: expect.stringMatching(/No Alternative Bank account/) } });
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: "999" })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } });
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: "000304" })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } }); // must be another bank
+  });
+
+  it("without Paystack the officer confirms the accounts manually", async () => {
+    const { ctx, id } = await toCustomerStep();
+    setPaymentGatewayForTests(null);
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: undefined })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } });
+    await saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: undefined, externalBank: "Example Bank" });
+    const r = await appRow(id);
+    expect([r.accounts_verified_via, r.ab_account_name, r.external_bank_name]).toEqual(["OFFICER", null, "Example Bank"]);
   });
 });

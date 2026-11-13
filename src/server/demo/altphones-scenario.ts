@@ -8,7 +8,7 @@ import { db } from "../db";
 import { ctxFor } from "./scenario";
 import { saveModel, savePolicy, savePricing } from "../altphones/catalogue";
 import { decideReplenishment, requestReplenishment } from "../altphones/stock";
-import type { CreditBureau, MandateVerification, PaymentGateway, PaymentVerification } from "../altphones/integrations";
+import type { CreditBureau, CreditInput, CreditResult, MandateVerification, PaymentGateway, PaymentVerification } from "../altphones/integrations";
 import type { MailTransport, OutgoingEmail } from "../notify/transport";
 import type { AltApp } from "../altphones/core";
 
@@ -52,7 +52,7 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
     contractTemplate: DEMO_CONTRACT,
     reason: "SYNTHETIC test settings",
   });
-  await savePolicy(admin, { passMin: "600", fairMin: "450", unitHeadId: await sidOf(ALT.unitHead), teamEmail: "altbox@altbank.ng", reason: "SYNTHETIC test policy" });
+  await savePolicy(admin, { passMin: "620", fairMin: "530", unitHeadId: await sidOf(ALT.unitHead), teamEmail: "altbox@altbank.ng", reason: "SYNTHETIC test policy" });
   const qty = opts.stock ?? 5;
   if (qty > 0) {
     for (const where of ["Ikeja Branch", "Yaba Altshop"]) {
@@ -63,21 +63,24 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
   return { models };
 }
 
+/** Synthetic Seed Score inputs (BVN is supplied per call). */
+export const CREDIT_PERSON = { firstName: "Synthetic", lastName: "Customer", dateOfBirth: "1990-01-15", gender: "male", phone: "0803 123 4567", consent: true };
+
 export const sidOf = async (email: string) => (await db.query<{ id: string }>("SELECT id FROM staff WHERE email = $1", [email])).rows[0].id;
 
 // ------------------------------------------------------------------ provider doubles
 
 export class TestBureau implements CreditBureau {
   readonly name = "Test bureau";
-  calls: { bvn: string; reference: string }[] = [];
+  calls: CreditInput[] = [];
   constructor(
     public score: number | null = 700,
     public fail: Error | null = null,
   ) {}
-  async assess(input: { bvn: string; reference: string }) {
+  async assess(input: CreditInput): Promise<CreditResult> {
     this.calls.push(input);
     if (this.fail) throw this.fail;
-    return { reference: `SF-${input.reference}`, score: this.score! };
+    return { reference: input.customerId, score: this.score!, overallScore: this.score!, hasCreditHistory: true, validUntil: null, isDummyData: false, components: {} };
   }
 }
 
@@ -122,6 +125,19 @@ export class TestGateway implements PaymentGateway {
   verifySignature(rawBody: string, signature: string | null) {
     return signature === createHmac("sha512", TEST_PAYSTACK_SECRET).update(rawBody).digest("hex");
   }
+  /** Accounts that do not exist (name enquiry returns nothing). */
+  missingAccounts = new Set<string>();
+  async listBanks() {
+    return [
+      { code: "000304", name: "Alternative bank" },
+      { code: "058", name: "Synthetic Bank" },
+      { code: "044", name: "Example Bank" },
+    ];
+  }
+  async resolveAccount(accountNumber: string, bankCode: string) {
+    if (this.missingAccounts.has(`${bankCode}:${accountNumber}`)) return null;
+    return { accountName: bankCode === "000304" ? "SYNTHETIC CUSTOMER" : `SYNTHETIC CUSTOMER ${accountNumber.slice(-4)}` };
+  }
   sign(rawBody: string) {
     return createHmac("sha512", TEST_PAYSTACK_SECRET).update(rawBody).digest("hex");
   }
@@ -146,4 +162,10 @@ export async function latestPaymentRef(appId: string) {
 export async function stockOf(locationName: string, modelId: string) {
   const r = (await db.query<{ physical: number; reserved: number }>("SELECT physical, reserved FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [await loc(locationName), modelId])).rows[0];
   return r ? { physical: r.physical, reserved: r.reserved, available: r.physical - r.reserved } : { physical: 0, reserved: 0, available: 0 };
+}
+
+/** Tests and the development demo only: use a passing test bureau when SeedFi is not configured. */
+export async function ensureTestBureau() {
+  const { creditBureau, setCreditBureauForTests } = await import("../altphones/integrations");
+  if (!creditBureau()) setCreditBureauForTests(new TestBureau(700));
 }

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetDb, key } from "./helpers";
 import { ctxFor, makePdf, openTaskOf, act } from "@/server/demo/scenario";
-import {
+import { passRetailCreditChecks,
   applyConfig,
   syntheticConfig,
   createRetailCase,
@@ -149,6 +149,7 @@ describe("business review routing", () => {
     expect(r.blockers.join(" ")).toMatch(/No Outlet Service Supervisor/);
     await db.query("UPDATE locations SET oss_staff_id = $1 WHERE name = 'Wuse Altshop'", [await staffId("oss.yaba@altbank.ng")]);
     await db.query("UPDATE role_assignments SET active = false WHERE role = 'OUTLET_SERVICE_SUPERVISOR'");
+    await passRetailCreditChecks(await ctxFor("do.ife@altbank.ng"), id);
     await submitApplication(await ctxFor("do.ife@altbank.ng"), id, key());
     const t = await openTaskOf(id);
     expect(t.stage).toBe("OSS_REVIEW");
@@ -588,6 +589,9 @@ describe("RM daily request wallet", () => {
     // Return and resubmit with a changed amount: the submitted amount and day are retained.
     await act(a, "RETURN", { reason: "Please increase the amount" });
     await saveRetailDraft(await ctxFor("rm.bola@altbank.ng"), a, { data: { requestedAmountKobo: N(1_500_000), proposedMonthlyObligationKobo: N(150_000) } });
+    // The March Seed Score is older than 30 days by now: a fresh check is needed before resubmitting.
+    await expect(act(a, "RESUBMIT")).rejects.toThrow(/not ready|SeedFi credit check/);
+    await passRetailCreditChecks(await ctxFor("rm.bola@altbank.ng"), a);
     await act(a, "RESUBMIT");
     const day = await walletDay(db, rm, "2026-04-01");
     expect(day.count).toBe(1);

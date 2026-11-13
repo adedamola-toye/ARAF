@@ -5,18 +5,20 @@ import { PageHeader } from "@/components/PageHeader";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
-import { CONTRACT_PLACEHOLDERS, integrationStatus, listHolidays, listModels, MAX_ACTIVE_MODELS } from "@/server/altphones/catalogue";
+import { integrationStatus, listHolidays, listModels, MAX_ACTIVE_MODELS } from "@/server/altphones/catalogue";
 import { creditReadiness, currentSettings, roleHolders, routeUnitHead } from "@/server/altphones/core";
 import { altphonesAccess } from "@/server/altphones/views";
 import { termsFor } from "@/server/altphones/origination";
 import { IMPORT_LABELS, listImports, type ImportKind } from "@/server/altphones/imports";
 import { formatNaira, formatRateE4, MARKUP_BASIS_LABELS, SHORT_MONTH_RULE_LABELS, WEEKEND_RULE_LABELS, type MarkupBasis, type ShortMonthRule, type WeekendRule } from "@/lib/altphones";
 import { PhoneImage } from "../ui";
-import { commitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
+import { ContractEditor } from "../AltClient";
+import { CONTRACT_DRAFT } from "@/lib/altphones-contract";
+import { contractAction, commitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
 
 export const metadata = { title: "Altphones settings" };
 
-type Tab = "catalogue" | "pricing" | "policy" | "imports";
+type Tab = "catalogue" | "pricing" | "contract" | "policy" | "imports";
 
 export default async function AltManage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
@@ -25,9 +27,14 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
   if (!access.pm && !access.admin) redirect("/altphones");
   const tabs: { key: Tab; label: string; show: boolean }[] = [
     { key: "catalogue", label: "Catalogue", show: access.pm },
-    { key: "pricing", label: "Pricing and contract", show: access.pm || access.admin },
-    { key: "policy", label: "Credit policy and routing", show: access.admin || access.pm },
-    { key: "imports", label: "Imports", show: access.admin },
+    { key: "pricing", label: "Pricing", show: access.pm || access.admin },
+    { key: "contract", label: "Contract", show: access.pm || access.admin },
+    {
+      key: "policy",
+      label: "Credit policy and routing",
+      show: access.admin || access.pm,
+    },
+    { key: "imports", label: "Setup uploads", show: access.admin },
   ];
   const visible = tabs.filter((t) => t.show);
   const tab = (visible.find((t) => t.key === sp.tab)?.key ?? visible[0].key) as Tab;
@@ -40,7 +47,7 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
       <div className="alt-integrations">
         {(
           [
-            ["Seedfi credit assessment", integ.seedfi],
+            ["SeedFi Seed Score", integ.seedfi],
             ["Paystack payments", integ.paystack],
             ["Paystack Direct Debit", integ.directDebit],
           ] as [string, string][]
@@ -49,7 +56,13 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
             {k}: {v === "CONFIGURED" ? "configured" : "not configured"}
           </span>
         ))}
-        {missing.length === 0 ? <span className="badge badge-green">Credit sales: ready</span> : <span className="badge badge-warn">Credit sales: {missing.length} item{missing.length === 1 ? "" : "s"} missing</span>}
+        {missing.length === 0 ? (
+          <span className="badge badge-green">Credit sales: ready</span>
+        ) : (
+          <span className="badge badge-warn">
+            Credit sales: {missing.length} item{missing.length === 1 ? "" : "s"} missing
+          </span>
+        )}
       </div>
       <nav className="tabs" aria-label="Settings">
         {visible.map((t) => (
@@ -61,6 +74,7 @@ export default async function AltManage({ searchParams }: { searchParams: Promis
       {tab === "catalogue" && <Catalogue />}
       {tab === "pricing" && <Pricing canEdit={access.pm} />}
       {tab === "policy" && <Policy canEdit={access.admin} />}
+      {tab === "contract" && <Contract />}
       {tab === "imports" && <Imports preview={sp.preview} />}
       <p className="small muted">
         Settings version {s.version} · {formatLagos(s.created_at)} · {s.reason}
@@ -154,18 +168,29 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
       <section className="card" aria-labelledby="h-calc">
         <h2 id="h-calc">Current calculation</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
-          Outright {formatNaira(s.outright_price_kobo)} · fixed down payment {formatNaira(s.down_payment_kobo)} · financed {formatNaira(Number(s.outright_price_kobo) - Number(s.down_payment_kobo))}. Markup is charged on the financed amount.
+          Outright {formatNaira(s.outright_price_kobo)} · fixed down payment {formatNaira(s.down_payment_kobo)} · financed {formatNaira(Number(s.outright_price_kobo) - Number(s.down_payment_kobo))}. Markup is charged on
+          the financed amount.
         </p>
         <div className="table-wrap">
           <table className="data">
             <thead>
               <tr>
                 <th scope="col">Tenure</th>
-                <th scope="col" className="num">Rate</th>
-                <th scope="col" className="num">Markup</th>
-                <th scope="col" className="num">Total repayment</th>
-                <th scope="col" className="num">Monthly</th>
-                <th scope="col" className="num">Final instalment</th>
+                <th scope="col" className="num">
+                  Rate
+                </th>
+                <th scope="col" className="num">
+                  Markup
+                </th>
+                <th scope="col" className="num">
+                  Total repayment
+                </th>
+                <th scope="col" className="num">
+                  Monthly
+                </th>
+                <th scope="col" className="num">
+                  Final instalment
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -235,13 +260,6 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
               </div>
             </div>
             <div className="field">
-              <label htmlFor="contractTemplate">Approved customer contract wording</label>
-              <textarea id="contractTemplate" name="contractTemplate" rows={10} className="mono" defaultValue={s.contract_template ?? ""} />
-              <span className="hint">
-                Placeholders: {CONTRACT_PLACEHOLDERS.map((p) => `{{${p}}}`).join(" ")}
-              </span>
-            </div>
-            <div className="field">
               <label htmlFor="reason">Approval reference</label>
               <input id="reason" name="reason" required placeholder="Approval memo or committee reference" />
             </div>
@@ -294,8 +312,13 @@ async function Policy({ canEdit }: { canEdit: boolean }) {
       <h2 id="h-pol">Credit policy and routing</h2>
       <dl className="alt-kv">
         <div>
-          <dt>Seedfi bands</dt>
-          <dd>{s.score_pass_min === null ? "Not configured — credit checks cannot be mapped" : `Pass ≥ ${s.score_pass_min} · Fair ≥ ${s.score_fair_min} · Fail below ${s.score_fair_min}`}</dd>
+          <dt>Seed Score bands</dt>
+          <dd>
+            {s.score_pass_min === null
+              ? "Not configured — credit checks cannot be mapped"
+              : `Pass ≥ ${Number(s.score_pass_min)} · Fair ${Number(s.score_fair_min)}–${Number(s.score_pass_min) - 1} · Fail below ${Number(s.score_fair_min)}`}
+            <div className="small muted">Seed Score range 280–800, decided on SeedFi&rsquo;s reviewed score. SeedFi&rsquo;s documented bands: Approved 620–800, Manual Review 530–619, Declined below 530.</div>
+          </dd>
         </div>
         <div>
           <dt>Unit Head (Altphones route)</dt>
@@ -314,11 +337,11 @@ async function Policy({ canEdit }: { canEdit: boolean }) {
         <ActionForm action={policyAction} className="stack">
           <div className="grid-2">
             <div className="field">
-              <label htmlFor="passMin">Pass: score at or above</label>
+              <label htmlFor="passMin">Pass: Seed Score at or above</label>
               <input id="passMin" name="passMin" inputMode="decimal" defaultValue={s.score_pass_min ?? ""} />
             </div>
             <div className="field">
-              <label htmlFor="fairMin">Fair: score at or above</label>
+              <label htmlFor="fairMin">Fair: Seed Score at or above</label>
               <input id="fairMin" name="fairMin" inputMode="decimal" defaultValue={s.score_fair_min ?? ""} />
               <span className="hint">Below this is Fail. Use the thresholds in the approved credit policy.</span>
             </div>
@@ -353,21 +376,96 @@ async function Policy({ canEdit }: { canEdit: boolean }) {
   );
 }
 
+const n = (c: number, one: string, many = `${one}s`) => `${c.toLocaleString()} ${c === 1 ? one : many}`;
+
 async function Imports({ preview }: { preview?: string }) {
   const list = await listImports(db, 20);
   const open = list.find((i) => i.status === "PREVIEW" && (!preview || i.id === preview));
+  const counts = (
+    await db.query<{
+      branches: number;
+      shops: number;
+      boxes: number;
+      dos: number;
+      sas: number;
+      units: number;
+      stockLocations: number;
+    }>(
+      `SELECT (SELECT count(*) FROM locations WHERE active AND outlet_type = 'BRANCH')::int AS branches,
+              (SELECT count(*) FROM locations WHERE active AND outlet_type = 'ALTSHOP')::int AS shops,
+              (SELECT count(*) FROM locations WHERE active AND outlet_type = 'ALTBOX')::int AS boxes,
+              (SELECT count(DISTINCT staff_id) FROM role_assignments WHERE active AND role = 'DELIGHT_OFFICER')::int AS dos,
+              (SELECT count(DISTINCT staff_id) FROM role_assignments WHERE active AND role = 'SMILE_ASSOCIATE')::int AS sas,
+              (SELECT coalesce(sum(physical), 0) FROM altphones_stock)::int AS units,
+              (SELECT count(DISTINCT location_id) FROM altphones_stock WHERE physical > 0)::int AS "stockLocations"`,
+    )
+  ).rows[0];
   return (
     <div className="stack">
       <section className="card" aria-labelledby="h-imp">
-        <h2 id="h-imp">Upload</h2>
+        <h2 id="h-imp">Altphones setup</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
-          CSV or Excel. Nothing is applied until you review the check and confirm. Historical transactions are marked Legacy / Imported and generate no payments, approvals, emails or stock movements; import stock positions separately.
+          Upload in this order. Each file is checked first and nothing is applied until you confirm. Download a template, fill it in Excel, and save as .xlsx or .csv.
+        </p>
+        <ol className="setup-steps">
+          {(
+            [
+              [
+                "LOCATIONS",
+                "Locations",
+                `${n(counts.branches, "Branch", "Branches")} · ${n(counts.shops, "Shop")} · ${n(counts.boxes, "BOX", "BOXes")}`,
+                "State, city, type (Branch, Shop or BOX) and name. Existing locations are skipped; duplicate names are refused.",
+              ],
+              [
+                "OFFICERS",
+                "Delight Officers and Smile Associates",
+                `${n(counts.dos, "Delight Officer")} · ${n(counts.sas, "Smile Associate")}`,
+                "Work email, name, route (Delight Officer or Smile Associate), state and home Branch/BOX. The route decides how they sign in; set Active to No to remove access. Emails must be in the bank directory.",
+              ],
+              [
+                "OPENING_STOCK",
+                "Opening stock",
+                `${n(counts.units, "unit")} at ${n(counts.stockLocations, "location")}`,
+                "Branch or Shop, phone model, quantity and (optionally) the IMEIs. BOX locations cannot hold stock.",
+              ],
+            ] as [ImportKind, string, string, string][]
+          ).map(([kind, title, status, hint], i) => (
+            <li key={kind} className="setup-step">
+              <div className="setup-step-head">
+                <span className="setup-step-n">{i + 1}</span>
+                <div>
+                  <strong>{title}</strong>
+                  <div className="small muted">{status}</div>
+                </div>
+                <a className="btn btn-sm btn-ghost" href={`/api/altphones/templates/${kind.toLowerCase()}`}>
+                  Template
+                </a>
+              </div>
+              <p className="small" style={{ margin: 0 }}>
+                {hint}
+              </p>
+              <ActionForm action={previewImportAction} className="alt-inline-add" encType="multipart/form-data" resetOnSuccess>
+                <input type="hidden" name="kind" value={kind} />
+                <div className="field">
+                  <label htmlFor={`file-${kind}`}>File</label>
+                  <input id={`file-${kind}`} name="file" type="file" accept=".csv,.xlsx" required />
+                </div>
+                <SubmitButton>Check file</SubmitButton>
+              </ActionForm>
+            </li>
+          ))}
+        </ol>
+      </section>
+      <section className="card" aria-labelledby="h-hist-up">
+        <h2 id="h-hist-up">Historical records</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Sales and credit facilities completed outside ARAF are marked Legacy / Imported and create no payments, approvals, emails or stock movements. Import past stock movements separately so nothing is counted twice.
         </p>
         <ActionForm action={previewImportAction} className="alt-inline-add" encType="multipart/form-data" resetOnSuccess>
           <div className="field">
             <label htmlFor="kind">What</label>
             <select id="kind" name="kind" required>
-              {(Object.keys(IMPORT_LABELS) as ImportKind[]).map((k) => (
+              {(["TRANSACTIONS", "STOCK"] as ImportKind[]).map((k) => (
                 <option key={k} value={k}>
                   {IMPORT_LABELS[k]}
                 </option>
@@ -382,7 +480,7 @@ async function Imports({ preview }: { preview?: string }) {
         </ActionForm>
         <p className="small">
           Templates:{" "}
-          {(Object.keys(IMPORT_LABELS) as ImportKind[]).map((k, i) => (
+          {(["TRANSACTIONS", "STOCK"] as ImportKind[]).map((k, i) => (
             <span key={k}>
               {i > 0 && " · "}
               <a href={`/api/altphones/templates/${k.toLowerCase()}`}>{IMPORT_LABELS[k]}</a>
@@ -431,32 +529,92 @@ async function Imports({ preview }: { preview?: string }) {
         {list.length === 0 ? (
           <p className="muted small">None yet.</p>
         ) : (
-          <table className="data">
-            <thead>
-              <tr>
-                <th scope="col">File</th>
-                <th scope="col">What</th>
-                <th scope="col">Result</th>
-                <th scope="col">When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.map((i) => (
-                <tr key={i.id}>
-                  <td>{i.filename}</td>
-                  <td className="small">{IMPORT_LABELS[i.kind as ImportKind]}</td>
-                  <td>
-                    <span className={`badge ${i.status === "COMMITTED" ? "badge-green" : i.status === "DISCARDED" ? "" : "badge-warn"}`}>{i.status === "COMMITTED" ? `Imported ${i.summary.applied ?? 0}` : i.status === "DISCARDED" ? "Discarded" : "Awaiting confirmation"}</span>
-                  </td>
-                  <td className="small muted">
-                    {formatLagos(i.committed_at ?? i.created_at)} · {i.by_name}
-                  </td>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th scope="col">File</th>
+                  <th scope="col">What</th>
+                  <th scope="col">Result</th>
+                  <th scope="col">When</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {list.map((i) => (
+                  <tr key={i.id}>
+                    <td>{i.filename}</td>
+                    <td className="small">{IMPORT_LABELS[i.kind as ImportKind]}</td>
+                    <td>
+                      <span className={`badge ${i.status === "COMMITTED" ? "badge-green" : i.status === "DISCARDED" ? "" : "badge-warn"}`}>
+                        {i.status === "COMMITTED" ? `Imported ${i.summary.applied ?? 0}` : i.status === "DISCARDED" ? "Discarded" : "Awaiting confirmation"}
+                      </span>
+                    </td>
+                    <td className="small muted">
+                      {formatLagos(i.committed_at ?? i.created_at)} · {i.by_name}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
+    </div>
+  );
+}
+
+async function Contract() {
+  const s = await currentSettings(db);
+  const history = (
+    await db.query<{
+      version: number;
+      reason: string;
+      created_at: Date;
+      by_name: string | null;
+    }>(
+      `SELECT v.version, v.reason, v.created_at, st.full_name AS by_name FROM altphones_settings v LEFT JOIN staff st ON st.id = v.created_by
+        WHERE v.contract_template IS DISTINCT FROM (SELECT p.contract_template FROM altphones_settings p WHERE p.version = v.version - 1)
+        ORDER BY v.version DESC LIMIT 10`,
+    )
+  ).rows.filter((h) => h.version > 1);
+  const inForce = !!s.contract_template?.trim();
+  return (
+    <div className="stack">
+      <section className="card" aria-labelledby="h-con">
+        <div className="card-head">
+          <h2 id="h-con">Customer contract</h2>
+          <span className={`badge ${inForce ? "badge-green" : "badge-warn"}`}>{inForce ? `In force · settings version ${s.version}` : "Not set — credit sales cannot reach acceptance"}</span>
+        </div>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Each customer receives this wording with their own figures and accepts it with a one-time code. Saving creates a new version; contracts already accepted keep the exact text the customer accepted.
+        </p>
+        <ActionForm action={contractAction} className="stack">
+          <ContractEditor initial={s.contract_template ?? CONTRACT_DRAFT} isDraft={!inForce} />
+          <div className="field">
+            <label htmlFor="creason">Approval reference</label>
+            <input id="creason" name="reason" required placeholder="Legal and Shariah approval reference" />
+          </div>
+          <div className="action-bar">
+            <SubmitButton>Save wording</SubmitButton>
+          </div>
+        </ActionForm>
+      </section>
+      {history.length > 0 && (
+        <section className="card" aria-labelledby="h-chist">
+          <h2 id="h-chist">Wording history</h2>
+          <ul className="alt-decisions">
+            {history.map((h) => (
+              <li key={h.version}>
+                <strong>Version {h.version}</strong>{" "}
+                <span className="small muted">
+                  · {formatLagos(h.created_at)} · {h.by_name ?? "Migration"}
+                </span>
+                <div className="small">{h.reason}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
