@@ -3,6 +3,7 @@
  * type sniffing, quarantine and malware scan, versioned rows, and access checks on every read.
  */
 import { randomUUID } from "node:crypto";
+import { requireStaffFinancing } from "./permission";
 import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
@@ -74,6 +75,7 @@ export interface StaffUploadInput {
 }
 
 export async function uploadStaffDocument(ctx: Ctx, input: StaffUploadInput): Promise<{ id: string; scanStatus: string }> {
+  await requireStaffFinancing(ctx, "UPLOAD_STAFF_DOCUMENT", input.requestId);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   const filename = sanitizeFilename(input.filename);
@@ -124,6 +126,7 @@ export async function uploadStaffDocument(ctx: Ctx, input: StaffUploadInput): Pr
 
 /** Scan a quarantined file; clean files leave quarantine, infected files are rejected and never served. */
 export async function scanStaffDocument(ctx: Ctx, docId: string): Promise<string> {
+  await requireStaffFinancing(ctx, "SCAN_STAFF_DOCUMENT", docId);
   const doc = (await db.query<StaffDocumentRow>("SELECT * FROM staff_request_documents WHERE id = $1", [docId])).rows[0];
   if (!doc || doc.scan_status !== "QUARANTINED") return doc?.scan_status ?? "MISSING";
   const data = await objectStore().get(doc.storage_key);
@@ -161,6 +164,7 @@ export async function storeGeneratedStaffDocument(tx: Tx, req: StaffRequestRow, 
 }
 
 export async function removeStaffDocument(ctx: Ctx, docId: string) {
+  await requireStaffFinancing(ctx, "REMOVE_STAFF_DOCUMENT", docId);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   await withTx(async (tx) => {
@@ -177,6 +181,7 @@ export async function removeStaffDocument(ctx: Ctx, docId: string) {
 
 /** Authorised read: request-level access, clean files only, every read audited. */
 export async function readStaffDocument(ctx: Ctx, docId: string, mode: "view" | "download") {
+  await requireStaffFinancing(ctx, "READ_STAFF_DOCUMENT", docId);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   if (!/^[0-9a-f-]{36}$/i.test(docId)) throw notFound("Document not found.");

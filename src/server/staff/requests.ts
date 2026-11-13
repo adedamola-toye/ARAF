@@ -7,6 +7,7 @@
  * through an explicit three-item checklist, and nothing marks those checks as passed automatically.
  */
 import { createHash } from "node:crypto";
+import { requireStaffFinancing } from "./permission";
 import type { Db, Tx } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
@@ -81,6 +82,7 @@ async function nextRef(tx: Tx, now: Date) {
 }
 
 export async function createStaffDraft(ctx: Ctx): Promise<{ id: string; ref: string }> {
+  await requireStaffFinancing(ctx, "CREATE_STAFF_DRAFT", null);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   return withTx(async (tx) => {
@@ -121,6 +123,7 @@ const clean = (v: string | undefined, max = 120) => (v ?? "").replace(/\s+/g, " 
 
 /** Save the applicant's entries. Amounts are recalculated here; nothing from the browser is trusted. */
 export async function saveStaffDraft(ctx: Ctx, id: string, input: DraftInput) {
+  await requireStaffFinancing(ctx, "SAVE_STAFF_DRAFT", id);
   return guarded(ctx, id, "DRAFT_SAVE", () =>
     withTx(async (tx) => {
       const actor = ctx.actor;
@@ -207,6 +210,7 @@ export async function submissionProblems(q: Db, req: StaffRequestRow): Promise<R
  * on an already submitted request changes nothing and reports the existing submission.
  */
 export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersion?: number | null; acknowledgedNetKobo?: string | null } = {}) {
+  await requireStaffFinancing(ctx, "SUBMIT_STAFF_REQUEST", id);
   return guarded(ctx, id, "SUBMIT", async () => {
     const res = await withTx(async (tx) => {
       const actor = ctx.actor;
@@ -261,6 +265,7 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
 // ------------------------------------------------------------------ Product Manager
 
 export async function claimPmReview(ctx: Ctx, id: string) {
+  await requireStaffFinancing(ctx, "CLAIM_PM_REVIEW", id);
   return guarded(ctx, id, "PM_CLAIM", () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -273,6 +278,7 @@ export async function claimPmReview(ctx: Ctx, id: string) {
 }
 
 export async function releasePmReview(ctx: Ctx, id: string) {
+  await requireStaffFinancing(ctx, "RELEASE_PM_REVIEW", id);
   return guarded(ctx, id, "PM_RELEASE", () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -303,6 +309,7 @@ export interface PmDecisionInput {
 }
 
 export async function pmDecision(ctx: Ctx, id: string, input: PmDecisionInput) {
+  await requireStaffFinancing(ctx, "PM_DECISION", id);
   return guarded(ctx, id, `PM_${input.action}`, () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -400,6 +407,7 @@ export interface HeadDecisionInput {
 }
 
 export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecisionInput) {
+  await requireStaffFinancing(ctx, "UNIT_HEAD_DECISION", id);
   return guarded(ctx, id, `UNIT_HEAD_${input.action}`, () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -474,6 +482,7 @@ export function termsIntact(req: StaffRequestRow): boolean {
 }
 
 export async function divisionalHeadDecision(ctx: Ctx, id: string, input: HeadDecisionInput) {
+  await requireStaffFinancing(ctx, "DIVISIONAL_HEAD_DECISION", id);
   const fresh = await guarded(ctx, id, `DIVISIONAL_HEAD_${input.action}`, () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -514,6 +523,7 @@ export async function divisionalHeadDecision(ctx: Ctx, id: string, input: HeadDe
  * and the request returns to the applicant; it must pass the full review route again.
  */
 export async function amendApproval(ctx: Ctx, id: string, input: { reason: string; lockVersion?: number | null }) {
+  await requireStaffFinancing(ctx, "AMEND_APPROVAL", id);
   return guarded(ctx, id, "AMEND", () =>
     withTx(async (tx) => {
       const req = await lockRequest(tx, id);

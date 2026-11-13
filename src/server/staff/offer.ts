@@ -7,6 +7,7 @@
  *    request and enforced by the server at upload, at submission and by the background job.
  */
 import type { Db, Tx } from "../db";
+import { requireStaffFinancing } from "./permission";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
 import { systemCtx } from "../context";
@@ -45,6 +46,7 @@ export async function activeStaffTemplate(q: Db) {
 
 /** Super Admin loads a new version of the bank's staff offer wording (inactive until activated and approved). */
 export async function createStaffTemplateVersion(ctx: Ctx, p: { bodyHtml: string; notes?: string }) {
+  await requireStaffFinancing(ctx, "CREATE_STAFF_TEMPLATE_VERSION", null);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   return withTx(async (tx) => {
@@ -214,6 +216,7 @@ export async function remindStaffOffers(now = new Date()) {
  * offer was issued, and the approved terms are intact. A Disbursement Officer is then assigned.
  */
 export async function submitSignedOffer(ctx: Ctx, id: string, input: { documentId: string; confirmed?: boolean; lockVersion?: number | null }) {
+  await requireStaffFinancing(ctx, "SUBMIT_SIGNED_OFFER", id);
   let expired = false;
   try {
     const res = await withTx(async (tx) => {
@@ -258,6 +261,7 @@ export async function submitSignedOffer(ctx: Ctx, id: string, input: { documentI
 
 /** Super Admin: retry offer generation for one request (after the template is approved). */
 export async function retryOfferFor(ctx: Ctx, id: string) {
+  await requireStaffFinancing(ctx, "RETRY_OFFER_FOR", id);
   return withTx(async (tx) => {
     if (!ctx.actor || !(await holdsRole(tx, ctx.actor.staffId, "SUPER_ADMIN"))) throw forbidden("Only a Super Admin can retry offer generation.");
     const req = await lockRequest(tx, id);

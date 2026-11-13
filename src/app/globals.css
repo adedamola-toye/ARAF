@@ -796,3 +796,12 @@ table.matrix td { vertical-align: top; }
 .inc-kv dt { color: var(--muted); padding-right: 12px; }
 .inc-kv dd { overflow-wrap: anywhere; }
 .inc-kv dt:nth-last-of-type(1), .inc-kv dd:last-of-type { border-bottom: 0; }
+/* Access restriction prompt (product not authorised for the user's profile) */
+.restricted-wrap { min-height: min(62vh, 560px); display: grid; place-items: center; padding: var(--space-5) 0; }
+.restricted { width: 100%; max-width: 520px; text-align: left; padding: clamp(24px, 4vw, 36px); margin: 0; }
+.restricted-mark { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--link); margin-bottom: var(--space-4); }
+.restricted-mark .icon { width: 20px; height: 20px; }
+.restricted h1 { font-family: var(--font-display); font-size: clamp(22px, 3vw, 26px); letter-spacing: -0.02em; margin: 0 0 var(--space-2); }
+.restricted p { color: var(--ink-2); line-height: 1.6; margin: 0 0 var(--space-5); }
+.restricted-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+@media (max-width: 480px) { .restricted-actions .btn { flex: 1 1 100%; justify-content: center; } }

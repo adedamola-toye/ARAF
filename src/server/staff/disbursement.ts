@@ -8,6 +8,7 @@
  * transaction reference can never be used twice).
  */
 import { randomInt } from "node:crypto";
+import { requireStaffFinancing } from "./permission";
 import type { Db, Tx } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
@@ -73,6 +74,7 @@ export async function assignDisbursementOfficer(tx: Tx, ctx: Ctx, req: StaffRequ
 
 /** Super Admin: assign (when none was available) or reassign, with a recorded reason. */
 export async function reassignDisbursementOfficer(ctx: Ctx, id: string, input: { officerId: string; reason: string }) {
+  await requireStaffFinancing(ctx, "REASSIGN_DISBURSEMENT_OFFICER", id);
   try {
     return await withTx(async (tx) => {
       const actor = ctx.actor;
@@ -140,6 +142,7 @@ export async function disbursementControls(q: Db, req: StaffRequestRow): Promise
 }
 
 export async function reviewDisbursementDocumentation(ctx: Ctx, id: string, input: { lockVersion?: number | null }) {
+  await requireStaffFinancing(ctx, "REVIEW_DISBURSEMENT_DOCUMENTATION", id);
   return withTx(async (tx) => {
     const req = await lockRequest(tx, id);
     const role = await asAssignedOfficer(tx, ctx, req);
@@ -151,6 +154,7 @@ export async function reviewDisbursementDocumentation(ctx: Ctx, id: string, inpu
 
 /** Return the signed offer to the applicant (the original deadline still applies). */
 export async function returnSignedOffer(ctx: Ctx, id: string, input: { reason: string; lockVersion?: number | null }) {
+  await requireStaffFinancing(ctx, "RETURN_SIGNED_OFFER", id);
   return withTx(async (tx) => {
     const req = await lockRequest(tx, id);
     const role = await asAssignedOfficer(tx, ctx, req);
@@ -180,6 +184,7 @@ export async function returnSignedOffer(ctx: Ctx, id: string, input: { reason: s
 }
 
 export async function startDisbursement(ctx: Ctx, id: string, input: { instructionRef?: string; lockVersion?: number | null }) {
+  await requireStaffFinancing(ctx, "START_DISBURSEMENT", id);
   try {
     return await withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -215,6 +220,7 @@ export interface CompleteDisbursementInput {
 
 /** Record the completed transfer. Repeating the same confirmation is a no-op; anything else is refused. */
 export async function completeDisbursement(ctx: Ctx, id: string, input: CompleteDisbursementInput) {
+  await requireStaffFinancing(ctx, "COMPLETE_DISBURSEMENT", id);
   const txnRef = (input.transactionRef ?? "").trim().toUpperCase();
   let fresh: StaffRequestRow;
   try {

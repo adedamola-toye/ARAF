@@ -3,6 +3,7 @@
  * submitting. Pass or Fair lets the request be submitted; Fail declines it. A check is valid for 30 days.
  */
 import type { Db } from "../db";
+import { requireStaffFinancing } from "./permission";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
 import { forbidden, invalid } from "../errors";
@@ -20,6 +21,7 @@ export async function staffCreditProblem(q: Db, requestId: string, now: Date): P
 }
 
 export async function runStaffCreditCheck(ctx: Ctx, id: string, p: PersonInput & { bvn: string }) {
+  await requireStaffFinancing(ctx, "RUN_STAFF_CREDIT_CHECK", id);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   const v = validatePerson(p, todayIn(ctx), p.bvn);

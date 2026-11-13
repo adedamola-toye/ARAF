@@ -1,5 +1,6 @@
 import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren } from "lucide-react";
 import { requireUser } from "../_lib/auth";
+import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
 import { BankMark, Footer, Wordmark } from "@/components/Brand";
 import { AppearanceOptions } from "@/components/Appearance";
@@ -30,9 +31,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isAdmin = roles.includes("SUPER_ADMIN");
   const canReport = roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN");
   const exceptions = isAdmin ? Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id IS NULL")).rows[0].n) : 0;
-  const staffViews = viewsFor(new Set(roles));
+  // Staff Financing appears only for profiles the backend policy authorises (e.g. never for Smile Associates).
+  const staffOk = (await staffFinancingAccess(db, session.staffId)).allowed;
+  const staffViews = staffOk ? viewsFor(new Set(roles)) : [];
   const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
-  const myOfferCount = Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n);
+  const myOfferCount = staffOk ? Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n) : 0;
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -115,17 +118,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        <div className="nav-section">
-          <span className="nav-title">Staff financing</span>
-          <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>
-            My staff financing
-          </NavLink>
-          {staffViews.length > 0 && (
-            <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
-              Staff financing queues
+        {staffOk && (
+          <div className="nav-section">
+            <span className="nav-title">Staff financing</span>
+            <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>
+              My staff financing
             </NavLink>
-          )}
-        </div>
+            {staffViews.length > 0 && (
+              <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
+                Staff financing queues
+              </NavLink>
+            )}
+          </div>
+        )}
         {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
           <div className="nav-section">
             <span className="nav-title">Reporting</span>

@@ -2,6 +2,8 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Inbox, Search } from "lucide-react";
 import { requireUser } from "../../_lib/auth";
+import { staffFinancingGate } from "../../_lib/staff-access";
+import { AccessRestricted } from "@/components/AccessRestricted";
 import { PageHeader } from "@/components/PageHeader";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
@@ -16,7 +18,10 @@ const hrs = (v: unknown) => (v === null || v === undefined ? "—" : `${v} h`);
 
 export default async function StaffFinancingQueues({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;
-  const { session } = await requireUser();
+  const a = await requireUser();
+  const home = await staffFinancingGate(a, "VIEW_QUEUES");
+  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  const { session } = a;
   const roles = await heldRoles(db, session.staffId);
   const views = viewsFor(roles);
   if (!views.length) redirect("/staff-request");

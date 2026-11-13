@@ -1,5 +1,6 @@
 "use server";
 import { redirect } from "next/navigation";
+import { DomainError } from "@/server/errors";
 import { requireUser } from "../../_lib/auth";
 import { toActionError, type ActionState } from "../../_lib/action";
 import {
@@ -37,7 +38,14 @@ async function run(op: (ctx: Ctx) => Promise<unknown>, ok: string): Promise<Acti
 
 export async function startStaffRequestAction(): Promise<void> {
   const { ctx } = await requireUser();
-  const { id } = await createStaffDraft(ctx);
+  let id: string;
+  try {
+    ({ id } = await createStaffDraft(ctx));
+  } catch (e) {
+    // Not authorised for Staff Financing (already audited): back to the hub, which shows the restriction prompt.
+    if (e instanceof DomainError && e.code === "FORBIDDEN") redirect("/staff-request");
+    throw e;
+  }
   redirect(`/staff-request/${id}?new=1`);
 }
 

@@ -16,10 +16,12 @@ export interface Ctx {
   correlationId: string;
   ip: string | null;
   userAgent: string | null;
+  /** Set only by systemCtx(): a background job, not a person. Never derived from a request. */
+  system?: true;
 }
 
 export function systemCtx(now = new Date()): Ctx {
-  return { actor: null, now, correlationId: `job-${randomUUID()}`, ip: null, userAgent: "system/worker" };
+  return { actor: null, now, correlationId: `job-${randomUUID()}`, ip: null, userAgent: "system/worker", system: true };
 }
 
 /**

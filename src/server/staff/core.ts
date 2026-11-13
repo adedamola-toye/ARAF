@@ -6,6 +6,7 @@
  * (staff_request_events, append-only) and the platform audit trail (audit_events, append-only).
  */
 import type { Db, Tx } from "../db";
+import { requireStaffFinancing } from "./permission";
 import type { Ctx } from "../context";
 import { audit, auditOutsideTx } from "../audit";
 import { conflict, forbidden, notFound } from "../errors";
@@ -211,6 +212,7 @@ export async function requestAccess(q: Db, staffId: string, req: StaffRequestRow
 
 /** Load a request the actor may see, or record the denied attempt and refuse. */
 export async function viewableRequest(ctx: Ctx, id: string, q: Db): Promise<{ req: StaffRequestRow; as: Set<StaffAccessAs> }> {
+  await requireStaffFinancing(ctx, "VIEWABLE_REQUEST", id);
   if (!ctx.actor) throw forbidden();
   const req = await loadRequest(q, id);
   const as = await requestAccess(q, ctx.actor.staffId, req);

@@ -3,6 +3,7 @@
  * resubmissions from the moment it is saved; submitted requests keep the version they were priced on.
  */
 import { withTx } from "../db";
+import { requireStaffFinancing } from "./permission";
 import type { Ctx } from "../context";
 import { audit } from "../audit";
 import { forbidden, invalid } from "../errors";
@@ -22,6 +23,7 @@ export interface SettingsInput {
 }
 
 export async function proposeStaffSettings(ctx: Ctx, p: SettingsInput) {
+  await requireStaffFinancing(ctx, "PROPOSE_STAFF_SETTINGS", null);
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   return withTx(async (tx) => {

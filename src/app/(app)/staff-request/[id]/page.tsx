@@ -6,6 +6,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Download, Eye, FileArchive, Info, ShieldCheck } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
+import { staffFinancingGate } from "../../../_lib/staff-access";
+import { AccessRestricted } from "@/components/AccessRestricted";
 import { PageHeader } from "@/components/PageHeader";
 import { ReasonAction } from "@/components/forms";
 import { db } from "@/server/db";
@@ -57,7 +59,11 @@ const STEPS: { label: string; done: (s: StaffStatus, r: Record<string, unknown>)
 export default async function StaffRequestPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {
   const { id } = await params;
   const sp = await searchParams;
-  const { ctx, session } = await requireUser();
+  const a = await requireUser();
+  // Checked before the request is even looked up, so a restricted user learns nothing about it.
+  const home = await staffFinancingGate(a, "VIEW_REQUEST", id);
+  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  const { ctx, session } = a;
   let view;
   try {
     view = await viewableRequest(ctx, id, db);

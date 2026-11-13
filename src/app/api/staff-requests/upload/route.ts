@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { baseCtx } from "../../../_lib/auth";
 import { lookupSession, SESSION_COOKIE } from "@/server/auth/session";
 import { uploadStaffDocument } from "@/server/staff/documents";
+import { requireStaffFinancing } from "@/server/staff/permission";
 import { DomainError } from "@/server/errors";
 
 /** Staff financing upload (progress-reporting control). Same-origin, live session; all rules live in the domain module. */
@@ -14,6 +15,13 @@ export async function POST(req: NextRequest) {
   const r = await lookupSession((await cookies()).get(SESSION_COOKIE)?.value, ctx, { touch: true });
   if (r.status !== "ok") return NextResponse.json({ ok: false, error: "Your session has ended. Sign in again.", expired: true }, { status: 401 });
   ctx.actor = { staffId: r.session.staffId, email: r.session.email, name: r.session.fullName, sessionId: r.session.sessionId, activeRole: r.session.activeRole };
+  // Refuse unauthorised profiles before reading the upload (the domain check repeats this).
+  try {
+    await requireStaffFinancing(ctx, "UPLOAD_STAFF_DOCUMENT");
+  } catch (e) {
+    if (e instanceof DomainError) return NextResponse.json({ ok: false, error: e.message }, { status: 403 });
+    throw e;
+  }
   let fd: FormData;
   try {
     fd = await req.formData();

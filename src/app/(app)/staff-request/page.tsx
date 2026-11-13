@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { FilePlus2, FileSignature, Inbox } from "lucide-react";
 import { requireUser } from "../../_lib/auth";
+import { staffFinancingGate } from "../../_lib/staff-access";
+import { AccessRestricted } from "@/components/AccessRestricted";
 import { PageHeader } from "@/components/PageHeader";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
@@ -14,7 +16,10 @@ import { startStaffRequestAction } from "./actions";
 export const metadata = { title: "Staff Personal Request" };
 
 export default async function StaffRequestHub() {
-  const { session } = await requireUser();
+  const a = await requireUser();
+  const home = await staffFinancingGate(a, "VIEW_MY_REQUESTS");
+  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  const { session } = a;
   const rows = await myRequestRows(db, session.staffId);
   const settings = await currentSettings(db);
   const offers = rows.filter((r) => r.status === "AWAITING_SIGNED_OFFER" && !r.signed_offer_received_at);

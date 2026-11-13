@@ -11,6 +11,7 @@
  * workers never create a second archive, upload or handover.
  */
 import JSZip from "jszip";
+import { requireStaffFinancing } from "./permission";
 import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
@@ -326,6 +327,7 @@ export async function processStaffDocumentation(now = new Date()) {
 
 /** Super Admin: run the next documentation step now. */
 export async function retryDocumentationNow(ctx: Ctx, id: string) {
+  await requireStaffFinancing(ctx, "RETRY_DOCUMENTATION_NOW", id);
   if (!ctx.actor || !(await holdsRole(db, ctx.actor.staffId, "SUPER_ADMIN"))) throw forbidden("Only a Super Admin can retry documentation processing.");
   await db.query("UPDATE staff_requests SET doc_next_attempt_at = $2 WHERE id = $1 AND status = 'COMPLETED'", [id, ctx.now]);
   await recordEvent(db, ctx, await (await import("./core")).loadRequest(db, id), { action: "DOCUMENTATION_RETRY_BY_ADMIN", role: "SUPER_ADMIN" });
@@ -370,6 +372,7 @@ async function reviewerGroup(tx: Db, ctx: Ctx, req: StaffRequestRow, group: stri
 }
 
 export async function confirmHandoverReceipt(ctx: Ctx, id: string, group: string) {
+  await requireStaffFinancing(ctx, "CONFIRM_HANDOVER_RECEIPT", id);
   try {
     return await withTx(async (tx) => {
       const req = await lockRequest(tx, id);
@@ -383,6 +386,7 @@ export async function confirmHandoverReceipt(ctx: Ctx, id: string, group: string
 }
 
 export async function completeHandoverReview(ctx: Ctx, id: string, group: string, comments: string) {
+  await requireStaffFinancing(ctx, "COMPLETE_HANDOVER_REVIEW", id);
   return withTx(async (tx) => {
     const req = await lockRequest(tx, id);
     const g = await reviewerGroup(tx, ctx, req, group);
@@ -394,6 +398,7 @@ export async function completeHandoverReview(ctx: Ctx, id: string, group: string
 
 /** Archive download: Super Admins, Legal and Shariah reviewers only. A reviewer's first download records receipt. */
 export async function readArchive(ctx: Ctx, id: string) {
+  await requireStaffFinancing(ctx, "READ_ARCHIVE", id);
   if (!ctx.actor) throw forbidden();
   const req = (await db.query<StaffRequestRow>("SELECT * FROM staff_requests WHERE id = $1", [id])).rows[0];
   if (!req) throw notFound();

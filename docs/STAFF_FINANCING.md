@@ -99,6 +99,27 @@ for the Unit Head follow whoever is configured now. The **Divisional Head** role
 whole system (granting it to a second person is refused until the first is revoked); every final approval
 goes to that person's queue.
 
+### 5a. Who may use Staff Financing at all (product permission)
+
+One server-side policy, `src/server/staff/permission.ts`, decides from the verified profile in the database (staff status and active role assignments), never from what the browser shows or sends:
+
+| Profile | Staff Financing |
+|---|---|
+| Not signed in | Refused |
+| Staff record missing or not active | Refused |
+| Holds an active **Smile Associate** role (even alongside other roles) | **Refused** (explicit restriction; `STAFF_FINANCING_RESTRICTED_ROLES`) |
+| Active staff with no role assignment (unprofiled) | Refused |
+| Any other profiled staff member | Allowed, with each workflow step still checking its own role and separation of duties (section 5) |
+
+- **Enforcement.** Every Staff Financing operation a person can trigger calls `requireStaffFinancing(ctx, action, target)` first: drafts, edits, submission, the SeedFi check, uploads, document and archive reads, every review and approval decision, disbursement, offer, handover and settings actions (28 entry points). A refusal raises FORBIDDEN with the approved message, and the API routes return **HTTP 403**. Background jobs run with a system context (`systemCtx()`, flag set in code only) and are not people, so they are not blocked.
+- **Audit.** Each refusal writes `STAFF_FINANCING_ACCESS_DENIED` (outcome DENIED) with the user ID, active role, all held roles, the attempted action, the target request (when it exists), the reason (`RESTRICTED_ROLE`, `UNPROFILED`, `INACTIVE`, `UNAUTHENTICATED`) and the time.
+- **Screens.**
+  - The Staff Financing menu section is hidden for refused profiles.
+  - `/staff-request`, `/staff-request/[id]` and `/staff-financing` show the **Access Restricted** prompt instead (`src/components/AccessRestricted.tsx`), checked before any request is looked up. This also covers the landing-page shortcut, bookmarks and typed URLs.
+  - **Return to Dashboard** goes to the user's own starting point (Altphones for Smile Associates) and creates nothing.
+  - "New financing request" is refused on the server too, and lands back on the prompt.
+- **Altphones** is unaffected: Smile Associates keep full Altphones access.
+
 ## 6. Status transitions
 
 ```mermaid

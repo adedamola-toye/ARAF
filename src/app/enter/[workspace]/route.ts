@@ -25,6 +25,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ work
   const ctx = await baseCtx();
   const r = await lookupSession((await cookies()).get(SESSION_COOKIE)?.value, ctx, { touch: true });
   if (r.status !== "ok") return to(`/sign-in?as=${t.role ?? "STAFF"}&next=${encodeURIComponent(t.next)}`);
+  // Staff Financing: the hub shows the "Access Restricted" prompt to profiles the policy refuses (and audits
+  // the attempt); nothing is created on the way in.
   if (!t.role) return to(t.next);
   const s = r.session;
   const role = [t.role, ...(t.also ?? [])].find((r) => s.roles.some((x) => x.role === r));
