@@ -14,11 +14,12 @@ export const CONTRACT_PLACEHOLDERS = {
   phone_model: "Phone model and colour",
   price: "Phone price",
   down_payment: "Down payment received",
-  financed_amount: "Balance financed (price − down payment)",
+  financed_amount: "Phone price minus the down payment (before markup)",
+  sale_price: "Phone price plus markup",
   tenure_months: "Number of monthly instalments",
-  markup_rate: "Markup rate applied",
+  markup_rate: "Markup rate applied to the phone price",
   markup_amount: "Total markup",
-  total_repayment: "Total of the instalments (balance + markup)",
+  total_repayment: "Total of the instalments (price + markup − down payment)",
   monthly_instalment: "Monthly instalment",
   final_instalment: "Final instalment (absorbs rounding)",
   repayment_day: "Chosen day of the month",
@@ -53,12 +54,13 @@ export const SAMPLE_CONTRACT_VALUES: Record<ContractPlaceholder, string> = {
   price: "₦145,000",
   down_payment: "₦29,000",
   financed_amount: "₦116,000",
+  sale_price: "₦166,895",
   tenure_months: "6",
-  markup_rate: "x% per month (example)",
-  markup_amount: "₦—",
-  total_repayment: "₦—",
-  monthly_instalment: "₦—",
-  final_instalment: "₦—",
+  markup_rate: "15.1%",
+  markup_amount: "₦21,895",
+  total_repayment: "₦137,895",
+  monthly_instalment: "₦22,982.50",
+  final_instalment: "₦22,982.50",
   repayment_day: "25",
   first_repayment_date: "2026-12-25",
   final_repayment_date: "2027-05-25",
@@ -66,7 +68,7 @@ export const SAMPLE_CONTRACT_VALUES: Record<ContractPlaceholder, string> = {
   external_account: "9876543210",
   external_bank: "Example Bank",
   dd_reference: "DD-EXAMPLE",
-  schedule: "1. 2026-12-25  ₦—\n2. 2027-01-25  ₦—\n…",
+  schedule: "1. 2026-12-25  ₦22,982.50\n2. 2027-01-25  ₦22,982.50\n…",
   support_email: "altbox@altbank.ng",
 };
 
@@ -103,9 +105,9 @@ The phone becomes yours when it is handed to you.
 3. WHAT YOU PAY
 
   Phone price ........................... {{price}}
+  Markup ({{markup_rate}} of the price) .. {{markup_amount}}
+  Price with markup ..................... {{sale_price}}
   Down payment (already received) ....... {{down_payment}}
-  Balance to pay in instalments ......... {{financed_amount}}
-  Markup ({{markup_rate}}) ............... {{markup_amount}}
   Total of your instalments ............. {{total_repayment}}
 
   Number of instalments ................. {{tenure_months}} monthly instalments

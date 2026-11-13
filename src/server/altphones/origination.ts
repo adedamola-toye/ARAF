@@ -759,6 +759,7 @@ export async function sendContractOtp(ctx: Ctx, id: string, p: { lockVersion?: n
         price: formatNaira(app.price_kobo),
         down_payment: formatNaira(app.down_payment_kobo),
         financed_amount: formatNaira(app.financed_kobo),
+        sale_price: formatNaira(Number(app.price_kobo) + Number(app.markup_kobo)),
         tenure_months: String(app.tenure_months),
         markup_rate: formatRateE4(app.markup_rate_e4),
         markup_amount: formatNaira(app.markup_kobo),

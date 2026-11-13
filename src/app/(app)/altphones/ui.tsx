@@ -56,11 +56,11 @@ export function TermsTable({ app }: { app: Record<string, any> }) {
   if (!app.financed_kobo) return null;
   const rows: [string, string][] = [
     ["Phone price", formatNaira(app.price_kobo)],
-    ["Down payment", formatNaira(app.down_payment_kobo)],
-    ["Amount financed", formatNaira(app.financed_kobo)],
-    ["Markup rate", `${formatRateE4(app.markup_rate_e4)}${app.markup_basis === "FLAT_PER_MONTH" ? " per month" : " for the tenure"}`],
+    ["Markup rate", `${formatRateE4(app.markup_rate_e4)}${app.markup_basis === "FLAT_PER_MONTH" ? " per month" : " for the tenure"} of the price`],
     ["Total markup", formatNaira(app.markup_kobo)],
-    ["Total repayment", formatNaira(app.total_repayment_kobo)],
+    ["Price with markup", formatNaira(Number(app.price_kobo) + Number(app.markup_kobo))],
+    ["Down payment", formatNaira(app.down_payment_kobo)],
+    ["Balance in instalments", formatNaira(app.total_repayment_kobo)],
     ["Monthly instalment", `${formatNaira(app.instalment_kobo)}${app.final_instalment_kobo !== app.instalment_kobo ? ` (final ${formatNaira(app.final_instalment_kobo)})` : ""}`],
     ["Tenure", `${app.tenure_months} months`],
     ["Repayment day", app.repayment_day ? `Day ${app.repayment_day} of each month` : "—"],

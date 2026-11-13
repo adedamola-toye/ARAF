@@ -90,29 +90,29 @@ async function creditReady(email = ALT.doOfficer) {
 }
 
 describe("financing calculator", () => {
-  it("charges markup on the ₦116,000 financed amount and puts the rounding in the final instalment", () => {
+  it("charges markup on the ₦145,000 price, deducts the down payment, and puts the rounding in the final instalment", () => {
     const t = computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: 3, rateE4: 100_000, basis: "FLAT_TOTAL" });
     expect(t.financedKobo).toBe(11_600_000);
-    expect(t.markupKobo).toBe(1_160_000); // 10% of ₦116,000
-    expect(t.totalRepaymentKobo).toBe(12_760_000);
-    expect(t.instalmentKobo).toBe(4_253_333); // ₦42,533.33
-    expect(t.finalInstalmentKobo).toBe(4_253_334);
+    expect(t.markupKobo).toBe(1_450_000); // 10% of ₦145,000
+    expect(t.totalRepaymentKobo).toBe(13_050_000); // ₦145,000 + ₦14,500 − ₦29,000
+    expect(t.instalmentKobo).toBe(4_350_000);
+    expect(t.finalInstalmentKobo).toBe(4_350_000);
     expect(t.instalmentKobo * 2 + t.finalInstalmentKobo).toBe(t.totalRepaymentKobo);
     const m = computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: 12, rateE4: 35_000, basis: "FLAT_PER_MONTH" });
     expect(m.effectiveRateE4).toBe(420_000); // 3.5% × 12
-    expect(m.markupKobo).toBe(4_872_000);
+    expect(m.markupKobo).toBe(6_090_000);
     expect(m.instalmentKobo * 11 + m.finalInstalmentKobo).toBe(m.totalRepaymentKobo);
     expect(() => computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: 9, rateE4: 1, basis: "FLAT_TOTAL" })).toThrow();
     expect(parseRateE4("3.3333")).toBe(33_333);
     expect(formatRateE4(125_000)).toBe("12.5%");
   });
 
-  it("matches the approved figures for 3, 6 and 12 months (8.97%, 15.1%, 23.45% on ₦116,000)", () => {
+  it("matches the approved figures for 3, 6 and 12 months (8.97%, 15.1%, 23.45% of ₦145,000, less ₦29,000 down)", () => {
     const cases: [number, number, number, number, number, number][] = [
-      // tenure, rateE4, markup, total, monthly, final (kobo)
-      [3, 89_700, 1_040_520, 12_640_520, 4_213_507, 4_213_506],
-      [6, 151_000, 1_751_600, 13_351_600, 2_225_267, 2_225_265],
-      [12, 234_500, 2_720_200, 14_320_200, 1_193_350, 1_193_350],
+      // tenure, rateE4, markup, balance in instalments, monthly, final (kobo)
+      [3, 89_700, 1_300_650, 12_900_650, 4_300_217, 4_300_216],
+      [6, 151_000, 2_189_500, 13_789_500, 2_298_250, 2_298_250],
+      [12, 234_500, 3_400_250, 15_000_250, 1_250_021, 1_250_019],
     ];
     for (const [m, rate, markup, total, monthly, final] of cases) {
       const t = computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: m, rateE4: rate, basis: "FLAT_TOTAL" });
@@ -250,7 +250,7 @@ describe("credit sale — Delight Officer route (Product Manager → Unit Head)"
     const before = await stockOf("Ikeja Branch", models[0]);
     const { id, ctx } = await creditReady();
     let r = await appRow(id);
-    expect([r.status, r.down_payment_kobo, r.financed_kobo, r.tenure_months, r.markup_rate_e4, r.markup_kobo]).toEqual(["IN_PREPARATION", "2900000", "11600000", 6, 200_000, "2320000"]);
+    expect([r.status, r.down_payment_kobo, r.financed_kobo, r.tenure_months, r.markup_rate_e4, r.markup_kobo]).toEqual(["IN_PREPARATION", "2900000", "11600000", 6, 200_000, "2900000"]);
     expect(await stockOf("Ikeja Branch", models[0])).toEqual({ physical: before.physical, reserved: 1, available: before.available - 1 });
     expect([r.dd_status, r.dd_account_last4]).toEqual(["ACTIVE", "6789"]);
     expect(r.internal_mandate_confirmed_at).not.toBeNull();
@@ -275,7 +275,7 @@ describe("credit sale — Delight Officer route (Product Manager → Unit Head)"
     await decide(uh, id, { action: "APPROVE", comments: "", reviewed: true });
     r = await appRow(id);
     expect(r.status).toBe("APPROVED");
-    expect(r.markup_kobo).toBe("2320000");
+    expect(r.markup_kobo).toBe("2900000");
     expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'ALTPHONES_APPROVED'")).rowCount).toBe(1);
 
     await expect(confirmDisbursement(pm, id, { imei: IMEI[1], modelConfirmed: true, locationConfirmed: true, handedOver: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
@@ -692,7 +692,7 @@ describe("contract wording", () => {
     const body = (await db.query("SELECT c.body FROM altphones_contracts c JOIN altphones_applications a ON a.contract_id = c.id WHERE a.id = $1", [id])).rows[0].body;
     expect(body).not.toMatch(/\{\{/);
     expect(body).toContain("Email altbox@altbank.ng");
-    expect(body).toContain("₦116,000");
+    expect(body).toContain("₦174,000");
     expect(body).toContain("Synthetic Customer");
   });
 });

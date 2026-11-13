@@ -139,7 +139,7 @@ export async function confirmDisbursement(ctx: Ctx, id: string, p: { imei: strin
       const s = await settingsById(tx, app.settings_id);
       await emailCustomer(tx, ctx, app, "DISBURSED", "Your Altphones phone has been handed over", [
         `Your ${app.model_name} (IMEI ${issued.imei}) was handed over on ${lagosDate(ctx.now)}.`,
-        `Facility: ${formatNaira(app.financed_kobo)} financed over ${app.tenure_months} months; total repayment ${formatNaira(app.total_repayment_kobo)}.`,
+        `Price with markup ${formatNaira(Number(app.price_kobo) + Number(app.markup_kobo))}, less your ${formatNaira(app.down_payment_kobo)} down payment: ${formatNaira(app.total_repayment_kobo)} over ${app.tenure_months} months.`,
         `Repayments: ${sched.map((r) => `${r.dueDate} ${formatNaira(r.amountKobo)}`).join("; ")}.`,
         `Reference: ${app.ref}`,
       ], s.team_email);

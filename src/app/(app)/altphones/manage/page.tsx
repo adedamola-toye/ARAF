@@ -168,8 +168,8 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
       <section className="card" aria-labelledby="h-calc">
         <h2 id="h-calc">Current calculation</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
-          Outright {formatNaira(s.outright_price_kobo)} · fixed down payment {formatNaira(s.down_payment_kobo)} · financed {formatNaira(Number(s.outright_price_kobo) - Number(s.down_payment_kobo))}. Markup is charged on
-          the financed amount.
+          Phone price {formatNaira(s.outright_price_kobo)} · fixed down payment {formatNaira(s.down_payment_kobo)}. Markup is charged on the full phone price; the down payment comes off the price with markup and
+          the balance is paid monthly.
         </p>
         <div className="table-wrap">
           <table className="data">
@@ -183,7 +183,10 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
                   Markup
                 </th>
                 <th scope="col" className="num">
-                  Total repayment
+                  Price with markup
+                </th>
+                <th scope="col" className="num">
+                  Balance in instalments
                 </th>
                 <th scope="col" className="num">
                   Monthly
@@ -201,6 +204,7 @@ async function Pricing({ canEdit }: { canEdit: boolean }) {
                     <td>{t} months</td>
                     <td className="num">{x ? formatRateE4(x.effectiveRateE4) : "Not set"}</td>
                     <td className="num">{x ? formatNaira(x.markupKobo) : "—"}</td>
+                    <td className="num">{x ? formatNaira(x.priceKobo + x.markupKobo) : "—"}</td>
                     <td className="num">{x ? formatNaira(x.totalRepaymentKobo) : "—"}</td>
                     <td className="num">{x ? formatNaira(x.instalmentKobo) : "—"}</td>
                     <td className="num">{x ? formatNaira(x.finalInstalmentKobo) : "—"}</td>

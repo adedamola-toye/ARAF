@@ -111,7 +111,7 @@ export interface Terms {
   tenureMonths: Tenure;
   rateE4: number;
   basis: MarkupBasis;
-  /** The rate actually applied to the financed amount over the tenure (percent × 10^4). */
+  /** The rate actually applied to the phone price over the tenure (percent × 10^4). */
   effectiveRateE4: number;
   markupKobo: number;
   totalRepaymentKobo: number;
@@ -120,10 +120,10 @@ export interface Terms {
 }
 
 /**
- * Markup is charged on the financed amount (price − fixed down payment):
- *   markup  = financed × rate            (FLAT_TOTAL)
- *   markup  = financed × rate × months   (FLAT_PER_MONTH)
- *   total   = financed + markup
+ * Markup is charged on the full phone price; the fixed down payment then comes off the marked-up price:
+ *   markup  = price × rate            (FLAT_TOTAL)
+ *   markup  = price × rate × months   (FLAT_PER_MONTH)
+ *   total   = price + markup − down payment   (the amount paid in instalments)
  *   instalment = total ÷ months, rounded half-up to the kobo; the final instalment = total − instalment × (months − 1)
  */
 export function computeTerms(p: { priceKobo: number; downPaymentKobo: number; tenureMonths: number; rateE4: number; basis: MarkupBasis }): Terms {
@@ -133,7 +133,9 @@ export function computeTerms(p: { priceKobo: number; downPaymentKobo: number; te
   const n = BigInt(p.tenureMonths);
   const financed = BigInt(p.priceKobo - p.downPaymentKobo);
   const effective = p.basis === "FLAT_PER_MONTH" ? BigInt(p.rateE4) * n : BigInt(p.rateE4);
-  const markup = half(financed * effective, 1_000_000n); // percent × 10^4 → fraction: ÷ (100 × 10^4)
+  // Markup is charged on the full phone price; the down payment then comes off the marked-up price
+  // and the balance is paid in equal monthly instalments.
+  const markup = half(BigInt(p.priceKobo) * effective, 1_000_000n); // percent × 10^4 → fraction: ÷ (100 × 10^4)
   const total = financed + markup;
   const instalment = half(total, n);
   const final = total - instalment * (n - 1n);
