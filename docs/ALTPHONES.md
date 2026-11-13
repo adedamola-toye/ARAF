@@ -8,7 +8,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 |---|---|
 | Catalogue of up to 3 phones (name, photo, specifications) managed by the Altphones Product Manager | Implemented — loaded from the approved AltPhone deck (migration 010): Altphone L1 Series in Black & Gold, Green and Blue, with the deck's photos and specifications; the PM can edit or replace them |
 | Pricing ₦145,000 outright, fixed ₦29,000 down payment, ₦116,000 financed, 3/6/12 months | Implemented (settings version 1) |
-| Markup engine on the financed amount, exact kobo arithmetic, rounding in the final instalment | Implemented — **rates not yet configured** (see 6) |
+| Markup engine on the financed amount, exact kobo arithmetic, rounding in the final instalment | Implemented — approved rates set (3 months 8.97%, 6 months 15.1%, 12 months 23.45%) |
 | Terms fixed per application when the down payment is requested (later pricing changes do not apply) | Implemented |
 | Outright sale: phone → location → customer → verified ₦145,000 → IMEI → handover → receipt to customer, cc altbox@altbank.ng | Implemented |
 | Credit sale: BVN first (with name, date of birth, gender and phone) → SeedFi Seed Score → customer and accounts → Paystack down payment → automatic reservation → Direct Debit + internal mandate → contract by email OTP → approvals → disbursement | Implemented |
@@ -16,7 +16,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 | SA route: Business Performance Manager → Product Manager → Unit Head → back to the originating SA | Implemented |
 | Branch / Shop / BOX locations; BOX never holds stock (database trigger) | Implemented (reuses `locations`: BRANCH, ALTSHOP, ALTBOX) |
 | Stock ledger, reservations, IMEI records, replenishment (PM requests, Super Admin approves) | Implemented |
-| Imports: locations, historical transactions (Legacy / Imported), historical stock movements — preview, validation, commit | Implemented |
+| Setup uploads: locations, Delight Officers and Smile Associates, opening stock; plus historical transactions (Legacy / Imported) and stock movements — preview, validation, commit | Implemented |
 | Dashboards for DO/SA, BPM, PM, Unit Head, Super Admin; reports (sales, financing, stock, officers, turnaround, scheduled repayments) | Implemented |
 
 ## 2. Statuses
@@ -56,7 +56,7 @@ All are disabled until configured; dependent actions show a clear "not configure
 | Integration | Variables | Notes |
 |---|---|---|
 | SeedFi Seed Score | `SEEDFI_ENABLED`, `SEEDFI_BASE_URL`, `SEEDFI_API_KEY`, `SEEDFI_ASSESS_PATH`, `SEEDFI_TIMEOUT_MS` | Implemented to the SeedFi Loan Engine API documentation v2.0 (April 2026): `POST /scoring/api/v1/seed-score/calculate` with the `X-API-Key` header. Sends customer_id (a stable hash of the BVN, never the BVN), first and last name, BVN, date of birth, phone (0XXXXXXXXXX), gender and, when known, the tenure. The decision uses `reviewed_seedfi_score` (SeedFi lowers it for adverse credit); the overall score, credit-history flag and score components are stored. Scores outside 280–800, errors (SeedFi's `detail` is shown), timeouts and malformed responses are "Integration unavailable — not assessed", never a pass. Staging: `https://stg-loan-engine.theseedfi.com` (use the documented test personas); production: `https://loanengine.theseedfi.com` after SeedFi's go-live sign-off. |
-| Paystack payments | `PAYSTACK_ENABLED`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_BASE_URL` | Transaction initialise (bank-transfer channel) + verify. Webhook: `<APP_URL>/api/altphones/paystack/webhook` (set it in the Paystack dashboard). Signature checked (HMAC-SHA512), events de-duplicated, each event re-verified through the API; amount, currency and reference must match. |
+| Paystack payments | `PAYSTACK_ENABLED`, `PAYSTACK_SECRET_KEY`, `PAYSTACK_BASE_URL`, `PAYSTACK_TEST_MODE` | Transaction initialise (bank-transfer channel) + verify. Webhook: `<APP_URL>/api/altphones/paystack/webhook` (set it in the Paystack dashboard). Signature checked (HMAC-SHA512), events de-duplicated, each event re-verified through the API; amount, currency and reference must match. |
 | Paystack Direct Debit | `PAYSTACK_DIRECT_DEBIT_ENABLED` | Authorisation initialise/verify (`/customer/authorization/*`, channel `direct_debit`). The mandate is Active only when Paystack's verification says so. **Confirm Direct Debit and settlement are enabled on the bank's Paystack integration before turning this on.** Collections against the mandate are not part of this release. |
 | Email | existing mail settings | Customer receipts and confirmations copy the team mailbox (default altbox@altbank.ng). The contract OTP email is sent directly and never stored; OTPs are stored only as HMACs, expire (`ALTPHONES_OTP_TTL_SECONDS`) and allow `ALTPHONES_OTP_MAX_ATTEMPTS` tries. |
 
@@ -70,21 +70,36 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 
 ## 6. Configuration required before production
 
-1. **Markup rates and basis** — Altphones settings → Pricing. The rate table and formula images in the specification were not received, so no rates are set and credit sales are unavailable. Enter each tenure's rate and choose whether the rate is the total for the tenure or per month; the "Current calculation" table must match the approved Excel figures. Add those figures to the pending test in `tests/altphones.test.ts` ("matches the approved Excel figures").
+1. **Markup rates** — set by migration 015 as the total markup for each tenure on the ₦116,000 financed amount (the Product Manager can change them in Altphones settings → Pricing; each change is a new version and agreed customer terms never change):
+
+   | Tenure | Rate | Markup | Total repayment | Monthly | Final instalment |
+   |---|---|---|---|---|---|
+   | 3 months | 8.97% | ₦10,405.20 | ₦126,405.20 | ₦42,135.07 | ₦42,135.06 |
+   | 6 months | 15.1% | ₦17,516.00 | ₦133,516.00 | ₦22,252.67 | ₦22,252.65 |
+   | 12 months | 23.45% | ₦27,202.00 | ₦143,202.00 | ₦11,933.50 | ₦11,933.50 |
+
+   The kobo rounding goes into the final instalment; `tests/altphones.test.ts` checks these figures.
 2. **Repayment-date rules** — weekend/holiday rule and short-month rule (Pricing tab), and the public holiday list. The first instalment falls on the chosen repayment day in the calendar month after disbursement; confirm this matches policy.
 3. **Contract wording** — Altphones settings → Contract (Super Admin or Altphones Product Manager). The editor starts from a plain-language draft (`src/lib/altphones-contract.ts`) written as a sale at an agreed markup with no interest; Legal and Shariah must complete the bracketed notes (missed payments, early settlement, warranty) and remove the draft line before it can be saved. The editor has click-to-insert placeholders and a preview with example figures; every save is a new audited version and contracts already accepted keep their exact text.
 4. **Seed Score bands** — set from SeedFi's documented decision bands (Pass ≥ 620 = Approved, Fair 530–619 = Manual Review, Fail < 530 = Declined; migration 012). Confirm them against the bank's approved credit policy; a Super Admin can change them. Also set the **route Unit Head** (Credit policy and routing tab).
 5. **Catalogue** — loaded from the AltPhone deck (Altphone L1 Series ×3 colours). Confirm the names and spec lines with the product team. The deck also mentions insurance cover, data bundles and flexible daily/weekly payment; those are not part of this workflow.
-6. **Locations** — import Branches, Shops and BOXes (Imports tab), then opening stock via stock requests approved by a Super Admin (or a historical stock import).
-7. **Roles** — grant Smile Associate, Business Performance Manager and Altphones Product Manager in Users & roles.
-8. **Integrations** — section 5, plus the Paystack webhook URL.
+6. **Locations, officers and opening stock** — Altphones settings → Setup uploads, in that order (section 7).
+7. **Roles** — Delight Officers and Smile Associates come from the setup upload; grant Business Performance Manager and Altphones Product Manager in Users & roles.
+8. **Integrations** — section 5, plus the Paystack webhook URL. For production, generate a **new** Paystack live secret key in the Paystack dashboard and enter it only as `PAYSTACK_SECRET_KEY` in the production app's environment settings, with `PAYSTACK_TEST_MODE` unset or `false`. Never put keys in the repository, a chat or an email.
 9. Run migration `009_altphones.sql` (`npm run migrate`).
 
 ## 7. Imports
 
-Altphones settings → Imports (Super Admin). CSV or Excel, with downloadable templates. A file is checked first (nothing applied), then imported only if it has no errors; it is re-validated at commit, and the same file cannot be imported twice.
+Altphones settings → Setup uploads (Super Admin). CSV or Excel, with downloadable templates. A file is checked first (nothing applied), then imported only if it has no errors; it is re-validated at commit, and the same file cannot be imported twice. Every applied row is audited.
 
-- **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address. Existing locations are skipped; duplicate names are refused.
+Setup, in order:
+
+1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address. Existing locations are skipped; duplicate names are refused.
+2. **Delight Officers and Smile Associates**: Email, Full name, Route (Delight Officer/DO or Smile Associate/SA), State, Home location, Active (Yes/No). The route is the role they sign in with. A new email must be an active @altbank.ng address in the bank directory and gets a staff record. Changing the route removes the other route; Active = No removes both. A Delight Officer's home must be a Branch and a Smile Associate's a BOX; it is preselected when they start a sale. Suspended staff are refused.
+3. **Opening stock**: Location, Phone model, Quantity, IMEIs (optional, separated by spaces or commas), Note. Branches and Shops only; one row per location and phone; IMEIs must be valid, unique and not already registered, and no more than the quantity. Posted as Opening stock movements and the IMEIs registered as in stock.
+
+Historical records:
+
 - **Historical transactions**: Reference, Type (Outright/Credit), customer details, Phone model, IMEI, Transaction date, Originating officer, Originating location, Supplying location, Tenure. Marked Legacy / Imported; IMEIs recorded as issued; no payments, approvals, emails or stock movements. Duplicate references and IMEIs are refused.
 - **Historical stock movements**: Reference, Location, Phone model, Movement (Opening/Receipt/Sale/Disbursement/Adjustment), Quantity, Date. Posted as legacy ledger entries; BOX rows refused; a movement that would leave fewer units than reserved is refused.
 

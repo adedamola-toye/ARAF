@@ -107,7 +107,19 @@ describe("financing calculator", () => {
     expect(formatRateE4(125_000)).toBe("12.5%");
   });
 
-  it.todo("matches the approved Excel figures for 3, 6 and 12 months (awaiting the approved rate table)");
+  it("matches the approved figures for 3, 6 and 12 months (8.97%, 15.1%, 23.45% on ₦116,000)", () => {
+    const cases: [number, number, number, number, number, number][] = [
+      // tenure, rateE4, markup, total, monthly, final (kobo)
+      [3, 89_700, 1_040_520, 12_640_520, 4_213_507, 4_213_506],
+      [6, 151_000, 1_751_600, 13_351_600, 2_225_267, 2_225_265],
+      [12, 234_500, 2_720_200, 14_320_200, 1_193_350, 1_193_350],
+    ];
+    for (const [m, rate, markup, total, monthly, final] of cases) {
+      const t = computeTerms({ priceKobo: 14_500_000, downPaymentKobo: 2_900_000, tenureMonths: m, rateE4: rate, basis: "FLAT_TOTAL" });
+      expect([t.markupKobo, t.totalRepaymentKobo, t.instalmentKobo, t.finalInstalmentKobo]).toEqual([markup, total, monthly, final]);
+      expect(t.instalmentKobo * (m - 1) + t.finalInstalmentKobo).toBe(total);
+    }
+  });
 
   it("maps scores into configured bands and refuses unconfigured bands", () => {
     expect(mapScore(700, 600, 450)).toBe("PASS");
@@ -463,6 +475,56 @@ describe("historical imports", () => {
   });
 });
 
+describe("setup uploads", () => {
+  it("provisions Delight Officers and Smile Associates with their route and home location", async () => {
+    const admin = await ctxFor(ALT.admin);
+    const roles = async (email: string) =>
+      (await db.query("SELECT role FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE s.email = $1 AND ra.active AND ra.role IN ('DELIGHT_OFFICER','SMILE_ASSOCIATE') ORDER BY role", [email])).rows.map((r) => r.role);
+    const head = "Email,Full name,Route,State,Home location,Active";
+    const csv = [
+      head,
+      "new.officer@altbank.ng,Nkechi New-Officer,Delight Officer,LAGOS,Ikeja Branch,Yes",
+      "nobody@altbank.ng,Not In Directory,DO,LAGOS,,Yes",
+      "someone@gmail.com,Outside,SA,LAGOS,,Yes",
+      "new.officer2@altbank.ng,Wrong Home,SA,LAGOS,Ikeja Branch,Yes",
+      "x@altbank.ng,Bad Route,Cashier,LAGOS,,Yes",
+    ].join("\n");
+    const p = await previewImport(admin, "OFFICERS", "officers.csv", Buffer.from(csv));
+    expect(p.summary).toMatchObject({ rows: 5, valid: 1, errors: 4 });
+    await expect(commitImport(admin, p.id)).rejects.toMatchObject({ code: "VALIDATION" });
+    const ok = await previewImport(admin, "OFFICERS", "officers-ok.csv", Buffer.from(csv.split("\n").slice(0, 2).join("\n")));
+    await commitImport(admin, ok.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual(["DELIGHT_OFFICER"]);
+    const home = (await db.query("SELECT l.name FROM altphones_officer_homes h JOIN staff s ON s.id = h.staff_id JOIN locations l ON l.id = h.location_id WHERE s.email = 'new.officer@altbank.ng'")).rows[0];
+    expect(home.name).toBe("Ikeja Branch");
+    // Switching route revokes the other one; the home must suit the new route.
+    const sw = await previewImport(admin, "OFFICERS", "officers-switch.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,Yaba Altbox,Yes\n`));
+    await commitImport(admin, sw.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual(["SMILE_ASSOCIATE"]);
+    // Active = No removes Altphones access.
+    const off = await previewImport(admin, "OFFICERS", "officers-off.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,,No\n`));
+    await commitImport(admin, off.id);
+    expect(await roles("new.officer@altbank.ng")).toEqual([]);
+    await expect(previewImport(await ctxFor(ALT.pm), "OFFICERS", "x.csv", Buffer.from(csv))).rejects.toMatchObject({ code: "FORBIDDEN" });
+  });
+
+  it("loads opening stock at Branches and Shops with optional IMEIs, never at a BOX, and only once", async () => {
+    const admin = await ctxFor(ALT.admin);
+    const before = await stockOf("Wuse Altshop", models[2]);
+    const csv = `Location,Phone model,Quantity,IMEIs,Note\nWuse Altshop,Altphone L1 Series — Blue,4,${IMEI[0]} ${IMEI[1]},Launch stock\nYaba Altbox,Altphone L1 Series — Blue,2,,\nWuse Altshop,Altphone L1 Series — Blue,1,,\n`;
+    const p = await previewImport(admin, "OPENING_STOCK", "opening.csv", Buffer.from(csv));
+    expect(p.summary).toMatchObject({ rows: 3, valid: 1, errors: 2 }); // BOX row and repeated location/model refused
+    const good = csv.split("\n").slice(0, 2).join("\n") + "\n";
+    const ok = await previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good));
+    await commitImport(admin, ok.id);
+    expect(await stockOf("Wuse Altshop", models[2])).toEqual({ physical: before.physical + 4, reserved: before.reserved, available: before.available + 4 });
+    expect((await db.query("SELECT count(*)::int AS n FROM altphones_devices WHERE imei = ANY($1) AND status = 'IN_STOCK'", [[IMEI[0], IMEI[1]]])).rows[0].n).toBe(2);
+    await expect(previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good))).rejects.toMatchObject({ code: "CONFLICT" });
+    const again = await previewImport(admin, "OPENING_STOCK", "opening-again.csv", Buffer.from(good.replace("Launch stock", "again")));
+    expect(again.summary).toMatchObject({ valid: 0, errors: 1 }); // IMEIs already registered
+  });
+});
+
 describe("access", () => {
   it("only the originator, the reviewers of its stages and Super Admins can open an application", async () => {
     const { id } = await creditReady(ALT.sa);
@@ -488,6 +550,12 @@ describe("approved catalogue", () => {
     const { readModelImage } = await import("@/server/altphones/catalogue");
     const id = (await db.query("SELECT id FROM altphones_models WHERE name LIKE '%Green'")).rows[0].id;
     expect(await readModelImage(id)).toEqual({ staticPath: "/images/altphones/altphone-l1-green.webp" });
+  });
+
+  it("a fresh installation records the approved markup rates as a settings version", async () => {
+    const r = (await db.query("SELECT markup_rates, markup_basis, reason FROM altphones_settings WHERE markup_rates = $1::jsonb ORDER BY version LIMIT 1", [JSON.stringify({ "3": 89700, "6": 151000, "12": 234500 })])).rows[0];
+    expect(r).toBeDefined();
+    expect(r.markup_basis).toBe("FLAT_TOTAL");
   });
 
   it("a fresh installation records SeedFi's documented decision bands as a settings version", async () => {

@@ -17,15 +17,28 @@ import { holdsRole } from "../domain/access";
 import { readSpreadsheet } from "../domain/directory";
 import { REGIONS } from "../domain/roles";
 import { isEmail, isImei, isTenure, normalisePhone } from "@/lib/altphones";
+import { config } from "../config";
 import { currentSettings, isUuid, nextRef } from "./core";
 import { post } from "./stock";
 
-export type ImportKind = "LOCATIONS" | "TRANSACTIONS" | "STOCK";
-export const IMPORT_LABELS: Record<ImportKind, string> = { LOCATIONS: "Branches, Shops and BOX locations", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements" };
+export type ImportKind = "LOCATIONS" | "OFFICERS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK";
+export const IMPORT_LABELS: Record<ImportKind, string> = {
+  LOCATIONS: "Branches, Shops and BOX locations",
+  OFFICERS: "Delight Officers and Smile Associates",
+  OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements" };
 export const MAX_IMPORT_ROWS = 20_000;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
+  OFFICERS: {
+    email: ["email", "emailaddress", "workemail"],
+    fullName: ["fullname", "name", "staffname"],
+    route: ["route", "role", "channel"],
+    state: ["state", "region"],
+    home: ["homelocation", "location", "branchorbox", "branch", "box"],
+    active: ["active", "status"],
+  },
+  OPENING_STOCK: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], quantity: ["quantity", "qty", "units"], imeis: ["imeis", "imei"], note: ["note", "notes", "source"] },
   LOCATIONS: { state: ["state"], city: ["city", "town", "towncity", "lga"], type: ["type", "locationtype", "outlettype"], name: ["name", "locationname", "outletname", "branch"], address: ["address"] },
   TRANSACTIONS: {
     reference: ["reference", "ref", "transactionreference", "transactionref"],
@@ -44,12 +57,16 @@ const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
   STOCK: { reference: ["reference", "ref"], location: ["location", "branchorshop"], model: ["phonemodel", "model"], movement: ["movement", "movementtype", "type"], quantity: ["quantity", "qty", "units"], date: ["date", "movementdate"], note: ["note", "notes", "comment"] },
 };
 const REQUIRED: Record<ImportKind, string[]> = {
+  OFFICERS: ["email", "fullName", "route"],
+  OPENING_STOCK: ["location", "model", "quantity"],
   LOCATIONS: ["state", "city", "type", "name"],
   TRANSACTIONS: ["reference", "type", "customerName", "model", "imei", "date", "origin", "supply"],
   STOCK: ["reference", "location", "model", "movement", "quantity", "date"],
 };
 
 export const TEMPLATES: Record<ImportKind, string> = {
+  OFFICERS: "Email,Full name,Route,State,Home location,Active\r\nfirstname.lastname@altbank.ng,Firstname Lastname,Delight Officer,LAGOS,Ikeja Branch,Yes\r\nother.person@altbank.ng,Other Person,Smile Associate,LAGOS,Yaba Altbox,Yes\r\n",
+  OPENING_STOCK: "Location,Phone model,Quantity,IMEIs,Note\r\nIkeja Branch,Altphone L1 Series — Black & Gold,20,,Opening count 2026-11-13\r\nYaba Altshop,Altphone L1 Series — Green,10,356938035643809;490154203237518,Delivery note 001\r\n",
   LOCATIONS: "State,City,Type,Name,Address\r\nLAGOS,Ikeja,Branch,Ikeja Branch,1 Example Road\r\nLAGOS,Yaba,Shop,Yaba Altshop,\r\nLAGOS,Yaba,BOX,Yaba Altbox,\r\n",
   TRANSACTIONS:
     "Reference,Type,Customer name,Customer email,Customer phone,Phone model,IMEI,Transaction date,Originating officer,Originating location,Supplying location,Tenure\r\nLEG-0001,Outright,Customer Name,customer@example.com,08031234567,Model name,000000000000000,2026-01-15,officer@altbank.ng,Ikeja Branch,Ikeja Branch,\r\n",
@@ -139,6 +156,82 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       const sameName = (await q.query("SELECT state, city FROM locations WHERE lower(name) = lower($1)", [r.name])).rows[0];
       if (sameName) { err(r, `A location named "${r.name}" already exists in ${sameName.city}, ${sameName.state}. Use a distinct name.`); continue; }
       ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, address: r.address || null });
+    }
+  } else if (kind === "OFFICERS") {
+    const loc = await locationIndex(q);
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const email = r.email.toLowerCase().replace(/^mailto:/, "");
+      const routeN = norm(r.route);
+      const role = ["do", "delightofficer", "delight"].includes(routeN) ? "DELIGHT_OFFICER" : ["sa", "smileassociate", "smile"].includes(routeN) ? "SMILE_ASSOCIATE" : null;
+      const activeN = norm(r.active ?? "");
+      const active = activeN === "" || ["yes", "y", "true", "active", "1"].includes(activeN) ? true : ["no", "n", "false", "inactive", "0"].includes(activeN) ? false : null;
+      const state = (r.state ?? "").toUpperCase();
+      const problems: string[] = [];
+      if (!/^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) problems.push("email is not valid");
+      else if (!email.endsWith(`@${config.staffEmailDomain}`)) problems.push(`email must be an @${config.staffEmailDomain} address`);
+      if (r.fullName.length < 3) problems.push("full name is missing");
+      if (!role) problems.push(`route "${r.route}" must be Delight Officer (DO) or Smile Associate (SA)`);
+      if (active === null) problems.push("active must be Yes or No");
+      if (state && !(REGIONS as readonly string[]).includes(state)) problems.push(`"${r.state}" is not a Nigerian state`);
+      if (seen.has(email)) problems.push("email appears more than once in the file");
+      let home: { id: string; outlet_type: string; name: string } | null = null;
+      if (r.home) {
+        const m = loc(r.home);
+        if (m.length !== 1) problems.push(m.length ? `home location "${r.home}" matches more than one location` : `home location "${r.home}" was not found`);
+        else {
+          home = m[0];
+          if (role === "DELIGHT_OFFICER" && home.outlet_type !== "BRANCH") problems.push("a Delight Officer's home location must be a Branch");
+          if (role === "SMILE_ASSOCIATE" && home.outlet_type !== "ALTBOX") problems.push("a Smile Associate's home location must be a BOX");
+        }
+      }
+      const staff = email ? (await q.query<{ id: string; status: string }>("SELECT id, status FROM staff WHERE email = $1", [email])).rows[0] : undefined;
+      if (!staff && active) {
+        const dir = (await q.query<{ active: boolean; is_group_mailbox: boolean }>("SELECT active, is_group_mailbox FROM bank_directory WHERE email = $1", [email])).rows[0];
+        if (!dir || !dir.active) problems.push("not in the bank directory — staff can only be provisioned from the directory");
+        else if (dir.is_group_mailbox) problems.push("group mailboxes cannot be officers");
+      }
+      if (staff && staff.status !== "ACTIVE" && active) problems.push("the staff record is suspended; reactivate it in Users & roles first");
+      if (problems.length) {
+        err(r, `${email || "Row"}: ${problems.join("; ")}.`);
+        continue;
+      }
+      seen.add(email);
+      ok.push({ row: Number(r._row), email, fullName: r.fullName.replace(/\s+/g, " ").trim(), role, active, state: state || null, homeId: home?.id ?? null, staffId: staff?.id ?? null });
+    }
+  } else if (kind === "OPENING_STOCK") {
+    const loc = await locationIndex(q);
+    const model = await modelIndex(q);
+    const seenImei = new Set<string>();
+    const seenPair = new Set<string>();
+    for (const r of rows) {
+      const l = loc(r.location);
+      const m = model(r.model);
+      const qty = Number(r.quantity);
+      const imeis = (r.imeis ?? "").split(/[\s,;|]+/).map((s) => s.trim()).filter(Boolean);
+      const problems: string[] = [];
+      if (l.length !== 1) problems.push(l.length ? `location "${r.location}" matches more than one location` : `location "${r.location}" was not found`);
+      else if (!["BRANCH", "ALTSHOP"].includes(l[0].outlet_type)) problems.push("BOX locations cannot hold stock");
+      if (!m) problems.push(`phone model "${r.model}" is not in the catalogue`);
+      if (!Number.isInteger(qty) || qty < 1 || qty > 100000) problems.push("quantity must be a whole number of units");
+      const bad = imeis.filter((i) => !isImei(i));
+      if (bad.length) problems.push(`not 15-digit IMEIs: ${bad.slice(0, 3).join(", ")}`);
+      if (Number.isInteger(qty) && imeis.length > qty) problems.push(`${imeis.length} IMEIs listed for ${qty} units`);
+      const dupInFile = imeis.filter((i) => seenImei.has(i));
+      if (dupInFile.length) problems.push(`IMEIs listed twice in the file: ${dupInFile.slice(0, 3).join(", ")}`);
+      if (imeis.length) {
+        const known = (await q.query<{ imei: string }>("SELECT imei FROM altphones_devices WHERE imei = ANY($1)", [imeis])).rows.map((x) => x.imei);
+        if (known.length) problems.push(`IMEIs already registered: ${known.slice(0, 3).join(", ")}`);
+      }
+      const pair = l.length === 1 && m ? `${l[0].id}|${m.id}` : null;
+      if (pair && seenPair.has(pair)) problems.push("this location and phone appear more than once; combine them into one row");
+      if (problems.length) {
+        err(r, `${r.location || "Row"} / ${r.model || "?"}: ${problems.join("; ")}.`);
+        continue;
+      }
+      imeis.forEach((i) => seenImei.add(i));
+      seenPair.add(pair!);
+      ok.push({ row: Number(r._row), locationId: l[0].id, locationName: l[0].name, modelId: m!.id, modelName: m!.name, quantity: qty, imeis, note: r.note || null });
     }
   } else if (kind === "TRANSACTIONS") {
     const loc = await locationIndex(q);
@@ -250,7 +343,7 @@ async function requireAdmin(q: Db, ctx: Ctx) {
 }
 
 export async function previewImport(ctx: Ctx, kind: string, filename: string, data: Buffer) {
-  if (!["LOCATIONS", "TRANSACTIONS", "STOCK"].includes(kind)) throw invalid("Choose what you are importing.");
+  if (!(kind in IMPORT_LABELS)) throw invalid("Choose what you are importing.");
   return withTx(async (tx) => {
     const actor = await requireAdmin(tx, ctx);
     const k = kind as ImportKind;
@@ -293,6 +386,14 @@ export async function commitImport(ctx: Ctx, id: string) {
     for (const o of v.ok) {
       if (kind === "LOCATIONS") {
         await tx.query("INSERT INTO locations (state, city, outlet_type, name, address, active, updated_at) VALUES ($1,$2,$3,$4,$5,true,$6)", [o.state, o.city, o.type, o.name, o.address, ctx.now]);
+      } else if (kind === "OFFICERS") {
+        await applyOfficer(tx, ctx, o);
+      } else if (kind === "OPENING_STOCK") {
+        const imeis = o.imeis as string[];
+        if (imeis.length) {
+          await tx.query(`INSERT INTO altphones_devices (imei, model_id, location_id, status, registered_by, registered_at) SELECT x, $2, $3, 'IN_STOCK', $4, $5 FROM unnest($1::text[]) AS x`, [imeis, o.modelId, o.locationId, ctx.actor!.staffId, ctx.now]);
+        }
+        await post(tx, ctx, { locationId: o.locationId as string, modelId: o.modelId as string, movement: "OPENING", physical: o.quantity as number, reserved: 0, importId: id, reference: `OPEN-${id.slice(0, 8)}-${o.row}`, note: (o.note as string | null) ?? "Opening stock (setup upload)" });
       } else if (kind === "TRANSACTIONS") {
         await insertLegacyTransaction(tx, ctx, id, settings.id, o);
       } else {
@@ -377,4 +478,37 @@ export async function listImports(q: Db, limit = 20) {
       [limit],
     )
   ).rows;
+}
+
+const ROUTE_ROLES = ["DELIGHT_OFFICER", "SMILE_ASSOCIATE"];
+
+/** Create or update a Delight Officer / Smile Associate: the route decides which of the two roles they hold. */
+async function applyOfficer(tx: Tx, ctx: Ctx, o: Record<string, unknown>) {
+  let staffId = o.staffId as string | null;
+  const role = o.role as string;
+  if (!staffId) {
+    staffId = (
+      await tx.query<{ id: string }>("INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,'Retail',$4,$5,$5) RETURNING id", [o.email, o.fullName, o.state, ctx.actor!.staffId, ctx.now])
+    ).rows[0].id;
+    await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId, email: o.email, via: "ALTPHONES_OFFICER_UPLOAD" } });
+  } else if (o.state) {
+    await tx.query("UPDATE staff SET region = coalesce(region, $2), updated_at = $3 WHERE id = $1", [staffId, o.state, ctx.now]);
+  }
+  if (staffId === ctx.actor!.staffId) throw invalid("You cannot change your own role assignments in an upload.");
+  const held = (await tx.query<{ role: string }>("SELECT role FROM role_assignments WHERE staff_id = $1 AND active AND role = ANY($2)", [staffId, ROUTE_ROLES])).rows.map((r) => r.role);
+  const revoke = o.active ? held.filter((r) => r !== role) : held;
+  for (const r of revoke) {
+    await tx.query("UPDATE role_assignments SET active = false, revoked_by = $3, revoked_at = $4 WHERE staff_id = $1 AND role = $2 AND active", [staffId, r, ctx.actor!.staffId, ctx.now]);
+    await audit(tx, ctx, { action: "ROLE_REVOKED", actorRole: "SUPER_ADMIN", details: { staffId, role: r, via: "ALTPHONES_OFFICER_UPLOAD" } });
+  }
+  if (o.active && !held.includes(role)) {
+    await tx.query("INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at) VALUES ($1,$2,$3,'Retail',$4,$5)", [staffId, role, o.state, ctx.actor!.staffId, ctx.now]);
+    await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId, role, via: "ALTPHONES_OFFICER_UPLOAD" } });
+  }
+  if (o.active && o.homeId) {
+    await tx.query(
+      "INSERT INTO altphones_officer_homes (staff_id, location_id, updated_by, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (staff_id) DO UPDATE SET location_id = EXCLUDED.location_id, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at",
+      [staffId, o.homeId, ctx.actor!.staffId, ctx.now],
+    );
+  }
 }

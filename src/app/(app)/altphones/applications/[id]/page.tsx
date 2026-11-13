@@ -139,6 +139,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
         supplies: isDo ? [] : await supplyOptions(db, app.model_id, origin ? { state: origin.state, city: origin.city } : await db.query<{ state: string; city: string }>("SELECT region AS state, '' AS city FROM staff WHERE id = $1", [me]).then((r) => r.rows[0] ?? null)),
       }
     : null;
+  const homeLocation = locationsData ? ((await db.query<{ location_id: string }>("SELECT location_id FROM altphones_officer_homes WHERE staff_id = $1", [me])).rows[0]?.location_id ?? null) : null;
   const devices = isOriginator && (app.status === "APPROVED" || app.status === "PAID") ? await issuableDevices(db, app) : [];
 
   return (
@@ -264,7 +265,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                 {isDo ? (
                   <div className="field">
                     <label htmlFor="originId">Your Alternative Bank Branch</label>
-                    <select id="originId" name="originId" defaultValue={app.origin_location_id ?? ""} required>
+                    <select id="originId" name="originId" defaultValue={app.origin_location_id ?? homeLocation ?? ""} required>
                       <option value="">Choose the Branch</option>
                       {locationsData.branches.map((b) => (
                         <option key={b.id} value={b.id} disabled={b.available < 1}>
@@ -278,7 +279,7 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                   <>
                     <div className="field">
                       <label htmlFor="originId">Your BOX</label>
-                      <select id="originId" name="originId" defaultValue={app.origin_location_id ?? ""} required>
+                      <select id="originId" name="originId" defaultValue={app.origin_location_id ?? homeLocation ?? ""} required>
                         <option value="">Choose the BOX you are selling from</option>
                         {locationsData.boxes.map((b) => (
                           <option key={b.id} value={b.id}>

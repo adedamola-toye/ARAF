@@ -776,3 +776,8 @@ table.matrix td { vertical-align: top; }
 .credit-person-head { display: flex; gap: var(--space-3); align-items: baseline; justify-content: space-between; flex-wrap: wrap; }
 .credit-form { margin-top: var(--space-2); }
 .acct-name { display: inline-flex; gap: 6px; align-items: center; margin-top: 5px; font-size: 12.5px; font-weight: 700; color: var(--success); }
+.setup-steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-3); }
+.setup-step { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: var(--space-4); background: var(--surface-2); display: grid; gap: var(--space-3); }
+.setup-step-head { display: flex; gap: var(--space-3); align-items: center; }
+.setup-step-head > div { flex: 1; min-width: 0; }
+.setup-step-n { width: 28px; height: 28px; border-radius: 50%; background: var(--brand); color: var(--brand-ink); display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13px; flex: none; }
