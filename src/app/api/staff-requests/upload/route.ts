@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { reportForCurrentUser } from "@/server/incidents/subject";
 import { NextResponse, type NextRequest } from "next/server";
 import { baseCtx } from "../../../_lib/auth";
 import { lookupSession, SESSION_COOKIE } from "@/server/auth/session";
@@ -27,7 +28,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, id: res.id, scanStatus: res.scanStatus });
   } catch (e) {
     if (e instanceof DomainError) return NextResponse.json({ ok: false, error: e.message }, { status: e.code === "FORBIDDEN" ? 403 : e.code === "CONFIG" ? 500 : 400 });
-    console.error("[staff-requests/upload] unexpected failure", e);
-    return NextResponse.json({ ok: false, error: "The upload failed unexpectedly. Try again, or contact an administrator if it keeps happening." }, { status: 500 });
+    // A technical failure: recorded as an incident (sanitised); the uploader shows the incident panel.
+    const incident = await reportForCurrentUser({ source: "api", error: e, route: req.nextUrl.pathname });
+    return NextResponse.json({ ok: false, error: "The upload hit a technical problem. Your file was not stored; try again.", incident: { ...incident, retry: true } }, { status: 500 });
   }
 }

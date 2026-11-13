@@ -2,6 +2,8 @@
 import { createContext, startTransition, useActionState, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
+import { IncidentPanel, type FailureReport } from "./Incident";
+import type { IncidentView } from "@/lib/incident-messages";
 
 export interface FormState {
   ok?: boolean;
@@ -10,6 +12,10 @@ export interface FormState {
   message?: string | null;
   data?: unknown;
   nonce?: number;
+  /** Technical failure recorded by the server (see toActionError). */
+  incident?: IncidentView & { retry: boolean };
+  /** Technical failure seen only by the browser (a crash or a lost response). */
+  clientIncident?: FailureReport;
 }
 type Action = (prev: FormState, fd: FormData) => Promise<FormState>;
 
@@ -30,21 +36,28 @@ export function SubmitButton({ children, className = "btn btn-primary", name, va
   );
 }
 
+/** Lets the incident panel resubmit exactly what the user sent (same idempotency key). */
+const ResubmitContext = createContext<(() => void) | null>(null);
+
 export function FormMessages({ state }: { state: FormState }) {
+  const resubmit = useContext(ResubmitContext);
+  const router = useRouter();
+  if (state.incident || state.clientIncident)
+    return <IncidentPanel key={state.nonce} preset={state.incident ?? null} report={state.clientIncident ?? null} onResubmit={resubmit ?? undefined} onCheckStatus={() => router.refresh()} />;
   if (!state.error && !state.message) return null;
   const fieldErrors = state.fields ? Object.entries(state.fields) : [];
   return (
     <div role={state.error ? "alert" : "status"} className={`alert ${state.error ? "alert-error" : "alert-success"}`}>
       <span>
-      {state.error ? <strong>Not completed: </strong> : null}
-      {state.error ?? state.message}
-      {fieldErrors.length > 0 && (
-        <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-          {fieldErrors.map(([k, v]) => (
-            <li key={k}>{v}</li>
-          ))}
-        </ul>
-      )}
+        {state.error ? <strong>Not completed: </strong> : null}
+        {state.error ?? state.message}
+        {fieldErrors.length > 0 && (
+          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+            {fieldErrors.map(([k, v]) => (
+              <li key={k}>{v}</li>
+            ))}
+          </ul>
+        )}
       </span>
     </div>
   );
@@ -74,7 +87,22 @@ export function ActionForm({
   /** After success, navigate here (e.g. the case page with ?done=1 to show the committed result). */
   doneHref?: string;
 }) {
-  const [state, formAction, pending] = useActionState(action, {});
+  const lastSubmission = useRef<FormData | null>(null);
+  const [state, formAction, pending] = useActionState(async (prev: FormState, fd: FormData): Promise<FormState> => {
+    try {
+      return await action(prev, fd);
+    } catch (e) {
+      const err = e as Error & { digest?: string };
+      if (/^NEXT_/.test(String(err?.digest ?? ""))) throw e; // redirects and other Next.js control flow
+      // The server failed past its handler (it has a digest) or the browser never got an answer (no digest).
+      return {
+        ok: false,
+        error: "A technical problem stopped this. Your entries are kept.",
+        clientIncident: err?.digest ? { kind: "client", digest: err.digest, name: err.name } : { kind: "network", name: err?.name ?? "Error", message: err?.message ?? null },
+        nonce: Date.now(),
+      };
+    }
+  }, {});
   const router = useRouter();
   const ref = useRef<HTMLFormElement>(null);
   const [key, setKey] = useState(() => crypto.randomUUID());
@@ -89,24 +117,32 @@ export function ActionForm({
   // Submitted through onSubmit rather than the action prop: React resets uncontrolled fields after a
   // form action, which would wipe what the user typed when the server rejects the input.
   return (
-    <PendingContext.Provider value={pending}>
-      <form
-        ref={ref}
-        className={className}
-        encType={encType}
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (pending) return;
-          const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
-          const fd = new FormData(e.currentTarget, submitter && submitter.getAttribute("name") ? submitter : undefined);
-          startTransition(() => formAction(fd));
-        }}
-      >
-        <input type="hidden" name="idempotencyKey" value={key} />
-        {showMessages && <FormMessages state={state} />}
-        {typeof children === "function" ? children(state) : children}
-      </form>
-    </PendingContext.Provider>
+    <ResubmitContext.Provider
+      value={() => {
+        const fd = lastSubmission.current;
+        if (fd && !pending) startTransition(() => formAction(fd));
+      }}
+    >
+      <PendingContext.Provider value={pending}>
+        <form
+          ref={ref}
+          className={className}
+          encType={encType}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (pending) return;
+            const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLElement | null;
+            const fd = new FormData(e.currentTarget, submitter && submitter.getAttribute("name") ? submitter : undefined);
+            lastSubmission.current = fd;
+            startTransition(() => formAction(fd));
+          }}
+        >
+          <input type="hidden" name="idempotencyKey" value={key} />
+          {showMessages && <FormMessages state={state} />}
+          {typeof children === "function" ? children(state) : children}
+        </form>
+      </PendingContext.Provider>
+    </ResubmitContext.Provider>
   );
 }
 

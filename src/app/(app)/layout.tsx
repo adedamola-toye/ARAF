@@ -1,4 +1,4 @@
-import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock } from "lucide-react";
+import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { themePreference } from "../_lib/theme";
 import { BankMark, Footer, Wordmark } from "@/components/Brand";
@@ -181,6 +181,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/schedules" icon={<CalendarClock {...ic} />}>
               Scheduled emails
+            </NavLink>
+            <NavLink href="/admin/incidents" icon={<Siren {...ic} />}>
+              Incidents
             </NavLink>
             <NavLink href="/admin/outbox" icon={<Mail {...ic} />}>
               Email delivery

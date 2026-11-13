@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BookUser, Percent, CalendarClock, FileText, History, Mail, Route, Users, UsersRound } from "lucide-react";
+import { Siren, BookUser, Percent, CalendarClock, FileText, History, Mail, Route, Users, UsersRound } from "lucide-react";
 import { requireSuperAdmin } from "./guard";
 import { db } from "@/server/db";
 import { PageHeader } from "@/components/PageHeader";
@@ -10,11 +10,12 @@ export const metadata = { title: "Administration" };
 export default async function AdminHome() {
   await requireSuperAdmin();
   const n = async (sql: string) => Number((await db.query(sql)).rows[0].n);
-  const [staff, exceptions, dead, members] = await Promise.all([
+  const [staff, exceptions, dead, members, incidents] = await Promise.all([
     n("SELECT count(*) AS n FROM staff WHERE status = 'ACTIVE'"),
     n("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id IS NULL"),
     n("SELECT count(*) AS n FROM notification_outbox WHERE status IN ('FAILED','DEAD')"),
     n("SELECT count(*) AS n FROM recipient_group_members"),
+    n("SELECT count(*) AS n FROM incidents WHERE status IN ('DETECTED','INVESTIGATING')"),
   ]);
   const tpl = (await db.query("SELECT name, version, production_approved FROM offer_templates WHERE status = 'ACTIVE'")).rows[0];
   const recent = (
@@ -32,6 +33,7 @@ export default async function AdminHome() {
     { href: "/admin/templates", icon: FileText, title: "Offer templates", body: tpl ? `Active: ${tpl.name} v${tpl.version}${tpl.production_approved ? " (bank-approved)" : " (not bank-approved)"}.` : "No active template." },
     { href: "/admin/pricing", icon: Percent, title: "Pricing settings", body: "Flat markup rates by tenor band and the maximum tenor (≤ 6 months), with change history." },
     { href: "/admin/schedules", icon: CalendarClock, title: "Scheduled emails", body: "Weekly initiator digest and monthly leads summary." },
+    { href: "/admin/incidents", icon: Siren, title: "Incidents", body: incidents ? `${incidents} active incident(s) affecting users.` : "No active incidents." },
     { href: "/admin/outbox", icon: Mail, title: "Email delivery", body: dead ? `${dead} message(s) failed or awaiting retry.` : "All recent messages delivered or queued." },
     { href: "/admin/audit", icon: History, title: "Audit trail", body: "System-wide, per-request and per-customer audit with IP and device." },
   ];

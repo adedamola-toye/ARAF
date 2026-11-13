@@ -1,9 +1,11 @@
 "use client";
+import { IncidentCard } from "@/components/Incident";
+import type { IncidentView } from "@/lib/incident-messages";
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, RotateCcw, Upload } from "lucide-react";
 
-type Phase = { kind: "idle" } | { kind: "uploading"; pct: number } | { kind: "done"; msg: string } | { kind: "error"; msg: string };
+type Phase = { kind: "idle" } | { kind: "uploading"; pct: number } | { kind: "done"; msg: string } | { kind: "error"; msg: string; incident?: IncidentView };
 
 /**
  * Upload control with real progress, error and retry states. It has no <form> of its own, so it can
@@ -68,7 +70,7 @@ export function UploadPanel({
     xhr.upload.onprogress = (e) => e.lengthComputable && setPhase({ kind: "uploading", pct: Math.round((e.loaded / e.total) * 100) });
     xhr.onerror = () => setPhase({ kind: "error", msg: "Network error. Your file was not saved. Retry when you are connected." });
     xhr.onload = () => {
-      let body: { ok?: boolean; error?: string; version?: number; scanStatus?: string; expired?: boolean } = {};
+      let body: { ok?: boolean; error?: string; version?: number; scanStatus?: string; expired?: boolean; incident?: IncidentView } = {};
       try {
         body = JSON.parse(xhr.responseText);
       } catch {
@@ -84,7 +86,7 @@ export function UploadPanel({
         setFileName("");
         router.refresh();
       } else {
-        setPhase({ kind: "error", msg: body.error ?? `Upload failed (${xhr.status}).` });
+        setPhase({ kind: "error", msg: body.error ?? `Upload failed (${xhr.status}).`, incident: body.incident });
       }
     };
     setPhase({ kind: "uploading", pct: 0 });
@@ -175,7 +177,8 @@ export function UploadPanel({
           {phase.msg}
         </div>
       )}
-      {phase.kind === "error" && (
+      {phase.kind === "error" && phase.incident && <IncidentCard view={phase.incident} variant="inline" note="Your file was not stored. Choose Retry upload to send it again." />}
+      {phase.kind === "error" && !phase.incident && (
         <div className="alert alert-error" role="alert">
           <AlertTriangle className="icon" aria-hidden="true" />
           <span style={{ flex: 1 }}>{phase.msg}</span>
