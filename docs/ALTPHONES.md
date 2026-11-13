@@ -62,7 +62,9 @@ All are disabled until configured; dependent actions show a clear "not configure
 
 SeedFi staging was verified live (12 Nov 2026) with the Alt Mall account and key `AltMall_ARAF_stg_Nov2026`: the four documented test personas returned their documented scores through ARAF's credit check (Theodore Stone 384 Fail, Nathan Smith 532 Fair, John Doe reviewed 444 / overall 544 Fail, Jane Doe 400 Fail). Staging responses carry `is_dummy_data: true`, which ARAF stores and shows as "SeedFi test data". The API key is a secret: set `SEEDFI_API_KEY` in each deployment's environment settings, never in the repository. Production needs a separate key on `https://loanengine.theseedfi.com` after SeedFi's go-live sign-off.
 
-Alternative Bank account verification has no API: the officer confirms it manually and it is labelled **Officer confirmed**. The internal debit mandate is likewise **Officer Confirmed**, never "API verified".
+**Account name enquiry (Paystack).** When Paystack is configured, the officer picks the customer's other bank from Paystack's bank list and both accounts are looked up as they type (`/bank/resolve`; Alternative Bank via its NUBAN code 000304); the server repeats the lookup on save and stores the names, marked "Names verified by Paystack; officer confirmed". An account that does not exist is refused. With a test key, set `PAYSTACK_TEST_MODE=true`: test mode resolves only Paystack's Test Bank (001), which is then listed and also used for Alternative Bank lookups. Paystack test mode verified live (13 Nov 2026): bank list, name enquiry, transaction initialise/verify and Direct Debit initialise/verify. An unpaid transaction is reported by Paystack as `abandoned`; ARAF treats it as "not received yet".
+
+Without Paystack, the officer confirms the accounts manually and they are labelled **Officer confirmed**. The internal debit mandate is likewise **Officer Confirmed**, never "API verified".
 
 BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digits are shown or audited. The Direct Debit authorisation code is encrypted.
 

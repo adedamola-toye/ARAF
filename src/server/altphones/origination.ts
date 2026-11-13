@@ -49,6 +49,7 @@ import {
   emailCustomer,
   expectStatus,
   isUuid,
+  loadApp,
   lockApp,
   nextRef,
   notifyRole,
@@ -62,6 +63,7 @@ import {
 } from "./core";
 import { renderContract, type ContractPlaceholder } from "@/lib/altphones-contract";
 import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
+import { ALTERNATIVE_BANK_CODE, otherBanks, resolveAccount } from "./banks";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
 
 const EDITABLE: AltStatus[] = ["DRAFT"];
@@ -259,6 +261,9 @@ export interface CustomerInput {
   phone: string;
   abAccount?: string;
   externalAccount?: string;
+  /** Paystack bank code of the customer's other bank (when Paystack is configured). */
+  externalBankCode?: string;
+  /** Bank name typed by the officer (only when Paystack is not configured). */
   externalBank?: string;
   tenure?: string;
   repaymentDay?: string;
@@ -266,7 +271,47 @@ export interface CustomerInput {
   lockVersion?: number | null;
 }
 
+/**
+ * Account checks for a credit customer. With Paystack configured, both accounts are looked up by name
+ * enquiry (Alternative Bank by its code 000304) and the names are stored as "Verified by Paystack"; the
+ * officer still confirms they belong to the customer. Without Paystack, the officer confirms manually.
+ */
+async function checkAccounts(p: CustomerInput, e: Record<string, string>) {
+  const ab = (p.abAccount ?? "").replace(/\s/g, "");
+  const ext = (p.externalAccount ?? "").replace(/\s/g, "");
+  if (!isNuban(ab)) e.abAccount = "Enter the 10-digit Alternative Bank account number.";
+  if (!isNuban(ext)) e.externalAccount = "Enter the 10-digit account number.";
+  if (!paymentGateway()) {
+    const bank = (p.externalBank ?? "").trim();
+    if (bank.length < 2) e.externalBank = "Enter the bank's name.";
+    if (/alternative\s*bank/i.test(bank)) e.externalBank = "This must be the customer's account at another bank.";
+    return { ab, ext, bankCode: null, bankName: bank, abName: null, extName: null, via: "OFFICER" as const };
+  }
+  const code = (p.externalBankCode ?? "").trim();
+  const bank = (await otherBanks()).find((b) => b.code === code);
+  if (!bank) e.externalBank = "Choose the customer's other bank.";
+  let abName: string | null = null;
+  let extName: string | null = null;
+  if (isNuban(ab)) {
+    const r = await resolveAccount(ab, ALTERNATIVE_BANK_CODE);
+    if (r.status === "FOUND") abName = r.accountName;
+    else if (r.status === "NOT_FOUND") e.abAccount = "No Alternative Bank account has this number.";
+    else throw gate(`The account lookup is unavailable (${r.message}). Try again in a moment.`);
+  }
+  if (bank && isNuban(ext)) {
+    const r = await resolveAccount(ext, bank.code);
+    if (r.status === "FOUND") extName = r.accountName;
+    else if (r.status === "NOT_FOUND") e.externalAccount = `No ${bank.name} account has this number.`;
+    else throw gate(`The account lookup is unavailable (${r.message}). Try again in a moment.`);
+  }
+  return { ab, ext, bankCode: bank?.code ?? null, bankName: bank?.name ?? "", abName, extName, via: "PAYSTACK" as const };
+}
+
 export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
+  const accountErrors: Record<string, string> = {};
+  let acc: Awaited<ReturnType<typeof checkAccounts>> | null = null;
+  const pre = await loadApp(db, id);
+  if (pre.kind === "CREDIT") acc = await checkAccounts(p, accountErrors);
   return denyOnError(ctx, id, "CUSTOMER", () =>
     withTx(async (tx) => {
       let app = await lockApp(tx, id);
@@ -274,7 +319,7 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
       expectStatus(app, EDITABLE, "Changing customer details");
       checkLock(app, p.lockVersion);
       if (app.kind === "CREDIT" && !(app.seedfi_status === "COMPLETED" && (app.seedfi_outcome === "PASS" || app.seedfi_outcome === "FAIR"))) throw gate("Run the credit assessment first.");
-      const e: Record<string, string> = {};
+      const e: Record<string, string> = { ...accountErrors };
       const name = (p.name ?? "").trim().replace(/\s+/g, " ");
       if (name.length < 3 || name.length > 120) e.name = "Enter the customer's full name.";
       const email = (p.email ?? "").trim().toLowerCase();
@@ -282,22 +327,19 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
       const phone = normalisePhone(p.phone ?? "");
       if (!phone) e.phone = "Enter a Nigerian mobile number, e.g. 0803 123 4567.";
       const set: Record<string, unknown> = { customer_name: name, customer_email: email, customer_phone: phone };
-      if (app.kind === "CREDIT") {
-        const ab = (p.abAccount ?? "").replace(/\s/g, "");
-        const ext = (p.externalAccount ?? "").replace(/\s/g, "");
-        const bank = (p.externalBank ?? "").trim();
-        if (!isNuban(ab)) e.abAccount = "Enter the 10-digit Alternative Bank account number.";
-        if (!isNuban(ext)) e.externalAccount = "Enter the 10-digit account number.";
-        if (bank.length < 2) e.externalBank = "Enter the bank's name.";
-        if (/alternative\s*bank/i.test(bank)) e.externalBank = "This must be the customer's account at another bank.";
+      if (app.kind === "CREDIT" && acc) {
         if (!isTenure(p.tenure)) e.tenure = "Choose 3, 6 or 12 months.";
         const day = Number(p.repaymentDay);
         if (!Number.isInteger(day) || day < 1 || day > 31) e.repaymentDay = "Choose a repayment day from 1 to 31.";
-        if (!p.accountsConfirmed) e.accountsConfirmed = "Confirm you have checked the customer's Alternative Bank account.";
+        if (!p.accountsConfirmed) e.accountsConfirmed = acc.via === "PAYSTACK" ? "Confirm both account names belong to the customer." : "Confirm you have checked the customer's Alternative Bank account.";
         Object.assign(set, {
-          ab_account_number: ab,
-          external_account_number: ext,
-          external_bank_name: bank,
+          ab_account_number: acc.ab,
+          external_account_number: acc.ext,
+          external_bank_name: acc.bankName,
+          external_bank_code: acc.bankCode,
+          ab_account_name: acc.abName,
+          external_account_name: acc.extName,
+          accounts_verified_via: acc.via,
           tenure_months: Number(p.tenure),
           repayment_day: day,
           details_confirmed_by: ctx.actor!.staffId,
@@ -309,7 +351,10 @@ export async function saveCustomer(ctx: Ctx, id: string, p: CustomerInput) {
         action: "CUSTOMER_SAVED",
         role: app.originator_role,
         set,
-        details: app.kind === "CREDIT" ? { tenure: Number(p.tenure), repaymentDay: Number(p.repaymentDay), accountConfirmation: "OFFICER_CONFIRMED", abAccountLast4: String(p.abAccount).slice(-4), externalAccountLast4: String(p.externalAccount).slice(-4) } : {},
+        details:
+          app.kind === "CREDIT" && acc
+            ? { tenure: Number(p.tenure), repaymentDay: Number(p.repaymentDay), accountConfirmation: acc.via === "PAYSTACK" ? "PAYSTACK_NAME_ENQUIRY_AND_OFFICER" : "OFFICER_CONFIRMED", abAccountLast4: acc.ab.slice(-4), externalAccountLast4: acc.ext.slice(-4), externalBank: acc.bankName }
+            : {},
       });
       return { lockVersion: app.lock_version };
     }),

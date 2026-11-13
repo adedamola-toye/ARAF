@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 const CUSTOMER = { name: "Synthetic Customer", email: "customer@example.com", phone: "0803 123 4567" };
-const CREDIT_CUSTOMER = { ...CUSTOMER, abAccount: "0123456789", externalAccount: "9876543210", externalBank: "Synthetic Bank", tenure: "6", repaymentDay: "25", accountsConfirmed: true };
+const CREDIT_CUSTOMER = { ...CUSTOMER, abAccount: "0123456789", externalAccount: "9876543210", externalBankCode: "058", tenure: "6", repaymentDay: "25", accountsConfirmed: true };
 
 async function outrightPaid(email = ALT.doOfficer, where = "Ikeja Branch") {
   const ctx = await ctxFor(email);
@@ -626,5 +626,40 @@ describe("contract wording", () => {
     expect(body).toContain("Email altbox@altbank.ng");
     expect(body).toContain("₦116,000");
     expect(body).toContain("Synthetic Customer");
+  });
+});
+
+describe("account name enquiry (Paystack)", () => {
+  async function toCustomerStep() {
+    const ctx = await ctxFor(ALT.doOfficer);
+    const { id } = await startSale(ctx, { kind: "CREDIT", modelId: models[0] });
+    await runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn: "22222222222" });
+    await saveLocations(ctx, id, { modelId: models[0], originId: await loc("Ikeja Branch"), supplyId: "" });
+    return { ctx, id };
+  }
+
+  it("looks up both accounts and stores the names as verified by Paystack", async () => {
+    const { ctx, id } = await toCustomerStep();
+    await saveCustomer(ctx, id, CREDIT_CUSTOMER);
+    const r = await appRow(id);
+    expect([r.ab_account_name, r.external_account_name, r.external_bank_name, r.external_bank_code, r.accounts_verified_via]).toEqual(["SYNTHETIC CUSTOMER", "SYNTHETIC CUSTOMER 3210", "Synthetic Bank", "058", "PAYSTACK"]);
+  });
+
+  it("refuses accounts that do not exist and banks not on Paystack's list", async () => {
+    const { ctx, id } = await toCustomerStep();
+    gw.missingAccounts.add("058:9876543210");
+    gw.missingAccounts.add("000304:0123456789");
+    await expect(saveCustomer(ctx, id, CREDIT_CUSTOMER)).rejects.toMatchObject({ fields: { externalAccount: expect.stringMatching(/No Synthetic Bank account/), abAccount: expect.stringMatching(/No Alternative Bank account/) } });
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: "999" })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } });
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: "000304" })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } }); // must be another bank
+  });
+
+  it("without Paystack the officer confirms the accounts manually", async () => {
+    const { ctx, id } = await toCustomerStep();
+    setPaymentGatewayForTests(null);
+    await expect(saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: undefined })).rejects.toMatchObject({ fields: { externalBank: expect.any(String) } });
+    await saveCustomer(ctx, id, { ...CREDIT_CUSTOMER, externalBankCode: undefined, externalBank: "Example Bank" });
+    const r = await appRow(id);
+    expect([r.accounts_verified_via, r.ab_account_name, r.external_bank_name]).toEqual(["OFFICER", null, "Example Bank"]);
   });
 });

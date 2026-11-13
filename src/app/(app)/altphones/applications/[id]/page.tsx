@@ -14,7 +14,8 @@ import { INTERNAL_MANDATE_WORDING, submissionBlockers } from "@/server/altphones
 import { issuableDevices, supplyOptions } from "@/server/altphones/stock";
 import { ALT_STATUS_LABELS, formatNaira, REVIEW_STATUSES, SCORE_OUTCOME_LABELS, type AltStatus } from "@/lib/altphones";
 import { AltStatusBadge, Check, KindBadge, PhoneImage, ScheduleTable, TermsTable } from "../../ui";
-import { CopyLink, TenureCalculator } from "../../AltClient";
+import { AccountFields, CopyLink, TenureCalculator } from "../../AltClient";
+import { ALTERNATIVE_BANK_CODE, otherBanks } from "@/server/altphones/banks";
 import {
   acceptContractAction,
   cancelAction,
@@ -337,19 +338,14 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                 {app.kind === "CREDIT" && (
                   <>
                     <div className="grid-2">
-                      <div className="field">
-                        <label htmlFor="abAccount">Alternative Bank account number</label>
-                        <input id="abAccount" name="abAccount" inputMode="numeric" maxLength={10} pattern="[0-9]{10}" defaultValue={app.ab_account_number ?? ""} required className="mono" />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="externalBank">Other bank used regularly</label>
-                        <input id="externalBank" name="externalBank" defaultValue={app.external_bank_name ?? ""} required placeholder="Bank name" />
-                      </div>
-                      <div className="field">
-                        <label htmlFor="externalAccount">Account number at that bank</label>
-                        <input id="externalAccount" name="externalAccount" inputMode="numeric" maxLength={10} pattern="[0-9]{10}" defaultValue={app.external_account_number ?? ""} required className="mono" />
-                        <span className="hint">The Paystack Direct Debit mandate is set up on this account.</span>
-                      </div>
+                      <AccountFields
+                        banks={gw ? await otherBanks() : null}
+                        abAccount={app.ab_account_number ?? ""}
+                        externalAccount={app.external_account_number ?? ""}
+                        externalBankCode={app.external_bank_code ?? ""}
+                        externalBankName={app.external_bank_name ?? ""}
+                        abBankCode={ALTERNATIVE_BANK_CODE}
+                      />
                       <div className="field">
                         <label htmlFor="repaymentDay">Repayment day</label>
                         <select id="repaymentDay" name="repaymentDay" defaultValue={app.repayment_day ?? ""} required>
@@ -370,7 +366,13 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                     <label className="check">
                       <input type="checkbox" name="accountsConfirmed" required />
                       <span>
-                        I have confirmed that the Alternative Bank account belongs to this customer. <span className="muted small">(Manual officer confirmation — no account verification API is connected.)</span>
+                        {gw ? (
+                          <>I have confirmed with the customer that both account names shown belong to them.</>
+                        ) : (
+                          <>
+                            I have confirmed that the Alternative Bank account belongs to this customer. <span className="muted small">(Manual officer confirmation — Paystack is not configured, so the names cannot be looked up.)</span>
+                          </>
+                        )}
                       </span>
                     </label>
                   </>
@@ -800,10 +802,12 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                       <dt>Accounts</dt>
                       <dd className="small">
                         Alternative Bank <span className="mono">{app.ab_account_number}</span>
+                        {app.ab_account_name && <div className="muted">{app.ab_account_name}</div>}
                         <div>
                           {app.external_bank_name} <span className="mono">{app.external_account_number}</span>
                         </div>
-                        <div className="muted">Officer confirmed</div>
+                        {app.external_account_name && <div className="muted">{app.external_account_name}</div>}
+                        <div className="muted">{app.accounts_verified_via === "PAYSTACK" ? "Names verified by Paystack; officer confirmed" : "Officer confirmed"}</div>
                       </dd>
                     </div>
                   )}

@@ -125,6 +125,19 @@ export class TestGateway implements PaymentGateway {
   verifySignature(rawBody: string, signature: string | null) {
     return signature === createHmac("sha512", TEST_PAYSTACK_SECRET).update(rawBody).digest("hex");
   }
+  /** Accounts that do not exist (name enquiry returns nothing). */
+  missingAccounts = new Set<string>();
+  async listBanks() {
+    return [
+      { code: "000304", name: "Alternative bank" },
+      { code: "058", name: "Synthetic Bank" },
+      { code: "044", name: "Example Bank" },
+    ];
+  }
+  async resolveAccount(accountNumber: string, bankCode: string) {
+    if (this.missingAccounts.has(`${bankCode}:${accountNumber}`)) return null;
+    return { accountName: bankCode === "000304" ? "SYNTHETIC CUSTOMER" : `SYNTHETIC CUSTOMER ${accountNumber.slice(-4)}` };
+  }
   sign(rawBody: string) {
     return createHmac("sha512", TEST_PAYSTACK_SECRET).update(rawBody).digest("hex");
   }

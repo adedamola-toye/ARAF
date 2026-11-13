@@ -139,6 +139,8 @@ export const config = {
       secretKey: str("PAYSTACK_SECRET_KEY", ""),
       baseUrl: str("PAYSTACK_BASE_URL", "https://api.paystack.co").replace(/\/$/, ""),
       directDebitEnabled: bool("PAYSTACK_DIRECT_DEBIT_ENABLED", false),
+      /** Test keys only: adds Paystack's "Test Bank" (001), the only bank test-mode name enquiry resolves. */
+      testMode: bool("PAYSTACK_TEST_MODE", false),
       timeoutMs: int("PAYSTACK_TIMEOUT_MS", 15000),
     };
   },

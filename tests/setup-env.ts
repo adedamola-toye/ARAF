@@ -13,3 +13,5 @@ process.env.SEEDFI_ENABLED = "false";
 process.env.SEEDFI_API_KEY = "";
 process.env.PAYSTACK_ENABLED = "false";
 process.env.PAYSTACK_SECRET_KEY = "";
+process.env.PAYSTACK_TEST_MODE = "false";
+process.env.PAYSTACK_DIRECT_DEBIT_ENABLED = "false";

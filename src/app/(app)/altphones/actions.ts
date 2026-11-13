@@ -72,6 +72,7 @@ export const customerAction = async (_p: ActionState, fd: FormData) =>
         abAccount: s(fd, "abAccount"),
         externalAccount: s(fd, "externalAccount"),
         externalBank: s(fd, "externalBank"),
+        externalBankCode: s(fd, "externalBankCode"),
         tenure: s(fd, "tenure"),
         repaymentDay: s(fd, "repaymentDay"),
         accountsConfirmed: on(fd, "accountsConfirmed"),

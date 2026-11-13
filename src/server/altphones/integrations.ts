@@ -188,6 +188,14 @@ export interface PaymentGateway {
   initDirectDebit(p: { email: string; callbackUrl: string; metadata: Record<string, string> }): Promise<{ redirectUrl: string; reference: string }>;
   verifyDirectDebit(reference: string): Promise<MandateVerification>;
   verifySignature(rawBody: string, signature: string | null): boolean;
+  /** Nigerian banks (NUBAN) with their Paystack codes. */
+  listBanks(): Promise<BankOption[]>;
+  /** Name enquiry: the account holder's name, or null when the account does not exist at that bank. */
+  resolveAccount(accountNumber: string, bankCode: string): Promise<{ accountName: string } | null>;
+}
+export interface BankOption {
+  code: string;
+  name: string;
 }
 
 class PaystackHttp implements PaymentGateway {
@@ -215,7 +223,7 @@ class PaystackHttp implements PaymentGateway {
     const amount = Number(d.amount);
     if (!Number.isInteger(amount) || typeof d.reference !== "string") throw new IntegrationUnavailable("Paystack", "Paystack returned an incomplete verification response.");
     return {
-      status: status === "success" ? "success" : status === "failed" || status === "reversed" ? "failed" : status === "abandoned" ? "abandoned" : "pending",
+      status: status === "success" ? "success" : status === "failed" || status === "reversed" ? "failed" : "pending",
       amountKobo: amount,
       currency: String(d.currency ?? ""),
       reference: d.reference,
@@ -233,7 +241,26 @@ class PaystackHttp implements PaymentGateway {
   async verifyDirectDebit(reference: string): Promise<MandateVerification> {
     const d = obj(obj(await this.req("GET", `/customer/authorization/verify/${encodeURIComponent(reference)}`)).data);
     const code = typeof d.authorization_code === "string" ? d.authorization_code : null;
-    return { active: d.active === true && !!code, authorizationCode: code, last4: typeof d.last4 === "string" ? d.last4.slice(-4) : null, bank: typeof d.bank === "string" ? d.bank.slice(0, 80) : null };
+    const active = (d.active === true || d.status === "active") && !!code;
+    return { active, authorizationCode: code, last4: typeof d.last4 === "string" ? d.last4.slice(-4) : null, bank: typeof d.bank === "string" ? d.bank.slice(0, 80) : null };
+  }
+  async listBanks(): Promise<BankOption[]> {
+    const body = obj(await this.req("GET", "/bank?country=nigeria&perPage=500&use_cursor=false"));
+    const list = Array.isArray(body.data) ? body.data : [];
+    return list
+      .map((b) => obj(b))
+      .filter((b) => typeof b.code === "string" && typeof b.name === "string" && b.active !== false && (b.type === undefined || b.type === "nuban"))
+      .map((b) => ({ code: String(b.code), name: String(b.name) }));
+  }
+  async resolveAccount(accountNumber: string, bankCode: string) {
+    try {
+      const d = obj(obj(await this.req("GET", `/bank/resolve?account_number=${encodeURIComponent(accountNumber)}&bank_code=${encodeURIComponent(bankCode)}`)).data);
+      return typeof d.account_name === "string" && d.account_name.trim() ? { accountName: d.account_name.trim().slice(0, 120) } : null;
+    } catch (e) {
+      // Paystack answers 422 when the account does not exist at that bank; anything else is "unavailable".
+      if (e instanceof IntegrationUnavailable && /HTTP 422/.test(e.message)) return null;
+      throw e;
+    }
   }
   verifySignature(rawBody: string, signature: string | null): boolean {
     if (!signature || !/^[0-9a-f]{128}$/i.test(signature)) return false;

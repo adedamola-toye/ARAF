@@ -47,7 +47,7 @@ async function main() {
     out.push([label, `${r.ref} ${r.status} /altphones/applications/${id}`]);
   };
   const CUST = (n: number) => ({ name: `Synthetic Customer ${n}`, email: `customer${n}@example.com`, phone: "0803 123 4567" });
-  const CREDIT = (n: number) => ({ ...CUST(n), abAccount: "0123456789", externalAccount: "9876543210", externalBank: "Synthetic Bank", tenure: n % 3 === 0 ? "12" : n % 2 ? "6" : "3", repaymentDay: "25", accountsConfirmed: true });
+  const CREDIT = (n: number) => ({ ...CUST(n), abAccount: "0123456789", externalAccount: "9876543210", externalBankCode: "058", tenure: n % 3 === 0 ? "12" : n % 2 ? "6" : "3", repaymentDay: "25", accountsConfirmed: true });
 
   async function outright(email: string, n: number, stop: "draft" | "awaiting" | "paid" | "done") {
     const sa = email === ALT.sa;
