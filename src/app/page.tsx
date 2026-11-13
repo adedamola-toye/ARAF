@@ -38,7 +38,7 @@ export default async function Landing() {
               <p>Initiate requests, manage approvals and track disbursements in one place.</p>
             </div>
             <div className={s.photo}>
-              <img alt="Family portrait" src="/images/landing/family.webp" width={760} height={876} fetchPriority="high" />
+              <img alt="A smiling family of three: a mother and daughter in beige hijabs and a father in beige, against a yellow background" src="/images/landing/family.webp" width={760} height={876} fetchPriority="high" />
             </div>
           </div>
           <section aria-labelledby="workspaces">
