@@ -37,7 +37,7 @@ export default async function AltReviews({ searchParams }: { searchParams: Promi
             ["Approved, awaiting handover", n(t.approved)],
             [`Outright sales (${sp.days ?? 30} days)`, n(t.outright)],
             [`Credit disbursed (${sp.days ?? 30} days)`, n(t.credit)],
-            ["Amount financed", formatNaira(t.financed)],
+            ["Balance after down payments", formatNaira(t.financed)],
             ["Average approval time", t.avg_turnaround_h === null ? "—" : `${t.avg_turnaround_h} h`],
             ["Refunds outstanding", n(t.refunds)],
           ] as [string, string][]

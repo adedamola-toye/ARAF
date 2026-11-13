@@ -8,7 +8,7 @@ The Delight Officer channel is now **Delight Officer / Smile Associate** and sho
 |---|---|
 | Catalogue of up to 3 phones (name, photo, specifications) managed by the Altphones Product Manager | Implemented — loaded from the approved AltPhone deck (migration 010): Altphone L1 Series in Black & Gold, Green and Blue, with the deck's photos and specifications; the PM can edit or replace them |
 | Pricing ₦145,000 outright, fixed ₦29,000 down payment, ₦116,000 financed, 3/6/12 months | Implemented (settings version 1) |
-| Markup engine on the financed amount, exact kobo arithmetic, rounding in the final instalment | Implemented — approved rates set (3 months 8.97%, 6 months 15.1%, 12 months 23.45%) |
+| Markup engine on the full phone price (down payment then deducted), exact kobo arithmetic, rounding in the final instalment | Implemented — approved rates set (3 months 8.97%, 6 months 15.1%, 12 months 23.45%) |
 | Terms fixed per application when the down payment is requested (later pricing changes do not apply) | Implemented |
 | Outright sale: phone → location → customer → verified ₦145,000 → IMEI → handover → receipt to customer, cc altbox@altbank.ng | Implemented |
 | Credit sale: BVN first (with name, date of birth, gender and phone) → SeedFi Seed Score → customer and accounts → Paystack down payment → automatic reservation → Direct Debit + internal mandate → contract by email OTP → approvals → disbursement | Implemented |
@@ -70,13 +70,13 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 
 ## 6. Configuration required before production
 
-1. **Markup rates** — set by migration 015 as the total markup for each tenure on the ₦116,000 financed amount (the Product Manager can change them in Altphones settings → Pricing; each change is a new version and agreed customer terms never change):
+1. **Markup rates** — set by migration 015 as the total markup for each tenure, charged on the full ₦145,000 phone price; the ₦29,000 down payment then comes off the price with markup and the balance is paid in monthly instalments (the Product Manager can change them in Altphones settings → Pricing; each change is a new version and agreed customer terms never change):
 
-   | Tenure | Rate | Markup | Total repayment | Monthly | Final instalment |
-   |---|---|---|---|---|---|
-   | 3 months | 8.97% | ₦10,405.20 | ₦126,405.20 | ₦42,135.07 | ₦42,135.06 |
-   | 6 months | 15.1% | ₦17,516.00 | ₦133,516.00 | ₦22,252.67 | ₦22,252.65 |
-   | 12 months | 23.45% | ₦27,202.00 | ₦143,202.00 | ₦11,933.50 | ₦11,933.50 |
+   | Tenure | Rate | Markup | Price with markup | Balance in instalments | Monthly | Final instalment |
+   |---|---|---|---|---|---|---|
+   | 3 months | 8.97% | ₦13,006.50 | ₦158,006.50 | ₦129,006.50 | ₦43,002.17 | ₦43,002.16 |
+   | 6 months | 15.1% | ₦21,895.00 | ₦166,895.00 | ₦137,895.00 | ₦22,982.50 | ₦22,982.50 |
+   | 12 months | 23.45% | ₦34,002.50 | ₦179,002.50 | ₦150,002.50 | ₦12,500.21 | ₦12,500.19 |
 
    The kobo rounding goes into the final instalment; `tests/altphones.test.ts` checks these figures.
 2. **Repayment-date rules** — weekend/holiday rule and short-month rule (Pricing tab), and the public holiday list. The first instalment falls on the chosen repayment day in the calendar month after disbursement; confirm this matches policy.

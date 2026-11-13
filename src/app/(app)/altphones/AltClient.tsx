@@ -49,19 +49,19 @@ export function TenureCalculator({
           <dd>{formatNaira(priceKobo)}</dd>
         </div>
         <div>
-          <dt>Down payment (fixed)</dt>
-          <dd>{formatNaira(downKobo)}</dd>
-        </div>
-        <div>
-          <dt>Amount financed</dt>
-          <dd>{formatNaira(priceKobo - downKobo)}</dd>
-        </div>
-        <div>
-          <dt>Markup{t ? ` (${formatRateE4(t.effectiveRateE4)})` : ""}</dt>
+          <dt>Markup{t ? ` (${formatRateE4(t.effectiveRateE4)} of the price)` : ""}</dt>
           <dd>{t ? formatNaira(t.markupKobo) : "—"}</dd>
         </div>
+        <div>
+          <dt>Price with markup</dt>
+          <dd>{t ? formatNaira(priceKobo + t.markupKobo) : "—"}</dd>
+        </div>
+        <div>
+          <dt>Down payment (fixed)</dt>
+          <dd>−{formatNaira(downKobo)}</dd>
+        </div>
         <div className="alt-breakdown-total">
-          <dt>Total repayment</dt>
+          <dt>Balance in instalments</dt>
           <dd>{t ? formatNaira(t.totalRepaymentKobo) : "—"}</dd>
         </div>
         <div className="alt-breakdown-hero">
