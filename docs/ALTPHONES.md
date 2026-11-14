@@ -33,13 +33,13 @@ Every change is an audited event (`altphones_events`, `audit_events.altphones_ap
 | Role | New? | Can do |
 |---|---|---|
 | Delight Officer | existing | Sell from their Branch (supply = that Branch); disburse their own approved applications |
-| Smile Associate | **new** `SMILE_ASSOCIATE` | Sell from a BOX; choose the supplying Shop or Branch (nearest first); disburse their own |
-| Business Performance Manager | **new** `BUSINESS_PERFORMANCE_MANAGER` | First review of SA credit applications |
+| Smile Associate | **new** `SMILE_ASSOCIATE` | Sell from the Altshop or Altbox they operate from today (State → Type → Location); choose the supplying Shop or Branch (nearest first); disburse their own |
+| Business Performance Manager | **new** `BUSINESS_PERFORMANCE_MANAGER` | First review of SA credit applications — only those routed to them by the state of the selling location |
 | Altphones Product Manager | **new** `ALTPHONES_PRODUCT_MANAGER` | Product review; catalogue; pricing, repayment rules and contract wording; stock requests |
 | Unit Head | existing `UNIT_HEAD` | Final approval — only the one Unit Head configured for the Altphones route |
 | Super Admin | existing | Credit score bands, route Unit Head, team mailbox; approves stock; imports; records refunds |
 
-Separation of duties: the originator never reviews; one person never acts at two stages; a Super Admin cannot approve their own stock request.
+Approval routes: **SA** — the BPM mapped to the selling location's state → Product Manager → Unit Head; **DO** — Product Manager → Unit Head. Separation of duties: the originator never reviews; one person never acts at two stages; a Super Admin cannot approve their own stock request.
 
 ## 4. Stock rules
 
@@ -101,7 +101,22 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
   - `opening-stock.csv` — 44 rows with stock, 152 units, all under the colour-not-recorded pool. Zero-stock locations need no row.
 - **Loading it in production (Super Admin, only once authorised):** Altphones settings → Setup uploads → *Locations* → upload `opening-locations.csv`, check, import; then *Opening stock* → upload `opening-stock.csv`, check, import. Inventory should then show 69 new locations and 152 units. The same file cannot be imported twice. From then on every sale and movement is posted to the ledger and stock counts continue from there.
 
-## 8. Historical migration (Altphones operations, phase 2)
+## 8. Location master and registered addresses
+
+Altphones → Locations (Product Manager and Super Admin manage; the Altphones Unit Head approves addresses).
+
+**Rule:** staff select their operating location; ARAF supplies the address and the approval route. Nobody types an address during origination, in the admin location form, or in a location upload (a locations file with an Address column is refused).
+
+- **Location master.** Every Branch, Altshop and Altbox with its registered address and status: *Registered*, *No address* or *Conflicting addresses*. Only active locations with a registered address can be selected in a sale; the server enforces this whatever the browser sends, and the database refuses a registered status without an address.
+- **Origination.** Dependent dropdowns: State → Location type → Location (Delight Officers: State → Branch). The registered address is shown read-only and stored on the application. Smile Associates choose the Altshop or Altbox they operate from today, even after moving; an Altshop can supply itself.
+- **Profiling workbook import.** Upload the profiling workbook (sheets: Delight Officers = Branches, Altbox SAs, Altshop SAs, BPMs). Only each location's name, state and address are read, and the BPM sheet's email and mapped states; **no DO, SA or BPM profile is created**. Rows naming the same place (including different state labels such as "FCT" and "FCT SALES AGENT") are merged. State labels are normalised (JOS → Plateau, PORT HARCOURT → Rivers, CALABAR → Cross River, MINNA → Niger, ZARIA → Kaduna, UYO → Akwa Ibom, NASSARAWA → Nasarawa, ABUJA/FCT → FCT (Abuja)).
+  - The upload is previewed and reconciled first: matched to an existing location (same state and type; similar names are matched only when unique and flagged "check it is the same place"), new, address registered, no address, conflicting addresses, or differs from an already registered address. A similar name under another type is never merged automatically: it is created as new and flagged. The PM can link any entry to an existing location by hand before applying.
+  - Applying registers single addresses, creates new locations (inactive when the address is missing or conflicting), keeps every original label as a register label, and records the BPM by state. The original values (every distinct address as written, every label, row counts) are kept per import.
+- **Address registration.** A missing address, the choice between conflicting addresses recorded in the workbook, a correction, or a **new location** goes through an address request. A Unit Head who did not request it approves or rejects (with a reason). Approval registers the address; a new location stays inactive until then.
+- **Production order (once authorised):** load `opening-locations.csv` and `opening-stock.csv` (section 7) first, then import the profiling workbook so its addresses are registered on the stock-holding locations; review the entries flagged *check* and link any opening location the workbook names differently; then resolve flagged addresses through address requests and map a BPM for every state with Altshops or Altboxes.
+- **BPM by state.** SA sales go to the BPM mapped to the selling location's state (matched to an existing staff member with the BPM role by email). Only that BPM sees the application in their queue and can decide it. If a state has no usable BPM, the location cannot be used for SA sales and the Locations screen lists the affected states; the PM maps one under *BPM by state*. Applications submitted before this change keep the earlier rule (any BPM).
+
+## 9. Historical migration (Altphones operations, phase 2)
 
 Altphones → Historical migration. The register the team kept before ARAF (one workbook with INTERNAL, EXTERNAL, COMPLETED REPAYMENT and CANCELED REQUEST sheets) is brought in as a staged batch, checked, reconciled and approved before anything is published.
 
@@ -131,13 +146,13 @@ Outstanding = (tenor − months paid) × monthly repayment. Month marks after th
 
 **Production run (once authorised):** the Product Manager uploads the register with the as-at date (31 October 2026 for the current workbook), links location labels and "Referred by" names, decides the blocked records, and submits; the Unit Head reviews the reconciliation and approves.
 
-## 9. Imports
+## 10. Imports
 
 Altphones settings → Setup uploads (Super Admin). CSV or Excel, with downloadable templates. A file is checked first (nothing applied), then imported only if it has no errors; it is re-validated at commit, and the same file cannot be imported twice. Every applied row is audited.
 
 Setup, in order:
 
-1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address, Source name (optional, the name as originally listed when it differs), Source type (optional, the type as originally listed), Aliases (optional register labels separated by `;`). Existing locations are skipped; duplicate names and aliases already in use are refused.
+1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Source name (optional, the name as originally listed when it differs), Source type (optional, the type as originally listed), Aliases (optional register labels separated by `;`). Existing locations are skipped; duplicate names and aliases already in use are refused.
 2. **Delight Officers and Smile Associates**: Email, Full name, Route (Delight Officer/DO or Smile Associate/SA), State, Home location, Active (Yes/No). The route is the role they sign in with. A new email must be an active @altbank.ng address in the bank directory and gets a staff record. Changing the route removes the other route; Active = No removes both. A Delight Officer's home must be a Branch and a Smile Associate's a BOX; it is preselected when they start a sale. Suspended staff are refused.
 3. **Opening stock**: Location, Phone model, Quantity, IMEIs (optional, separated by spaces or commas), Note. Branches and Shops only; one row per location and phone; IMEIs must be valid, unique and not already registered, and no more than the quantity. Posted as Opening stock movements and the IMEIs registered as in stock.
 
@@ -148,13 +163,14 @@ Historical records:
 
 Import stock *positions* separately from historical transactions so nothing is counted twice.
 
-## 10. Code map
+## 11. Code map
 
 - `migrations/009_altphones.sql` — tables, constraints, append-only triggers, BOX stock guard.
 - `migrations/018_altphones_inventory_operations.sql` — location source labels, register aliases, the stock pool, stock counts.
+- `migrations/020_altphones_location_master.sql` — registered addresses, profiling imports and their original values, address requests, BPM by state, routed BPM.
 - `migrations/019_altphones_historical_migration.sql` — migration batches and staged records, officer labels, verified historical accounts and their monthly evidence.
 - `src/lib/altphones.ts` — statuses, calculator, repayment dates, validators (shared with the browser).
-- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`, `register` (reads the historical register workbook), `migration` (staging, checks, classification, reconciliation, approval, publishing).
+- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`, `register` (reads the historical register workbook), `location-master` (profiling import, address registration, BPM routing), `migration` (staging, checks, classification, reconciliation, approval, publishing).
 - `src/app/(app)/altphones/` — home/catalogue, sales, application page, receipt, reviews, inventory, settings.
 - `src/app/api/altphones/` — product images, Paystack webhook, import templates.
-- `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts), `tests/altphones-migration.test.ts` (register reading, classification, checks, maker-checker publishing); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).
+- `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts), `tests/altphones-migration.test.ts` (register reading, classification, checks, maker-checker publishing), `tests/altphones-locations.test.ts` (profiling import, address approval, origination and BPM routing); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).

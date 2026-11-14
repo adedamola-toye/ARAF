@@ -67,7 +67,7 @@ const REQUIRED: Record<ImportKind, string[]> = {
 export const TEMPLATES: Record<ImportKind, string> = {
   OFFICERS: "Email,Full name,Route,State,Home location,Active\r\nfirstname.lastname@altbank.ng,Firstname Lastname,Delight Officer,LAGOS,Ikeja Branch,Yes\r\nother.person@altbank.ng,Other Person,Smile Associate,LAGOS,Yaba Altbox,Yes\r\n",
   OPENING_STOCK: "Location,Phone model,Quantity,IMEIs,Note\r\nIkeja Branch,Altphone L1 Series — Black & Gold,20,,Opening count 2026-11-13\r\nYaba Altshop,Altphone L1 Series — Green,10,356938035643809;490154203237518,Delivery note 001\r\n",
-  LOCATIONS: "State,City,Type,Name,Address,Source name,Source type,Aliases\r\nLAGOS,Ikeja,Branch,Ikeja Branch,1 Example Road,,,IKEJA\r\nLAGOS,Yaba,Shop,Yaba Altshop,,,,\r\nABUJA,Abuja,Shop,Dei Dei Altshop,,DEI DEI,ALTSHOP,\r\n",
+  LOCATIONS: "State,City,Type,Name,Source name,Source type,Aliases\r\nLAGOS,Ikeja,Branch,Ikeja Branch,,,IKEJA\r\nLAGOS,Yaba,Shop,Yaba Altshop,,,\r\nABUJA,Abuja,Shop,Dei Dei Altshop,DEI DEI,ALTSHOP,\r\n",
   TRANSACTIONS:
     "Reference,Type,Customer name,Customer email,Customer phone,Phone model,IMEI,Transaction date,Originating officer,Originating location,Supplying location,Tenure\r\nLEG-0001,Outright,Customer Name,customer@example.com,08031234567,Model name,000000000000000,2026-01-15,officer@altbank.ng,Ikeja Branch,Ikeja Branch,\r\n",
   STOCK: "Reference,Location,Phone model,Movement,Quantity,Date,Note\r\nSTK-LEG-0001,Ikeja Branch,Model name,Opening,20,2026-01-01,Opening balance\r\n",
@@ -100,6 +100,8 @@ async function readRows(kind: ImportKind, filename: string, data: Buffer): Promi
     }
   }
   if (headerIdx < 0) throw invalid(`Could not find the header row. Required columns: ${REQUIRED[kind].join(", ")}. Download the template for the exact layout.`);
+  if (kind === "LOCATIONS" && map.address !== undefined)
+    throw invalid("Addresses are not uploaded with locations. Remove the Address column: addresses come from the profiling workbook (Altphones → Locations) or an address registration approved by the Unit Head.");
   const rows: Row[] = [];
   for (let r = headerIdx + 1; r < table.length; r++) {
     const cells = table[r];
@@ -166,7 +168,7 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       const aliases = [...new Set((r.aliases ?? "").split(/[;|]/).map((a) => a.replace(/\s+/g, " ").trim().toUpperCase()).filter((a) => a.length >= 2 && a !== r.name.toUpperCase()))];
       const taken = aliases.length ? (await q.query<{ label: string }>("SELECT label FROM altphones_location_aliases WHERE label = ANY($1)", [aliases])).rows.map((x) => x.label) : [];
       if (taken.length) { err(r, `${r.name}: alias already used by another location: ${taken.join(", ")}.`); continue; }
-      ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, address: r.address || null, sourceName: (r.sourceName || r.name).trim(), sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
+      ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, sourceName: (r.sourceName || r.name).trim(), sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
     }
   } else if (kind === "OFFICERS") {
     const loc = await locationIndex(q);
@@ -400,8 +402,8 @@ export async function commitImport(ctx: Ctx, id: string) {
         // The original labels are kept exactly as supplied alongside the normalised state and type.
         const lid = (
           await tx.query<{ id: string }>(
-            "INSERT INTO locations (state, city, outlet_type, name, address, active, updated_at, source_name, source_state, source_type, created_by) VALUES ($1,$2,$3,$4,$5,true,$6,$10,$7,$8,$9) RETURNING id",
-            [o.state, o.city, o.type, o.name, o.address, ctx.now, o.sourceState, o.sourceType, ctx.actor!.staffId, o.sourceName],
+            "INSERT INTO locations (state, city, outlet_type, name, active, updated_at, source_name, source_state, source_type, created_by) VALUES ($1,$2,$3,$4,true,$5,$9,$6,$7,$8) RETURNING id",
+            [o.state, o.city, o.type, o.name, ctx.now, o.sourceState, o.sourceType, ctx.actor!.staffId, o.sourceName],
           )
         ).rows[0].id;
         for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { LocationPicker, type PickerOption } from "@/components/LocationPicker";
+import { pickerLocations } from "@/server/altphones/location-master";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { requireUser } from "../../../../_lib/auth";
@@ -95,8 +97,8 @@ export default async function AltApplicationPage({ params, searchParams }: { par
   const [appSettings, current, names, locs, payments, reviews, events, schedule, contract, model] = await Promise.all([
     settingsById(db, app.settings_id),
     currentSettings(db),
-    db.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE id = ANY($1)", [[app.originator_id, app.bpm_reviewer_id, app.pm_reviewer_id, app.unit_head_id, app.internal_mandate_confirmed_by, app.completed_by].filter(Boolean)]).then((r) => new Map(r.rows.map((x) => [x.id, x.full_name]))),
-    db.query<{ id: string; name: string; outlet_type: string; state: string; city: string }>("SELECT id, name, outlet_type, state, city FROM locations WHERE id = ANY($1)", [[app.origin_location_id, app.supply_location_id].filter(Boolean)]).then((r) => new Map(r.rows.map((x) => [x.id, x]))),
+    db.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE id = ANY($1)", [[app.originator_id, app.bpm_reviewer_id, app.routed_bpm_id, app.pm_reviewer_id, app.unit_head_id, app.internal_mandate_confirmed_by, app.completed_by].filter(Boolean)]).then((r) => new Map(r.rows.map((x) => [x.id, x.full_name]))),
+    db.query<{ id: string; name: string; outlet_type: string; state: string; city: string; address: string | null }>("SELECT id, name, outlet_type, state, city, address FROM locations WHERE id = ANY($1)", [[app.origin_location_id, app.supply_location_id].filter(Boolean)]).then((r) => new Map(r.rows.map((x) => [x.id, x]))),
     db.query("SELECT * FROM altphones_payments WHERE application_id = $1 ORDER BY created_at DESC", [app.id]).then((r) => r.rows),
     db.query("SELECT r.*, s.full_name FROM altphones_reviews r JOIN staff s ON s.id = r.actor_id WHERE r.application_id = $1 ORDER BY r.decided_at DESC", [app.id]).then((r) => r.rows),
     db.query("SELECT e.*, s.full_name FROM altphones_events e LEFT JOIN staff s ON s.id = e.actor_id WHERE e.application_id = $1 ORDER BY e.occurred_at DESC, e.id DESC LIMIT 60", [app.id]).then((r) => r.rows),
@@ -134,8 +136,13 @@ export default async function AltApplicationPage({ params, searchParams }: { par
   const locationsData = showStep("locations")
     ? {
         models: (await db.query<{ id: string; name: string }>("SELECT id, name FROM altphones_models WHERE active ORDER BY sort_order, name")).rows,
-        branches: isDo ? await supplyOptions(db, app.model_id, null).then((r) => r.filter((x) => x.outlet_type === "BRANCH")) : [],
-        boxes: isDo ? [] : (await db.query<{ id: string; name: string; city: string; state: string }>("SELECT id, name, city, state FROM locations WHERE active AND outlet_type = 'ALTBOX' ORDER BY state, city, name")).rows,
+        // Operating locations come from the location master: active, with a registered address. No address is typed.
+        origins: await (async (): Promise<PickerOption[]> => {
+          const regs = await pickerLocations(db, isDo ? ["BRANCH"] : ["ALTSHOP", "ALTBOX"]);
+          if (!isDo) return regs;
+          const stock = new Map((await supplyOptions(db, app.model_id, null)).map((x) => [x.id, x.available]));
+          return regs.map((r) => ({ ...r, note: (stock.get(r.id) ?? 0) > 0 ? `${stock.get(r.id)} in stock` : "out of stock", disabled: (stock.get(r.id) ?? 0) < 1 }));
+        })(),
         supplies: isDo ? [] : await supplyOptions(db, app.model_id, origin ? { state: origin.state, city: origin.city } : await db.query<{ state: string; city: string }>("SELECT region AS state, '' AS city FROM staff WHERE id = $1", [me]).then((r) => r.rows[0] ?? null)),
       }
     : null;
@@ -263,32 +270,24 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                   </select>
                 </div>
                 {isDo ? (
-                  <div className="field">
-                    <label htmlFor="originId">Your Alternative Bank Branch</label>
-                    <select id="originId" name="originId" defaultValue={app.origin_location_id ?? homeLocation ?? ""} required>
-                      <option value="">Choose the Branch</option>
-                      {locationsData.branches.map((b) => (
-                        <option key={b.id} value={b.id} disabled={b.available < 1}>
-                          {b.name} — {b.city} · {b.available > 0 ? `${b.available} in stock` : "out of stock"}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="hint">The phone is supplied from this Branch&rsquo;s stock.</span>
-                  </div>
+                  <LocationPicker
+                    name="originId"
+                    label="Your Alternative Bank Branch"
+                    types={["BRANCH"]}
+                    options={locationsData.origins}
+                    defaultId={app.origin_location_id ?? homeLocation}
+                    hint="The phone is supplied from this Branch's stock. The approval route is Product Manager, then Unit Head."
+                  />
                 ) : (
                   <>
-                    <div className="field">
-                      <label htmlFor="originId">Your BOX</label>
-                      <select id="originId" name="originId" defaultValue={app.origin_location_id ?? homeLocation ?? ""} required>
-                        <option value="">Choose the BOX you are selling from</option>
-                        {locationsData.boxes.map((b) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name} — {b.city}, {b.state}
-                          </option>
-                        ))}
-                      </select>
-                      <span className="hint">BOX locations do not hold stock. The sale is credited to you and this BOX.</span>
-                    </div>
+                    <LocationPicker
+                      name="originId"
+                      label="Where you are selling from"
+                      types={["ALTSHOP", "ALTBOX"]}
+                      options={locationsData.origins}
+                      defaultId={app.origin_location_id ?? homeLocation}
+                      hint="Choose the Altshop or Altbox you operate from today, even if you have moved. The sale is reviewed by the Business Performance Manager mapped to this location, then the Product Manager and the Unit Head."
+                    />
                     <div className="field">
                       <label htmlFor="supplyId">Supplying Shop or Branch</label>
                       <select id="supplyId" name="supplyId" defaultValue={app.supply_location_id ?? ""} required>
@@ -741,9 +740,10 @@ export default async function AltApplicationPage({ params, searchParams }: { par
             )}
             <dl className="alt-kv">
               <div>
-                <dt>{isDo ? "Branch" : "BOX"}</dt>
+                <dt>{isDo ? "Branch" : origin?.outlet_type === "ALTSHOP" ? "Altshop" : "Altbox"}</dt>
                 <dd>
                   {origin?.name ?? "—"}
+                  {(app.origin_address ?? origin?.address) && <div className="small muted">{app.origin_address ?? origin?.address}</div>}
                   {isOriginator && app.status === "DRAFT" && app.supply_location_id && (
                     <Link className="alt-change" href={`?edit=locations`}>
                       Change
@@ -755,6 +755,12 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                 <div>
                   <dt>Supplied by</dt>
                   <dd>{supply?.name ?? "—"}</dd>
+                </div>
+              )}
+              {!isDo && app.routed_bpm_id && (
+                <div>
+                  <dt>Business Performance Manager</dt>
+                  <dd>{nm(app.routed_bpm_id)}</dd>
                 </div>
               )}
               <div>

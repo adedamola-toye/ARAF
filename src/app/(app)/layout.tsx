@@ -14,6 +14,7 @@ import { retailScope as retailScopeFor } from "@/server/retail-reports";
 import { viewsFor, staffActionCount } from "@/server/staff/views";
 import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
 import { migrationAccess } from "@/server/altphones/migration";
+import { locationAccess } from "@/server/altphones/location-master";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isInitiatorWs = isInitiatorRole(ws) && !altWs;
   const alt = await altphonesAccess(db, session.staffId);
   const altMigration = (await migrationAccess(db, session.staffId)).view;
+  const altLocations = (await locationAccess(db, session.staffId)).view;
   const altReviewCount = alt.reviewer ? await reviewQueueCount(db, session.staffId) : 0;
   const retailScope = await retailScopeFor(db, session.staffId);
   const pendingExceptions = Number((await db.query(`SELECT count(*) AS n FROM policy_exceptions pe JOIN applications a ON a.id = pe.application_id WHERE pe.status = 'REQUESTED' AND pe.requested_by <> $1 AND a.initiator_id <> $1 AND pe.approver_role IN (SELECT role FROM role_assignments WHERE staff_id = $1 AND active)`, [session.staffId])).rows[0].n);
@@ -90,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
-        {(alt.any || altMigration) && (
+        {(alt.any || altMigration || altLocations) && (
           <div className="nav-section">
             <span className="nav-title">Altphones</span>
             {alt.originator && (altWs || !isInitiatorRole(ws)) && (
@@ -111,6 +113,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {alt.inventory && (
               <NavLink href="/altphones/inventory" icon={<Boxes {...ic} />}>
                 Inventory
+              </NavLink>
+            )}
+            {altLocations && (
+              <NavLink href="/altphones/locations" icon={<MapPin {...ic} />}>
+                Locations
               </NavLink>
             )}
             {altMigration && (

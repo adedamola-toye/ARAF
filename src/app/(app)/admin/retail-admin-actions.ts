@@ -51,7 +51,7 @@ export const saveLocationAction = async (_p: ActionState, fd: FormData) =>
   run(
     fd,
     async (f, ctx) => {
-      await saveLocation(ctx, { id: s(f, "id") || null, state: s(f, "state"), city: s(f, "city"), outletType: s(f, "outletType"), name: s(f, "name"), address: s(f, "address"), ossStaffId: s(f, "ossStaffId") || null, team: s(f, "team"), active: f.get("active") === "on" || s(f, "active") === "true" });
+      await saveLocation(ctx, { id: s(f, "id") || null, state: s(f, "state"), city: s(f, "city"), outletType: s(f, "outletType"), name: s(f, "name"), ossStaffId: s(f, "ossStaffId") || null, team: s(f, "team"), active: f.get("active") === "on" || s(f, "active") === "true" });
     },
     "Location saved.",
   );

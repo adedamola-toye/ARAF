@@ -78,21 +78,22 @@ export async function saveLocation(ctx: Ctx, p: LocationInput) {
     if ((p.name ?? "").trim().length < 2) e.name = "Enter the outlet name.";
     if (p.ossStaffId && !(await holdsRole(tx, p.ossStaffId, "OUTLET_SERVICE_SUPERVISOR"))) e.ossStaffId = "The selected person does not hold the Outlet Service Supervisor role.";
     if (Object.keys(e).length) throw invalid("Check the location details.", e);
-    const vals = [p.state, p.city.trim(), p.outletType, p.name.trim(), (p.address ?? "").trim() || null, p.ossStaffId || null, (p.team ?? "").trim() || null, p.active, actor.staffId, ctx.now];
+    // Addresses are never typed here: they come from the location master (profiling workbook or an approved request).
+    const vals = [p.state, p.city.trim(), p.outletType, p.name.trim(), p.ossStaffId || null, (p.team ?? "").trim() || null, p.active, actor.staffId, ctx.now];
     try {
       if (p.id) {
         const before = (await tx.query("SELECT * FROM locations WHERE id = $1 FOR UPDATE", [p.id])).rows[0];
         if (!before) throw notFound();
         await tx.query(
-          `UPDATE locations SET state=$2, city=$3, outlet_type=$4, name=$5, address=$6, oss_staff_id=$7, team=$8, active=$9, updated_by=$10, updated_at=$11 WHERE id=$1`,
+          `UPDATE locations SET state=$2, city=$3, outlet_type=$4, name=$5, oss_staff_id=$6, team=$7, active=$8, updated_by=$9, updated_at=$10 WHERE id=$1`,
           [p.id, ...vals],
         );
         await audit(tx, ctx, { action: "LOCATION_UPDATED", actorRole: "SUPER_ADMIN", details: { locationId: p.id, before: { state: before.state, city: before.city, outletType: before.outlet_type, name: before.name, oss: before.oss_staff_id, team: before.team, active: before.active }, after: { state: p.state, city: p.city, outletType: p.outletType, name: p.name, oss: p.ossStaffId ?? null, team: p.team ?? null, active: p.active } } });
         return p.id;
       }
       const r = await tx.query<{ id: string }>(
-        `INSERT INTO locations (state, city, outlet_type, name, address, oss_staff_id, team, active, created_by, created_at, updated_by, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$9,$10) RETURNING id`,
+        `INSERT INTO locations (state, city, outlet_type, name, oss_staff_id, team, active, created_by, created_at, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$8,$9) RETURNING id`,
         vals,
       );
       await audit(tx, ctx, { action: "LOCATION_CREATED", actorRole: "SUPER_ADMIN", details: { locationId: r.rows[0].id, state: p.state, city: p.city, outletType: p.outletType, name: p.name, oss: p.ossStaffId ?? null, team: p.team ?? null } });

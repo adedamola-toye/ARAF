@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor } from "@/server/demo/scenario";
-import { ALT, CapturingMail, latestPaymentRef, loc, setupAltphones, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
+import { ALT, CapturingMail, latestPaymentRef, loc, registerDemoAddresses, setupAltphones, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/altphones/integrations";
 import { setMailTransportForTests } from "@/server/notify/transport";
 import { commitImport, previewImport } from "@/server/altphones/imports";
@@ -101,6 +101,7 @@ describe("selling from colour-not-recorded stock", () => {
   async function paidOutright(where: string, modelId: string) {
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "OUTRIGHT", modelId });
+    await registerDemoAddresses(); // opening locations need a registered address before they can be selected
     await saveLocations(ctx, id, { modelId, originId: await loc(where), supplyId: await loc(where) });
     await saveCustomer(ctx, id, { name: "Synthetic Customer", email: "customer@example.com", phone: "0803 123 4567" });
     await requestPayment(ctx, id, {});
@@ -164,6 +165,9 @@ describe("stock counts", () => {
     const p = await pool();
     const ctx = await ctxFor(ALT.doOfficer);
     const { id } = await startSale(ctx, { kind: "OUTRIGHT", modelId: models[0] });
+    // A location without a registered address cannot be selected; once registered it can.
+    await expect(saveLocations(ctx, id, { modelId: models[0], originId: await loc("SOKOTO"), supplyId: await loc("SOKOTO") })).rejects.toMatchObject({ fields: { originId: expect.stringMatching(/no registered address/) } });
+    await registerDemoAddresses();
     await saveLocations(ctx, id, { modelId: models[0], originId: await loc("SOKOTO"), supplyId: await loc("SOKOTO") });
     await saveCustomer(ctx, id, { name: "Synthetic Customer", email: "customer@example.com", phone: "0803 123 4567" });
     await requestPayment(ctx, id, {});

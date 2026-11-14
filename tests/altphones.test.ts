@@ -466,7 +466,9 @@ describe("historical imports", () => {
 
   it("imports locations with validation and duplicate prevention", async () => {
     const admin = await ctxFor(ALT.admin);
-    const csv = "State,City,Type,Name,Address\nLAGOS,Lekki,Shop,Lekki Altshop,\nLAGOS,Lekki,BOX,Lekki Altbox,\nLAGOS,Ikeja,Branch,Ikeja Branch,\nATLANTIS,X,Shop,Nowhere,\nLAGOS,Lekki,Shop,Lekki Altshop,\n";
+    // Addresses are never uploaded here.
+    await expect(previewImport(admin, "LOCATIONS", "with-address.csv", Buffer.from("State,City,Type,Name,Address\nLAGOS,Lekki,Shop,Lekki Altshop,1 Road\n"))).rejects.toMatchObject({ code: "VALIDATION", message: expect.stringMatching(/Addresses are not uploaded/) });
+    const csv = "State,City,Type,Name\nLAGOS,Lekki,Shop,Lekki Altshop\nLAGOS,Lekki,BOX,Lekki Altbox\nLAGOS,Ikeja,Branch,Ikeja Branch\nATLANTIS,X,Shop,Nowhere\nLAGOS,Lekki,Shop,Lekki Altshop\n";
     const p = await previewImport(admin, "LOCATIONS", "locations.csv", Buffer.from(csv));
     expect(p.summary).toMatchObject({ rows: 5, valid: 2, errors: 2, skipped: 1 });
     const fixed = await previewImport(admin, "LOCATIONS", "locations-fixed.csv", Buffer.from(csv.split("\n").slice(0, 4).join("\n") + "\n"));

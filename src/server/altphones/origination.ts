@@ -42,7 +42,6 @@ import {
   type AltSettings,
   alertOperations,
   auditDenied,
-  BPM_ROLE,
   checkLock,
   creditReadiness,
   currentSettings,
@@ -65,6 +64,7 @@ import { renderContract, type ContractPlaceholder } from "@/lib/altphones-contra
 import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
 import { ALTERNATIVE_BANK_CODE, otherBanks, resolveAccount } from "./banks";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
+import { bpmForLocation, originLocation } from "./location-master";
 
 const EDITABLE: AltStatus[] = ["DRAFT"];
 
@@ -120,13 +120,16 @@ export async function saveLocations(ctx: Ctx, id: string, p: { modelId: string; 
       const e: Record<string, string> = {};
       const model = isUuid(p.modelId) ? (await tx.query("SELECT id, name FROM altphones_models WHERE id = $1 AND active", [p.modelId])).rows[0] : null;
       if (!model) e.modelId = "Choose a phone.";
-      const origin = await locationInfo(tx, p.originId);
-      let supply = app.channel === "DO" ? origin : await locationInfo(tx, p.supplyId);
-      if (app.channel === "DO") {
-        if (!origin || !origin.active || origin.outlet_type !== "BRANCH") e.originId = "Choose your Alternative Bank Branch.";
-      } else {
-        if (!origin || !origin.active || origin.outlet_type !== "ALTBOX") e.originId = "Choose the BOX you are selling from.";
-        if (!supply || !supply.active || !holdsStock(supply.outlet_type)) e.supplyId = "Choose the Shop or Branch that will supply the phone.";
+      // The operating location must be active and have a registered address: ARAF supplies the address, staff never type it.
+      const o = await originLocation(tx, p.originId, app.channel === "DO" ? ["BRANCH"] : ["ALTSHOP", "ALTBOX"]);
+      const origin = o.loc;
+      if (!origin) e.originId = o.problem ?? "Choose your operating location.";
+      let supply = app.channel === "DO" ? origin : await locationInfo(tx, p.supplyId || (origin?.outlet_type === "ALTSHOP" ? origin.id : ""));
+      if (app.channel === "SA" && (!supply || !supply.active || !holdsStock(supply.outlet_type))) e.supplyId = "Choose the Shop or Branch that will supply the phone.";
+      if (app.channel === "SA" && origin) {
+        // SA sales are reviewed by the BPM mapped to the operating location; refuse early if there is none.
+        const bpm = await bpmForLocation(tx, origin.id);
+        if (bpm.problem) e.originId = bpm.problem;
       }
       if (Object.keys(e).length) throw invalid("Check the phone and location.", e);
       supply = supply!;
@@ -135,8 +138,8 @@ export async function saveLocations(ctx: Ctx, id: string, p: { modelId: string; 
       app = await transition(tx, ctx, app, {
         action: "LOCATIONS_SET",
         role: app.originator_role,
-        set: { model_id: model.id, model_name: model.name, origin_location_id: origin!.id, supply_location_id: supply.id },
-        details: { model: model.name, origin: origin!.name, supply: supply.name, availableAtSelection: avail },
+        set: { model_id: model.id, model_name: model.name, origin_location_id: origin!.id, supply_location_id: supply.id, origin_address: origin!.address },
+        details: { model: model.name, origin: origin!.name, originType: origin!.outlet_type, supply: supply.name, availableAtSelection: avail },
       });
       return { lockVersion: app.lock_version };
     }),
@@ -902,15 +905,26 @@ export async function submitForApproval(ctx: Ctx, id: string, p: { comments?: st
         const uh = await routeUnitHead(tx, app);
         if (uh.problem && !uh.id) throw gate(`Submission is blocked: ${uh.problem}`);
       }
+      // SA: the BPM mapped to the operating location, then PM, then Unit Head. DO: PM, then Unit Head.
+      let routedBpm: { id: string; name: string | null } | null = null;
+      if (app.channel === "SA") {
+        const o = await originLocation(tx, app.origin_location_id, ["ALTSHOP", "ALTBOX"]);
+        if (o.problem) throw gate(`Submission is blocked: ${o.problem}`);
+        const bpm = await bpmForLocation(tx, app.origin_location_id);
+        if (!bpm.id) throw gate(`Submission is blocked: ${bpm.problem}`);
+        if (bpm.id === app.originator_id) throw gate("Submission is blocked: the Business Performance Manager mapped to this location is the selling officer.");
+        routedBpm = { id: bpm.id, name: bpm.name };
+      }
       const to: AltStatus = app.channel === "SA" ? "UNDER_BPM_REVIEW" : "UNDER_PM_REVIEW";
       app = await transition(tx, ctx, app, {
         action: app.submission_count > 0 ? "RESUBMITTED" : "SUBMITTED",
         to,
         role: app.originator_role,
         comments: p.comments?.trim() || null,
-        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null },
+        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null, routed_bpm_id: routedBpm?.id ?? null },
+        details: routedBpm ? { routedTo: routedBpm.name } : undefined,
       });
-      if (to === "UNDER_BPM_REVIEW") await notifyRole(tx, ctx, app, "BPM_QUEUE", [BPM_ROLE], "Altphones application awaiting your review", [`${app.ref} (Smile Associate sale) is waiting for Business Performance Manager review.`], [app.originator_id]);
+      if (to === "UNDER_BPM_REVIEW") await notifyStaffIds(tx, ctx, app, "BPM_QUEUE", [routedBpm!.id], "Altphones application awaiting your review", [`${app.ref} (Smile Associate sale) is waiting for your review as the Business Performance Manager for this location.`]);
       else await notifyRole(tx, ctx, app, "PM_QUEUE", [PM_ROLE], "Altphones application awaiting product review", [`${app.ref} is waiting for Product Manager review.`], [app.originator_id]);
       return { lockVersion: app.lock_version };
     }),

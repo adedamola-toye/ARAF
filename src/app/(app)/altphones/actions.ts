@@ -25,6 +25,7 @@ import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModel
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
+import { applyProfiling, decideAddressRequest, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, setBpmState } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -236,3 +237,41 @@ export const decideMatchingAction = async (_p: ActionState, fd: FormData) =>
       return `${x.decided.toLocaleString("en-NG")} records decided. ${x.blocked ? `${x.blocked.toLocaleString("en-NG")} still need a decision.` : "No records are blocked."}`;
     },
   );
+
+// ---------- location master ----------
+
+export async function previewProfilingAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const file = fd.get("file");
+    if (!(file instanceof File) || file.size === 0) throw invalid("Choose the profiling workbook.", { file: "Choose a file." });
+    await previewProfiling(ctx, { filename: file.name, data: Buffer.from(await file.arrayBuffer()) });
+  } catch (e) {
+    return toActionError(e);
+  }
+  redirect("/altphones/locations?tab=import");
+}
+export const linkSourceAction = async (_p: ActionState, fd: FormData) => run((ctx) => linkSource(ctx, s(fd, "sourceId"), s(fd, "locationId") || null), "Link saved and the import re-checked.");
+export const applyProfilingAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => applyProfiling(ctx, s(fd, "importId")),
+    (r) => {
+      const x = r as { ref: string; created: number; registered: number; flagged: number; bpmStates: number };
+      return `${x.ref} applied: ${x.created} locations created, ${x.registered} addresses registered, ${x.flagged} flagged for an address, ${x.bpmStates} states mapped to a BPM.`;
+    },
+  );
+export const discardProfilingAction = async (_p: ActionState, fd: FormData) => run((ctx) => discardProfiling(ctx, s(fd, "importId")), "Import discarded. Nothing was changed.");
+export const requestAddressAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => requestAddress(ctx, { locationId: s(fd, "locationId"), address: s(fd, "address"), choice: s(fd, "choice"), note: s(fd, "note") }), (r) => `Address request ${(r as { ref: string }).ref} sent to the Unit Head.`);
+export const proposeLocationAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => proposeLocation(ctx, { state: s(fd, "state"), type: s(fd, "type"), name: s(fd, "name"), address: s(fd, "address"), note: s(fd, "note") }), (r) => `Location proposed (${(r as { ref: string }).ref}). It stays inactive until the Unit Head approves its address.`);
+export const decideAddressAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => decideAddressRequest(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }),
+    (r) => {
+      const x = r as { ref: string; approved: boolean; activated?: boolean };
+      return x.approved ? `${x.ref} approved: the address is registered${x.activated ? " and the location is active" : ""}.` : `${x.ref} rejected.`;
+    },
+  );
+export const setBpmStateAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => setBpmState(ctx, { state: s(fd, "state"), email: s(fd, "email") }), (r) => ((r as { email: string | null }).email ? "BPM mapping saved." : "BPM mapping removed."));

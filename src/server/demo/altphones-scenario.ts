@@ -53,6 +53,7 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
     reason: "SYNTHETIC test settings",
   });
   await savePolicy(admin, { passMin: "620", fairMin: "530", unitHeadId: await sidOf(ALT.unitHead), teamEmail: "altbox@altbank.ng", reason: "SYNTHETIC test policy" });
+  await registerDemoAddresses(now);
   const qty = opts.stock ?? 5;
   if (qty > 0) {
     for (const where of ["Ikeja Branch", "Yaba Altshop"]) {
@@ -61,6 +62,19 @@ export async function setupAltphones(opts: { stock?: number; rates?: Record<stri
     }
   }
   return { models };
+}
+
+/** Synthetic registered addresses for demo/test locations that have none, and the demo BPM mapped to their states. */
+export async function registerDemoAddresses(now = new Date(), where = "true") {
+  await db.query(
+    `UPDATE locations SET address = name || ', ' || city || ' (synthetic address)', address_status = 'REGISTERED', address_source = 'LEGACY', address_registered_at = $1
+      WHERE address_status <> 'REGISTERED' AND ${where}`,
+    [now],
+  );
+  await db.query(
+    "INSERT INTO altphones_bpm_states (state, bpm_email, source, updated_at) SELECT DISTINCT state, $1::text, 'MANUAL', $2::timestamptz FROM locations WHERE outlet_type IN ('ALTSHOP','ALTBOX') ON CONFLICT (state) DO NOTHING",
+    [ALT.bpm, now],
+  );
 }
 
 /** Synthetic Seed Score inputs (BVN is supplied per call). */
@@ -168,4 +182,29 @@ export async function stockOf(locationName: string, modelId: string) {
 export async function ensureTestBureau() {
   const { creditBureau, setCreditBureauForTests } = await import("../altphones/integrations");
   if (!creditBureau()) setCreditBureauForTests(new TestBureau(700));
+}
+
+/**
+ * A credit sale taken through every origination step and submitted (tests only). SA sales sell from Yaba Altbox,
+ * supplied by Yaba Altshop; DO sales from Ikeja Branch.
+ */
+export async function submitCreditSale(gw: TestGateway, mail: CapturingMail, channel: "DO" | "SA", bvn = "22222222222") {
+  const o = await import("../altphones/origination");
+  const ctx = await ctxFor(channel === "SA" ? ALT.sa : ALT.doOfficer);
+  const modelId = (await db.query<{ id: string }>("SELECT id FROM altphones_models WHERE active ORDER BY sort_order, name LIMIT 1")).rows[0].id;
+  const { id } = await o.startSale(ctx, { kind: "CREDIT", modelId });
+  await o.runCreditCheck(ctx, id, { ...CREDIT_PERSON, bvn });
+  await o.saveLocations(ctx, id, { modelId, originId: await loc(channel === "SA" ? "Yaba Altbox" : "Ikeja Branch"), supplyId: await loc(channel === "SA" ? "Yaba Altshop" : "Ikeja Branch") });
+  await o.saveCustomer(ctx, id, { name: "Synthetic Customer", email: "customer@example.com", phone: "0803 123 4567", abAccount: "0123456789", externalAccount: "9876543210", externalBankCode: "058", tenure: "6", repaymentDay: "25", accountsConfirmed: true });
+  await o.requestPayment(ctx, id, {});
+  gw.pay(await latestPaymentRef(id));
+  await o.checkPayment(ctx, id);
+  await o.startDirectDebit(ctx, id);
+  gw.authorize((await appRow(id)).dd_reference);
+  await o.checkDirectDebit(ctx, id);
+  await o.confirmInternalMandate(ctx, id, { confirmed: true });
+  await o.sendContractOtp(ctx, id, {});
+  await o.acceptContract(ctx, id, { code: mail.lastCode()! });
+  await o.submitForApproval(ctx, id, {});
+  return id;
 }

@@ -205,6 +205,13 @@ const STATE_ALIASES: Record<string, string> = {
   "LAGOS / OGUN": "OGUN",
   "AKWA-IBOM": "AKWA IBOM",
   "CROSS-RIVER": "CROSS RIVER",
+  // City names used as states in the Altphones profiling workbook.
+  CALABAR: "CROSS RIVER",
+  MINNA: "NIGER",
+  ZARIA: "KADUNA",
+  UYO: "AKWA IBOM",
+  NASSARAWA: "NASARAWA",
+  "FCT SALES AGENT": "FCT (ABUJA)",
 };
 export function normaliseNigerianState(label: string | null | undefined): string | null {
   const s = String(label ?? "").toUpperCase().replace(/_/g, " ").replace(/\s+/g, " ").replace(/\s+STATE$/, "").trim();
