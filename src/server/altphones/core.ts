@@ -161,7 +161,7 @@ export async function appAccess(q: Db, staffId: string, app: AltApp): Promise<Se
   if (roles.has("SUPER_ADMIN")) as.add("ADMIN");
   const reviewed = app.submission_count > 0 || app.legacy;
   // SA applications go to the BPM mapped to their operating location (earlier applications: any BPM).
-  if (roles.has(BPM_ROLE) && app.channel === "SA" && reviewed && (!app.routed_bpm_id || app.routed_bpm_id === staffId || app.bpm_reviewer_id === staffId)) as.add("BPM");
+  if (roles.has(BPM_ROLE) && app.channel === "SA" && reviewed && ((!app.routed_bpm_id && !app.routed_to_placeholder) || app.routed_bpm_id === staffId || app.bpm_reviewer_id === staffId)) as.add("BPM");
   if (roles.has(PM_ROLE) && (reviewed || app.kind === "OUTRIGHT")) as.add("PM");
   if (roles.has("UNIT_HEAD") && reviewed) {
     const uh = (await currentSettings(q)).unit_head_staff_id;

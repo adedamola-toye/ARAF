@@ -64,7 +64,7 @@ import { renderContract, type ContractPlaceholder } from "@/lib/altphones-contra
 import { creditBureau, IntegrationUnavailable, paymentGateway, type CreditResult, type PaymentVerification } from "./integrations";
 import { ALTERNATIVE_BANK_CODE, otherBanks, resolveAccount } from "./banks";
 import { availableAt, holdsStock, issueUnit, locationInfo, releaseUnit, reserveUnit } from "./stock";
-import { bpmForLocation, originLocation } from "./location-master";
+import { bpmForLocation, originLocation, PLACEHOLDER_BPM } from "./location-master";
 
 const EDITABLE: AltStatus[] = ["DRAFT"];
 
@@ -126,11 +126,6 @@ export async function saveLocations(ctx: Ctx, id: string, p: { modelId: string; 
       if (!origin) e.originId = o.problem ?? "Choose your operating location.";
       let supply = app.channel === "DO" ? origin : await locationInfo(tx, p.supplyId || (origin?.outlet_type === "ALTSHOP" ? origin.id : ""));
       if (app.channel === "SA" && (!supply || !supply.active || !holdsStock(supply.outlet_type))) e.supplyId = "Choose the Shop or Branch that will supply the phone.";
-      if (app.channel === "SA" && origin) {
-        // SA sales are reviewed by the BPM mapped to the operating location; refuse early if there is none.
-        const bpm = await bpmForLocation(tx, origin.id);
-        if (bpm.problem) e.originId = bpm.problem;
-      }
       if (Object.keys(e).length) throw invalid("Check the phone and location.", e);
       supply = supply!;
       const avail = await availableAt(tx, supply.id, model.id);
@@ -906,14 +901,16 @@ export async function submitForApproval(ctx: Ctx, id: string, p: { comments?: st
         if (uh.problem && !uh.id) throw gate(`Submission is blocked: ${uh.problem}`);
       }
       // SA: the BPM mapped to the operating location, then PM, then Unit Head. DO: PM, then Unit Head.
+      // Without a usable BPM for the location, the sale goes to the Placeholder BPM and waits for a mapping.
       let routedBpm: { id: string; name: string | null } | null = null;
+      let placeholder: string | null = null;
       if (app.channel === "SA") {
         const o = await originLocation(tx, app.origin_location_id, ["ALTSHOP", "ALTBOX"]);
         if (o.problem) throw gate(`Submission is blocked: ${o.problem}`);
         const bpm = await bpmForLocation(tx, app.origin_location_id);
-        if (!bpm.id) throw gate(`Submission is blocked: ${bpm.problem}`);
-        if (bpm.id === app.originator_id) throw gate("Submission is blocked: the Business Performance Manager mapped to this location is the selling officer.");
-        routedBpm = { id: bpm.id, name: bpm.name };
+        if (bpm.id && bpm.id === app.originator_id) throw gate("Submission is blocked: the Business Performance Manager mapped to this location is the selling officer.");
+        if (bpm.id) routedBpm = { id: bpm.id, name: bpm.name };
+        else placeholder = bpm.problem;
       }
       const to: AltStatus = app.channel === "SA" ? "UNDER_BPM_REVIEW" : "UNDER_PM_REVIEW";
       app = await transition(tx, ctx, app, {
@@ -921,10 +918,12 @@ export async function submitForApproval(ctx: Ctx, id: string, p: { comments?: st
         to,
         role: app.originator_role,
         comments: p.comments?.trim() || null,
-        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null, routed_bpm_id: routedBpm?.id ?? null },
-        details: routedBpm ? { routedTo: routedBpm.name } : undefined,
+        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null, routed_bpm_id: routedBpm?.id ?? null, routed_to_placeholder: app.channel === "SA" && !routedBpm },
+        details: routedBpm ? { routedTo: routedBpm.name } : app.channel === "SA" ? { routedTo: PLACEHOLDER_BPM, reason: placeholder } : undefined,
       });
-      if (to === "UNDER_BPM_REVIEW") await notifyStaffIds(tx, ctx, app, "BPM_QUEUE", [routedBpm!.id], "Altphones application awaiting your review", [`${app.ref} (Smile Associate sale) is waiting for your review as the Business Performance Manager for this location.`]);
+      if (to === "UNDER_BPM_REVIEW" && routedBpm) await notifyStaffIds(tx, ctx, app, "BPM_QUEUE", [routedBpm.id], "Altphones application awaiting your review", [`${app.ref} (Smile Associate sale) is waiting for your review as the Business Performance Manager for this location.`]);
+      else if (to === "UNDER_BPM_REVIEW")
+        await notifyRole(tx, ctx, app, "PLACEHOLDER_BPM", [PM_ROLE], "Altphones application waiting for a BPM mapping", [`${app.ref} (Smile Associate sale) is with the ${PLACEHOLDER_BPM}: ${placeholder ?? "no BPM is mapped to its location"}`, "Request a BPM mapping for the location (Altphones → Locations → BPM mapping); once the Unit Head approves it, the application moves to that BPM automatically."], [app.originator_id]);
       else await notifyRole(tx, ctx, app, "PM_QUEUE", [PM_ROLE], "Altphones application awaiting product review", [`${app.ref} is waiting for Product Manager review.`], [app.originator_id]);
       return { lockVersion: app.lock_version };
     }),

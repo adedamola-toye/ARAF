@@ -25,7 +25,7 @@ import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModel
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
-import { applyProfiling, decideAddressRequest, decideBpmRequest, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
+import { applyProfiling, decideAddressRequest, decideBpmRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -280,3 +280,11 @@ export const requestBpmAction = async (_p: ActionState, fd: FormData) =>
   );
 export const decideBpmAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => decideBpmRequest(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? `${(r as { ref: string }).ref} approved: the mapping is in effect.` : `${(r as { ref: string }).ref} rejected.`));
+export const rerouteAction = async (_p: ActionState) =>
+  run(
+    (ctx) => rerouteWaitingNow(ctx),
+    (r) => {
+      const x = r as { moved: number; left: number };
+      return `${x.moved} application${x.moved === 1 ? "" : "s"} moved to a BPM. ${x.left ? `${x.left} still waiting for a mapping.` : "None are waiting."}`;
+    },
+  );

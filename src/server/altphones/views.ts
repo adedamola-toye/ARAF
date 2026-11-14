@@ -53,6 +53,8 @@ export async function myApplications(q: Db, staffId: string, bucket: Bucket | nu
 
 export interface ReviewQueues {
   bpm: AppListRow[] | null;
+  /** SA applications waiting with the Placeholder BPM (no BPM mapped to their location). */
+  placeholder: AppListRow[] | null;
   bpmReturned: AppListRow[] | null;
   pm: AppListRow[] | null;
   uh: AppListRow[] | null;
@@ -63,7 +65,8 @@ export async function reviewQueues(q: Db, staffId: string): Promise<ReviewQueues
   const s = await currentSettings(q);
   const list = (where: string, params: unknown[] = []) => q.query<AppListRow>(`${LIST_SQL} WHERE ${where} ORDER BY a.submitted_at NULLS LAST, a.updated_at LIMIT 200`, params).then((r) => r.rows);
   return {
-    bpm: roles.has(BPM_ROLE) ? await list("a.status = 'UNDER_BPM_REVIEW' AND a.originator_id <> $1 AND (a.routed_bpm_id IS NULL OR a.routed_bpm_id = $1)", [staffId]) : null,
+    bpm: roles.has(BPM_ROLE) ? await list("a.status = 'UNDER_BPM_REVIEW' AND a.originator_id <> $1 AND NOT a.routed_to_placeholder AND (a.routed_bpm_id IS NULL OR a.routed_bpm_id = $1)", [staffId]) : null,
+    placeholder: roles.has(PM_ROLE) || roles.has("SUPER_ADMIN") ? await list("a.status = 'UNDER_BPM_REVIEW' AND a.routed_to_placeholder") : null,
     bpmReturned: roles.has(BPM_ROLE) ? await list("a.status = 'RETURNED_FOR_CORRECTION' AND a.channel = 'SA'") : null,
     pm: roles.has(PM_ROLE) ? await list("a.status = 'UNDER_PM_REVIEW' AND a.originator_id <> $1", [staffId]) : null,
     uh: roles.has("UNIT_HEAD") && s.unit_head_staff_id === staffId ? await list("a.status = 'UNDER_UNIT_HEAD_REVIEW'") : null,

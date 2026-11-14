@@ -22,7 +22,7 @@ import { normaliseNigerianState, REGIONS } from "../domain/roles";
 import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail } from "../notify/templates";
 import { config } from "../config";
-import { BPM_ROLE, currentSettings, isUuid, nextRef, PM_ROLE, roleHolders } from "./core";
+import { BPM_ROLE, currentSettings, isUuid, nextRef, notifyStaffIds, PM_ROLE, recordEvent, roleHolders, type AltApp } from "./core";
 
 export type LocType = "BRANCH" | "ALTSHOP" | "ALTBOX";
 export const TYPE_LABEL: Record<LocType, string> = { BRANCH: "Branch", ALTSHOP: "Altshop", ALTBOX: "Altbox" };
@@ -390,12 +390,16 @@ export async function applyProfiling(ctx: Ctx, importId: string) {
         bpmStates++;
       }
     await tx.query("UPDATE altphones_location_imports SET status = 'APPLIED', applied_by = $2, applied_at = $3 WHERE id = $1", [importId, actor.staffId, ctx.now]);
-    await audit(tx, ctx, { action: "ALTPHONES_LOCATIONS_IMPORTED", details: { ref: imp.ref, created, registered, flagged, bpmStates } });
-    return { ref: imp.ref, created, registered, flagged, bpmStates };
+    const rerouted = await rerouteWaiting(tx, ctx);
+    await audit(tx, ctx, { action: "ALTPHONES_LOCATIONS_IMPORTED", details: { ref: imp.ref, created, registered, flagged, bpmStates, rerouted } });
+    return { ref: imp.ref, created, registered, flagged, bpmStates, rerouted };
   });
 }
 
 // ------------------------------------------------------------------ BPM mapping
+
+/** Shown wherever an application waits for a BPM mapping. */
+export const PLACEHOLDER_BPM = "Placeholder BPM";
 
 export interface BpmRoute {
   id: string | null;
@@ -516,8 +520,9 @@ export async function decideBpmRequest(ctx: Ctx, id: string, p: { decision: stri
       );
     else await tx.query("DELETE FROM altphones_bpm_locations WHERE location_id = $1", [r.location_id]);
     await tx.query("UPDATE altphones_bpm_requests SET status = 'APPROVED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note || null]);
-    await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_APPROVED", details: { ref: r.ref, scope: r.scope, state: r.state, locationId: r.location_id, bpm: r.bpm_email } });
-    return { ref: r.ref, approved: true };
+    const rerouted = await rerouteWaiting(tx, ctx);
+    await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_APPROVED", details: { ref: r.ref, scope: r.scope, state: r.state, locationId: r.location_id, bpm: r.bpm_email, rerouted } });
+    return { ref: r.ref, approved: true, rerouted };
   });
 }
 
@@ -529,6 +534,47 @@ export async function bpmRequests(q: Db, status = "PENDING") {
          LEFT JOIN staff d ON d.id = r.decided_by LEFT JOIN staff b ON lower(b.email) = r.bpm_email
         WHERE ($1 = 'ALL' OR r.status = $1) ORDER BY r.requested_at DESC LIMIT 200`,
       [status],
+    )
+  ).rows;
+}
+
+/**
+ * Move applications waiting with the Placeholder BPM to the BPM now mapped to their location (after a mapping is
+ * approved, a workbook is applied, or on request once a mapped BPM has been set up). Returns how many moved.
+ */
+export async function rerouteWaiting(tx: Tx, ctx: Ctx): Promise<number> {
+  const waiting = (await tx.query<AltApp>("SELECT * FROM altphones_applications WHERE routed_to_placeholder AND status = 'UNDER_BPM_REVIEW' ORDER BY submitted_at FOR UPDATE")).rows;
+  let moved = 0;
+  for (const app of waiting) {
+    const bpm = await bpmForLocation(tx, app.origin_location_id);
+    if (!bpm.id || bpm.id === app.originator_id) continue;
+    const fresh = (
+      await tx.query<AltApp>("UPDATE altphones_applications SET routed_bpm_id = $2, routed_to_placeholder = false, updated_at = $3, lock_version = lock_version + 1 WHERE id = $1 RETURNING *", [app.id, bpm.id, ctx.now])
+    ).rows[0];
+    await recordEvent(tx, ctx, fresh, { action: "ROUTED_TO_BPM", details: { from: PLACEHOLDER_BPM, to: bpm.name } });
+    await notifyStaffIds(tx, ctx, fresh, "BPM_QUEUE", [bpm.id], "Altphones application awaiting your review", [`${fresh.ref} (Smile Associate sale) was waiting for a BPM mapping and is now routed to you as the Business Performance Manager for its location.`]);
+    moved++;
+  }
+  return moved;
+}
+
+export async function rerouteWaitingNow(ctx: Ctx) {
+  return withTx(async (tx) => {
+    if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can re-route applications.");
+    const moved = await rerouteWaiting(tx, ctx);
+    const left = (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM altphones_applications WHERE routed_to_placeholder AND status = 'UNDER_BPM_REVIEW'")).rows[0].n;
+    await audit(tx, ctx, { action: "ALTPHONES_PLACEHOLDER_REROUTED", details: { moved, stillWaiting: left } });
+    return { moved, left };
+  });
+}
+
+/** Applications waiting with the Placeholder BPM. */
+export async function placeholderWaiting(q: Db) {
+  return (
+    await q.query<{ id: string; ref: string; customer_name: string | null; submitted_at: Date; location: string | null; state: string | null; problem: string | null }>(
+      `SELECT a.id, a.ref, a.customer_name, a.submitted_at, l.name AS location, l.state, NULL::text AS problem
+         FROM altphones_applications a LEFT JOIN locations l ON l.id = a.origin_location_id
+        WHERE a.routed_to_placeholder AND a.status = 'UNDER_BPM_REVIEW' ORDER BY a.submitted_at`,
     )
   ).rows;
 }

@@ -168,7 +168,7 @@ describe("origination and routing", () => {
     expect(app.origin_address).toBe((await locBy("Yaba Altshop")).address);
   });
 
-  it("an SA location in a state with no usable BPM cannot be used", async () => {
+  it("an SA location with no usable BPM can be selected; the BPM must be mapped by request and approval", async () => {
     const pm = await ctxFor(ALT.pm);
     await applyProfiling(pm, (await previewProfiling(pm, { filename: "profiling.xlsx", data: await workbook() })).id);
     const sa = await ctxFor(ALT.sa);
@@ -176,7 +176,7 @@ describe("origination and routing", () => {
     const { id } = await startSale(sa, { kind: "CREDIT", modelId: models[0] });
     const area = await locBy("AREA SYNTH"); // FCT: mapped to a BPM who is not set up in ARAF
     expect((await bpmForLocation(db, area.id)).problem).toMatch(/not set up in ARAF/);
-    await expect(saveLocations(sa, id, { modelId: models[0], originId: area.id, supplyId: (await locBy("Yaba Altshop")).id })).rejects.toMatchObject({ fields: { originId: expect.stringMatching(/not set up in ARAF/) } });
+    await saveLocations(sa, id, { modelId: models[0], originId: area.id, supplyId: (await locBy("Yaba Altshop")).id }); // allowed: it will go to the Placeholder BPM
     // The PM requests a mapping; it takes effect only when the Unit Head approves.
     const { ref } = await requestBpmMapping(pm, { scope: "STATE", state: "FCT (ABUJA)", email: ALT.bpm, note: "Covers FCT until a BPM is hired" });
     expect((await bpmForLocation(db, area.id)).id).toBeNull();
@@ -213,6 +213,32 @@ describe("origination and routing", () => {
     await decideBpmRequest(uh, (await db.query("SELECT id FROM altphones_bpm_requests WHERE ref = $1", [r2.ref])).rows[0].id, { decision: "APPROVE" });
     expect((await bpmForLocation(db, yaba.id)).id).toBe(other);
     expect((await db.query("SELECT count(*)::int AS n FROM audit_events WHERE action = 'ALTPHONES_BPM_MAPPING_APPROVED'")).rows[0].n).toBe(2);
+  });
+
+  it("sends SA sales from unmapped locations to the Placeholder BPM, where nobody can approve, and re-routes them once mapped", async () => {
+    const { submitCreditSale } = await import("@/server/demo/altphones-scenario");
+    await db.query("DELETE FROM altphones_bpm_states WHERE state = 'LAGOS'"); // Yaba Altbox (Lagos) now has no BPM
+    const id = await submitCreditSale(gw, mail, "SA");
+    const app = (await db.query("SELECT * FROM altphones_applications WHERE id = $1", [id])).rows[0];
+    expect(app).toMatchObject({ status: "UNDER_BPM_REVIEW", routed_to_placeholder: true, routed_bpm_id: null });
+    expect((await db.query("SELECT details FROM altphones_events WHERE application_id = $1 AND action = 'SUBMITTED'", [id])).rows[0].details).toMatchObject({ routedTo: "Placeholder BPM" });
+    expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'ALTPHONES_PLACEHOLDER_BPM' AND $1 = ANY(to_addresses)", [ALT.pm])).rowCount).toBe(1);
+    // No BPM can open or decide it; the PM sees it in the placeholder list.
+    const bpm = await ctxFor(ALT.bpm);
+    expect((await appAccess(db, bpm.actor!.staffId, app)).has("BPM")).toBe(false);
+    expect((await reviewQueues(db, bpm.actor!.staffId)).bpm ?? []).toHaveLength(0);
+    await expect(decide(bpm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toBeTruthy();
+    expect((await reviewQueues(db, await sidOf(ALT.pm))).placeholder?.map((x) => x.id)).toContain(id);
+    // The PM requests a mapping for Lagos; on the Unit Head's approval the application moves to that BPM.
+    const pm = await ctxFor(ALT.pm);
+    const { ref } = await requestBpmMapping(pm, { scope: "STATE", state: "LAGOS", email: ALT.bpm, note: "Lagos BPM confirmed" });
+    expect((await db.query("SELECT routed_to_placeholder FROM altphones_applications WHERE id = $1", [id])).rows[0].routed_to_placeholder).toBe(true); // not until approved
+    const r = await decideBpmRequest(await ctxFor(ALT.unitHead), (await db.query("SELECT id FROM altphones_bpm_requests WHERE ref = $1", [ref])).rows[0].id, { decision: "APPROVE" });
+    expect(r).toMatchObject({ approved: true, rerouted: 1 });
+    expect((await db.query("SELECT routed_to_placeholder, routed_bpm_id, status FROM altphones_applications WHERE id = $1", [id])).rows[0]).toEqual({ routed_to_placeholder: false, routed_bpm_id: bpm.actor!.staffId, status: "UNDER_BPM_REVIEW" });
+    expect((await db.query("SELECT 1 FROM altphones_events WHERE application_id = $1 AND action = 'ROUTED_TO_BPM'", [id])).rowCount).toBe(1);
+    await decide(bpm, id, { action: "APPROVE", comments: "", reviewed: true });
+    expect((await db.query("SELECT status FROM altphones_applications WHERE id = $1", [id])).rows[0].status).toBe("UNDER_PM_REVIEW");
   });
 
   it("routes an SA application to the BPM mapped to its location only, then PM and Unit Head", async () => {

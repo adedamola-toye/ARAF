@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LocationPicker, type PickerOption } from "@/components/LocationPicker";
-import { pickerLocations } from "@/server/altphones/location-master";
+import { pickerLocations, PLACEHOLDER_BPM } from "@/server/altphones/location-master";
 import { redirect } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { requireUser } from "../../../../_lib/auth";
@@ -757,10 +757,19 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                   <dd>{supply?.name ?? "—"}</dd>
                 </div>
               )}
-              {!isDo && app.routed_bpm_id && (
+              {!isDo && (app.routed_bpm_id || app.routed_to_placeholder) && (
                 <div>
                   <dt>Business Performance Manager</dt>
-                  <dd>{nm(app.routed_bpm_id)}</dd>
+                  <dd>
+                    {app.routed_to_placeholder ? (
+                      <>
+                        {PLACEHOLDER_BPM}
+                        <div className="small muted">Waiting for a BPM to be mapped to this location</div>
+                      </>
+                    ) : (
+                      nm(app.routed_bpm_id)
+                    )}
+                  </dd>
                 </div>
               )}
               <div>

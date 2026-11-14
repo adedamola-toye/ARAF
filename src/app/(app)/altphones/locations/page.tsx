@@ -12,6 +12,8 @@ import {
   bpmRequests,
   bpmStates,
   unroutedLocations,
+  placeholderWaiting,
+  PLACEHOLDER_BPM,
   type ImportSummary,
   importSources,
   listImports,
@@ -30,6 +32,7 @@ import {
   proposeLocationAction,
   requestAddressAction,
   decideBpmAction,
+  rerouteAction,
   requestBpmAction,
 } from "../actions";
 
@@ -58,7 +61,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
   ];
   const tab: Tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : access.manage ? "locations" : "requests";
   const pending = [...(await addressRequests(db, "PENDING")), ...(await bpmRequests(db, "PENDING"))];
-  const unrouted = await unroutedStates(db);
+  const [unrouted, waiting] = await Promise.all([unroutedStates(db), placeholderWaiting(db)]);
 
   return (
     <>
@@ -67,11 +70,37 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
         title="Locations"
         intro="The location master: every Branch, Altshop and Altbox with its registered address and the Business Performance Manager for its state. Staff choose their operating location; ARAF supplies the address and the approval route."
       />
-      {unrouted.length > 0 && (
+      {(unrouted.length > 0 || waiting.length > 0) && (
         <div className="alert alert-warn" role="status" style={{ marginBottom: "var(--space-4)" }}>
           <div>
-            <strong>Smile Associate sales cannot be submitted in {unrouted.length === 1 ? "one state" : `${unrouted.length} states`}</strong> because no active Business Performance Manager is mapped:{" "}
-            {unrouted.map((u) => `${u.state} (${u.locations})`).join(", ")}.{access.manage && <> Request a mapping under <Link href="?tab=bpm">BPM mapping</Link>; it takes effect when the Unit Head approves it.</>}
+            {unrouted.length > 0 && (
+              <p style={{ margin: 0 }}>
+                <strong>
+                  Smile Associate sales from {n(unrouted.reduce((a, u) => a + u.locations, 0))} Altshops and Altboxes go to the {PLACEHOLDER_BPM}
+                </strong>{" "}
+                because no active Business Performance Manager is mapped: {unrouted.map((u) => `${u.state} (${u.locations})`).join(", ")}.
+                {access.manage && (
+                  <>
+                    {" "}
+                    Request a mapping under <Link href="?tab=bpm">BPM mapping</Link>; it takes effect when the Unit Head approves it.
+                  </>
+                )}
+              </p>
+            )}
+            {waiting.length > 0 && (
+              <p style={{ margin: unrouted.length ? "8px 0 0" : 0 }}>
+                <strong>
+                  {n(waiting.length)} application{waiting.length === 1 ? " is" : "s are"} waiting with the {PLACEHOLDER_BPM}
+                </strong>{" "}
+                ({waiting.slice(0, 5).map((w) => `${w.ref} · ${w.location ?? "?"}`).join("; ")}
+                {waiting.length > 5 ? "; …" : ""}). They move to the mapped BPM automatically when a mapping is approved.
+              </p>
+            )}
+            {waiting.length > 0 && access.manage && (
+              <ActionForm action={rerouteAction} className="inline-form">
+                <SubmitButton className="btn btn-ghost btn-sm">Re-route waiting applications now</SubmitButton>
+              </ActionForm>
+            )}
           </div>
         </div>
       )}
@@ -238,7 +267,7 @@ async function Master({ sp, canManage }: { sp: Record<string, string | undefined
                   <td className="small" style={{ maxWidth: 360 }}>
                     {l.address ?? <span className="muted">—</span>}
                   </td>
-                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ? <>{l.bpm_name}{l.bpm_for_location && <div className="muted">for this location</div>}</> : (l.bpm_email ? <span className="text-danger">{l.bpm_email} (not set up)</span> : <span className="text-danger">None mapped</span>))}</td>
+                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ? <>{l.bpm_name}{l.bpm_for_location && <div className="muted">for this location</div>}</> : (l.bpm_email ? <span className="text-danger">{PLACEHOLDER_BPM} ({l.bpm_email} not set up)</span> : <span className="text-danger">{PLACEHOLDER_BPM}</span>))}</td>
                   <td>
                     <span className={`badge ${ADDRESS_BADGE[l.address_status][0]}`}>{ADDRESS_BADGE[l.address_status][1]}</span>
                     {!l.active && <div className="small muted">Inactive</div>}
