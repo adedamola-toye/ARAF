@@ -1,4 +1,4 @@
-import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren } from "lucide-react";
+import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -15,6 +15,9 @@ import { viewsFor, staffActionCount } from "@/server/staff/views";
 import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
 import { migrationAccess } from "@/server/altphones/migration";
 import { locationAccess } from "@/server/altphones/location-master";
+import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
+import { PerformanceSummary } from "@/components/Performance";
+import { DailySummaryDialog } from "./performance/DailySummaryDialog";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
@@ -41,6 +44,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const staffViews = staffOk ? viewsFor(new Set(roles)) : [];
   const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
   const myOfferCount = staffOk ? Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n) : 0;
+  // Once a Lagos day, Relationship Managers and Team Leads see their performance summary first.
+  const summary = (await summaryDue(db, session.staffId, new Date())) ? await dailySummary(db, session.staffId, new Date()) : null;
+  const perfTargets = await targetAccess(db, session.staffId);
+  const showPerformance = roles.includes("RM") || roles.includes("TEAM_LEAD") || perfTargets.propose || perfTargets.approve;
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -75,6 +82,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {isApprover && (
             <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
               Exceptions
+            </NavLink>
+          )}
+          {showPerformance && !altWs && (
+            <NavLink href="/performance" icon={<Target {...ic} />}>
+              {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
             </NavLink>
           )}
           {retailScope && !altWs && (
@@ -259,6 +271,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </header>
       <main className="main" id="main">
         {children}
+        {summary && (
+          <DailySummaryDialog name={session.fullName}>
+            <PerformanceSummary s={summary} />
+          </DailySummaryDialog>
+        )}
       </main>
       <Footer />
       <IdleWatcher idleSeconds={config.sessionIdleSeconds} expiresAt={session.idleExpiresAt.toISOString()} />
