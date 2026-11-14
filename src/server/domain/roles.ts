@@ -35,12 +35,15 @@ export const ROLES = [
   "SMILE_ASSOCIATE",
   "BUSINESS_PERFORMANCE_MANAGER",
   "ALTPHONES_PRODUCT_MANAGER",
+  // Retail approval policy RETAIL_CX_V1
+  "CX_CREDIT_REVIEWER",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
 export const INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER", "DELIGHT_OFFICER"] as const;
 /** Initiators of retail products (Vendor Financing, Alt Drive, Alt Power), in display order. */
-export const RETAIL_INITIATOR_ROLES = ["RM", "DELIGHT_OFFICER"] as const;
+/** Team Leads and Unit Heads may originate retail requests; routing never sends a request back to its originator. */
+export const RETAIL_INITIATOR_ROLES = ["RM", "DELIGHT_OFFICER", "TEAM_LEAD", "UNIT_HEAD"] as const;
 export type RetailInitiatorRole = (typeof RETAIL_INITIATOR_ROLES)[number];
 /** WakeelBoost (legacy) initiators. */
 export const LEGACY_INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER"] as const;
@@ -80,6 +83,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   SMILE_ASSOCIATE: "Smile Associate (Altphones)",
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
+  CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
 };
 
 /** The Delight Officer / Smile Associate channel originates Altphones only. */

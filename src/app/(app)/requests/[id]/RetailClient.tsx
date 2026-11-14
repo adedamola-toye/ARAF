@@ -60,8 +60,15 @@ export function BusinessDecisionForm({ hidden, action, label, visitRequired, rmP
   );
 }
 
-export function FinalAssessmentForm({ applicationId, defaults }: { applicationId: string; defaults: { incomeBasis: string; principal: string; tenor: string; statementFrom: string; statementTo: string; obligations: { lender: string; monthly: string }[]; denominatorLabel: string; capApplies: boolean } }) {
+export function FinalAssessmentForm({
+  applicationId,
+  defaults,
+}: {
+  applicationId: string;
+  defaults: { incomeBasis: string; annualInflow?: string; fromAnnual?: boolean; recognitionPercent?: string; principal: string; tenor: string; statementFrom: string; statementTo: string; obligations: { lender: string; monthly: string }[]; denominatorLabel: string; capApplies: boolean };
+}) {
   const [income, setIncome] = useState(defaults.incomeBasis);
+  const [annual, setAnnual] = useState(defaults.annualInflow ?? "");
   const [principal, setPrincipal] = useState(defaults.principal);
   const [obl, setObl] = useState(defaults.obligations.length ? defaults.obligations : [{ lender: "", monthly: "" }]);
   const [charges, setCharges] = useState<{ label: string; amount: string }[]>([]);
@@ -69,14 +76,23 @@ export function FinalAssessmentForm({ applicationId, defaults }: { applicationId
   return (
     <ActionForm action={finalAssessmentAction}>
       <input type="hidden" name="applicationId" value={applicationId} />
-      <input type="hidden" name="incomeBasis" value={income} />
+      <input type="hidden" name="incomeBasis" value={defaults.fromAnnual ? "" : income} />
+      <input type="hidden" name="annualInflow" value={defaults.fromAnnual ? annual : ""} />
       <input type="hidden" name="principal" value={principal} />
       <input type="hidden" name="turnoverForCap" value={turnover} />
       <div className="grid-2">
-        <div className="field">
-          <label htmlFor="fa-income">{/^verified\b/i.test(defaults.denominatorLabel) ? defaults.denominatorLabel.replace(/^v/, "V") : `Verified ${defaults.denominatorLabel}`}</label>
-          <AmountInput id="fa-income" value={income} onChange={setIncome} />
-        </div>
+        {defaults.fromAnnual ? (
+          <div className="field">
+            <label htmlFor="fa-annual">Verified annual inflow</label>
+            <AmountInput id="fa-annual" value={annual} onChange={setAnnual} />
+            <span className="hint">Average monthly inflow = annual inflow × {defaults.recognitionPercent ?? "100"}% ÷ 12.</span>
+          </div>
+        ) : (
+          <div className="field">
+            <label htmlFor="fa-income">{/^verified\b/i.test(defaults.denominatorLabel) ? defaults.denominatorLabel.replace(/^v/, "V") : `Verified ${defaults.denominatorLabel}`}</label>
+            <AmountInput id="fa-income" value={income} onChange={setIncome} />
+          </div>
+        )}
         <div className="field">
           <label htmlFor="fa-note">Basis and evidence</label>
           <input id="fa-note" name="incomeBasisNote" placeholder="e.g. average of 6 months' credits" />
@@ -142,6 +158,10 @@ export function FinalAssessmentForm({ applicationId, defaults }: { applicationId
           Add charge
         </button>
       </fieldset>
+      <div className="field">
+        <label htmlFor="fa-adj">Reason for any change from the initiator&apos;s assessment</label>
+        <input id="fa-adj" name="adjustmentNote" placeholder="Required if you change inflow, obligations, principal or tenor; name the evidence relied on" />
+      </div>
       <div>
         <SubmitButton className="btn btn-dark">Calculate and save final assessment</SubmitButton>
       </div>

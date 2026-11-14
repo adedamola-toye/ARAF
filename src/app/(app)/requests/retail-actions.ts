@@ -63,6 +63,7 @@ function parseRetailPayload(raw: string) {
     assetCostKobo: m("assetCostKobo", "Asset cost"),
     equityContributionKobo: m("equityContributionKobo", "Equity contribution"),
     incomeBasisKobo: m("incomeBasisKobo", "Income basis"),
+    annualInflowKobo: m("annualInflowKobo", "Annual inflow"),
     proposedMonthlyObligationKobo: m("proposedMonthlyObligationKobo", "Proposed monthly repayment"),
     statedMonthlySalaryKobo: m("statedMonthlySalaryKobo", "Monthly salary"),
     statedMonthlyTurnoverKobo: m("statedMonthlyTurnoverKobo", "Monthly turnover"),
@@ -183,11 +184,14 @@ export async function finalAssessmentAction(_p: ActionState, fd: FormData): Prom
     const chargeAmounts = fd.getAll("ch_amount").map(String);
     const charges = chargeLabels.map((l, i) => ({ label: l.trim(), amountKobo: kobo(chargeAmounts[i], `ch.${i}`, fields, `Charge ${i + 1}`) ?? 0 })).filter((c) => c.label && c.amountKobo);
     const income = kobo(str(fd, "incomeBasis"), "incomeBasisKobo", fields, "Verified income basis");
+    const annualInflow = kobo(str(fd, "annualInflow"), "annualInflowKobo", fields, "Verified annual inflow");
     const principal = kobo(str(fd, "principal"), "principalKobo", fields, "Principal");
     const turnover = kobo(str(fd, "turnoverForCap"), "turnoverForCapKobo", fields, "Turnover for cap");
     if (Object.keys(fields).length) throw invalid("Check the assessment inputs.", fields);
     const r = await recordFinalAssessment(ctx, str(fd, "applicationId"), {
       incomeBasisKobo: income,
+      annualInflowKobo: annualInflow,
+      adjustmentNote: str(fd, "adjustmentNote"),
       incomeBasisNote: str(fd, "incomeBasisNote"),
       statementFrom: str(fd, "statementFrom") || null,
       statementTo: str(fd, "statementTo") || null,
@@ -197,7 +201,7 @@ export async function finalAssessmentAction(_p: ActionState, fd: FormData): Prom
       charges,
       turnoverForCapKobo: turnover,
     });
-    return { ok: true, message: r.result === "PASS" ? `Final assessment saved: PASS (DSR ${r.dsr}%).` : r.result === "BLOCKED" ? `Saved, but blocked: ${r.blocked.join(" ")}` : `Final assessment saved: FAIL${r.dsr ? ` (DSR ${r.dsr}%)` : ""}.`, nonce: Date.now() };
+    return { ok: true, message: (r.changes.length ? `Changes recorded (${r.changes.map((c) => c.field).join(", ")}). ` : "") + (r.result === "PASS" ? `Final assessment saved: PASS (DSR ${r.dsr}%).` : r.result === "BLOCKED" ? `Saved, but blocked: ${r.blocked.join(" ")}` : `Final assessment saved: FAIL${r.dsr ? ` (DSR ${r.dsr}%)` : ""}.`), nonce: Date.now() };
   } catch (e) {
     return toActionError(e);
   }

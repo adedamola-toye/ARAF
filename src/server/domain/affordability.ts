@@ -12,6 +12,7 @@
  */
 import type { Obligation } from "./retail-data";
 import {
+  ANNUAL_DENOMINATORS,
   DSR_DENOMINATOR_LABELS,
   INSURANCE_LABELS,
   RATE_CONVENTION_LABELS,
@@ -25,7 +26,7 @@ import {
 import { formatKobo, parsePercentE4 } from "../money";
 import { addDaysToDateString } from "../time";
 
-export const ENGINE_VERSION = "retail-affordability@1";
+export const ENGINE_VERSION = "retail-affordability@2";
 
 type Rat = { n: bigint; d: bigint };
 const rat = (n: bigint | number, d: bigint | number = 1n): Rat => ({ n: BigInt(n), d: BigInt(d) });
@@ -58,6 +59,10 @@ export interface AssessmentRules {
   principalTurnoverCap: { applies: boolean; maxPercent: string | null };
   maxAmountKobo: number | null;
   maxTenorMonths: number | null;
+  /** Absent on snapshots taken before engine @2. */
+  minTenorMonths?: number | null;
+  /** Share of verified inflow recognised (percent). Absent on snapshots before engine @2 (= 100). */
+  inflowRecognitionPercent?: string;
   eligibleApplicantTypes: string[];
   ratePercent: string | null;
   rateConvention: RateConvention | null;
@@ -80,6 +85,8 @@ export function rulesSnapshot(p: { configId: string; configVersion: number; prod
     principalTurnoverCap: p.rules.principalTurnoverCap,
     maxAmountKobo: p.rules.maxAmountKobo,
     maxTenorMonths: p.rules.maxTenorMonths,
+    minTenorMonths: p.rules.minTenorMonths ?? null,
+    inflowRecognitionPercent: p.rules.dsr.inflowRecognitionPercent ?? "100",
     eligibleApplicantTypes: p.rules.eligibleApplicantTypes,
     ratePercent: s?.ratePercent ?? null,
     rateConvention: s?.rateConvention ?? null,
@@ -92,6 +99,8 @@ export interface AffordabilityInput {
   kind: "PRELIMINARY" | "FINAL";
   applicantType: string;
   incomeBasisKobo: number | null;
+  /** Verified annual inflow, for denominators derived from an annual figure. */
+  annualInflowKobo?: number | null;
   incomeBasisNote: string;
   statementFrom: string | null;
   statementTo: string | null;
@@ -126,7 +135,19 @@ export interface AffordabilityOutput {
   profitDisplay: string | null;
   totalPayableKobo: number | null;
   schedule: { seq: number; dueDate: string | null; amountKobo: number }[];
-  dsr: { percent: string; maxPercent: string | null; pass: boolean; denominatorLabel: string; denominatorKobo: number } | null;
+  dsr: {
+    percent: string;
+    maxPercent: string | null;
+    pass: boolean;
+    denominatorLabel: string;
+    denominatorKobo: number;
+    /** When derived from annual inflow: the inputs and the recognised share. */
+    annualInflowKobo?: number;
+    recognitionPercent?: string;
+    recognisedAnnualKobo?: number;
+    /** Largest total monthly obligation allowed (denominator × maximum DSR). */
+    allowedMonthlyKobo?: number;
+  } | null;
   cap: { applies: boolean; percent: string | null; maxPercent: string | null; pass: boolean } | null;
   insurance: string | null;
   structureLabel: string | null;
@@ -159,6 +180,7 @@ export function computeAffordability(rules: AssessmentRules, i: AffordabilityInp
   if (rules.maxTenorMonths === null) blocked.push("Maximum tenor is not configured.");
   else if (tenor !== null) checks.push({ rule: "Within maximum tenor", pass: tenor >= 1 && tenor <= rules.maxTenorMonths, detail: `${tenor} of maximum ${rules.maxTenorMonths} months` });
   if (!tenor || tenor < 1) checks.push({ rule: "Tenor entered", pass: false, detail: "Enter the tenor in months." });
+  else if (rules.minTenorMonths) checks.push({ rule: `At least ${rules.minTenorMonths} months`, pass: tenor >= rules.minTenorMonths, detail: `${tenor} months (minimum ${rules.minTenorMonths})` });
   if (rules.equityContribution.applies === null) blocked.push("Equity contribution rule is not configured.");
   else if (rules.equityContribution.applies) {
     const minE4 = rules.equityContribution.minPercent ? parsePercentE4(rules.equityContribution.minPercent) : null;
@@ -213,15 +235,42 @@ export function computeAffordability(rules: AssessmentRules, i: AffordabilityInp
   const maxE4 = rules.dsrMaxPercent ? parsePercentE4(rules.dsrMaxPercent) : null;
   if (rules.denominator === null) blocked.push("The DSR denominator (income or business basis) is not configured.");
   if (maxE4 === null) blocked.push("The maximum DSR is not configured.");
-  if (i.incomeBasisKobo === null || i.incomeBasisKobo <= 0) checks.push({ rule: "Income / business basis entered", pass: false, detail: `Enter the ${rules.denominator ? DSR_DENOMINATOR_LABELS[rules.denominator].toLowerCase() : "income basis"}.` });
-  if (rules.denominator && maxE4 !== null && monthly && i.incomeBasisKobo && i.incomeBasisKobo > 0) {
+  // Monthly denominator: entered directly, or derived from verified annual inflow × recognition factor ÷ 12.
+  const fromAnnual = rules.denominator !== null && ANNUAL_DENOMINATORS.includes(rules.denominator);
+  const recE4 = parsePercentE4(rules.inflowRecognitionPercent ?? "100");
+  let basis: Rat | null = null;
+  const annualExtra: Partial<NonNullable<AffordabilityOutput["dsr"]>> = {};
+  if (fromAnnual) {
+    if (recE4 === null || recE4 <= 0 || recE4 > 1_000_000) blocked.push("The inflow recognition percentage is not configured correctly.");
+    if (!i.annualInflowKobo || i.annualInflowKobo <= 0) checks.push({ rule: "Verified annual inflow entered", pass: false, detail: "Enter the verified annual inflow." });
+    else if (recE4 !== null && recE4 > 0) {
+      const recognised = mul(rat(i.annualInflowKobo), rat(recE4, 1_000_000));
+      basis = div(recognised, rat(12));
+      annualExtra.annualInflowKobo = i.annualInflowKobo;
+      annualExtra.recognitionPercent = rules.inflowRecognitionPercent ?? "100";
+      annualExtra.recognisedAnnualKobo = Number(roundHalfUp(recognised));
+      formula.push(
+        `Recognised annual inflow = verified annual inflow ${formatKobo(i.annualInflowKobo)} × ${rules.inflowRecognitionPercent ?? "100"}% = ${koboStr(recognised)}`,
+        `Average monthly inflow = recognised annual inflow ÷ 12 = ${koboStr(basis)}`,
+      );
+    }
+  } else {
+    if (i.incomeBasisKobo === null || i.incomeBasisKobo <= 0) checks.push({ rule: "Income / business basis entered", pass: false, detail: `Enter the ${rules.denominator ? DSR_DENOMINATOR_LABELS[rules.denominator].toLowerCase() : "income basis"}.` });
+    else basis = rat(i.incomeBasisKobo);
+  }
+  if (rules.denominator && maxE4 !== null && basis && basis.n > 0n) {
+    const allowed = mul(basis, rat(maxE4, 1_000_000));
+    annualExtra.allowedMonthlyKobo = Number(roundHalfUp(allowed));
+    formula.push(`Allowable monthly obligations = ${koboStr(basis)} × ${rules.dsrMaxPercent}% = ${koboStr(allowed)}`);
+  }
+  if (rules.denominator && maxE4 !== null && monthly && basis && basis.n > 0n) {
     const numerator = add(rat(existing), monthly);
-    const ratio = div(numerator, rat(i.incomeBasisKobo));
+    const ratio = div(numerator, basis);
     const pass = lte(ratio, rat(maxE4, 1_000_000));
-    dsr = { percent: pct4(mul(ratio, rat(100))), maxPercent: rules.dsrMaxPercent, pass, denominatorLabel: DSR_DENOMINATOR_LABELS[rules.denominator], denominatorKobo: i.incomeBasisKobo };
+    dsr = { percent: pct4(mul(ratio, rat(100))), maxPercent: rules.dsrMaxPercent, pass, denominatorLabel: DSR_DENOMINATOR_LABELS[rules.denominator], denominatorKobo: Number(roundHalfUp(basis)), ...annualExtra };
     checks.push({ rule: `DSR within ${rules.dsrMaxPercent}%`, pass, detail: `DSR ${dsr.percent}% (exact comparison on unrounded values)` });
     formula.push(
-      `DSR = (existing monthly obligations ${formatKobo(existing)} + proposed monthly obligation ${koboStr(monthly)}) ÷ ${DSR_DENOMINATOR_LABELS[rules.denominator].toLowerCase()} ${formatKobo(i.incomeBasisKobo)} × 100 = ${dsr.percent}%`,
+      `DSR = (existing monthly obligations ${formatKobo(existing)} + proposed monthly obligation ${koboStr(monthly)}) ÷ ${DSR_DENOMINATOR_LABELS[rules.denominator].toLowerCase()} ${koboStr(basis)} × 100 = ${dsr.percent}%`,
       `Threshold: DSR ≤ ${rules.dsrMaxPercent}% → ${pass ? "PASS" : "FAIL"}`,
     );
   }

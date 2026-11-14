@@ -66,6 +66,8 @@ export const retailDataSchema = z.object({
   // Obligations + preliminary affordability
   existingObligations: z.array(obligationSchema).max(30).default([]),
   incomeBasisKobo: koboN.default(null),
+  /** Verified annual inflow, when the product's DSR uses average monthly inflow from an annual figure. */
+  annualInflowKobo: koboN.default(null),
   incomeBasisNote: text(300).default(""),
   proposedMonthlyObligationKobo: koboN.default(null),
   turnoverForCapKobo: koboN.default(null),
@@ -75,6 +77,8 @@ export const retailDataSchema = z.object({
   // Channel
   assignedRmId: z.string().uuid().nullable().default(null),
   outletLocationId: z.string().uuid().nullable().default(null),
+  /** Relationship Manager's originating location (Branch / AltLounge); mandatory for RM-originated requests. */
+  originationLocationId: z.string().uuid().nullable().default(null),
   // Separately configured privacy / data-access permissions
   consents: z.array(z.object({ code: z.string(), granted: z.boolean(), recordedAt: z.string().nullable().default(null) })).max(20).default([]),
 });
@@ -117,7 +121,7 @@ export function retailMaterialDigest(m: {
     amount: d.requestedAmountKobo,
     tenor: d.tenorMonths,
     asset: [d.assetDescription, d.assetCostKobo, d.equityContributionKobo],
-    capacity: [d.incomeBasisKobo, d.proposedMonthlyObligationKobo, d.turnoverForCapKobo, d.existingObligations.map((o) => [o.lender, o.monthlyRepaymentKobo])],
+    capacity: [d.incomeBasisKobo, d.annualInflowKobo, d.proposedMonthlyObligationKobo, d.turnoverForCapKobo, d.existingObligations.map((o) => [o.lender, o.monthlyRepaymentKobo])],
     vendor: d.vendorId,
     beneficiary: m.beneficiary,
     bvn: m.bvnPlain,
@@ -134,7 +138,7 @@ export function materialChanges(a: RetailData, b: RetailData): string[] {
   if (a.tenorMonths !== b.tenorMonths) out.push("tenor");
   if (a.vendorId !== b.vendorId) out.push("vendor");
   if (a.vendorAccountId !== b.vendorAccountId) out.push("beneficiary account");
-  if (a.incomeBasisKobo !== b.incomeBasisKobo || a.proposedMonthlyObligationKobo !== b.proposedMonthlyObligationKobo || JSON.stringify(a.existingObligations) !== JSON.stringify(b.existingObligations)) out.push("repayment capacity");
+  if (a.incomeBasisKobo !== b.incomeBasisKobo || a.annualInflowKobo !== b.annualInflowKobo || a.proposedMonthlyObligationKobo !== b.proposedMonthlyObligationKobo || JSON.stringify(a.existingObligations) !== JSON.stringify(b.existingObligations)) out.push("repayment capacity");
   if (a.assetCostKobo !== b.assetCostKobo || a.assetDescription !== b.assetDescription) out.push("asset");
   return out;
 }

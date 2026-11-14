@@ -6,7 +6,7 @@ import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
 import { getCase } from "@/server/domain/views";
 import { signDocumentLink, CATEGORY_LABEL, DOC_CATEGORIES, UPLOADABLE_BY_STAGE, RETAIL_UPLOADABLE_BY_STAGE, PACK, type DocumentRow } from "@/server/domain/documents";
-import { STAGE_LABELS, ACTION_LABELS, allowedActions, type Stage, type TaskAction } from "@/server/domain/stages";
+import { STAGE_LABELS, stageLabel, ACTION_LABELS, allowedActions, type Stage, type TaskAction } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { APPLICANT_TYPE_LABELS, assetCostKobo, type DraftData } from "@/server/domain/application-data";
 import { getRoute } from "@/server/domain/routing";
@@ -211,7 +211,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         <div className="alert alert-success" role="status" style={{ marginBottom: 12 }}>
           <CheckCircle2 {...ic} />
           <span>
-            Recorded: <strong>{ACTION_LABELS[committed.action as TaskAction] ?? committed.action}</strong> at {STAGE_LABELS[committed.stage as Stage]}, {formatLagos(committed.created_at)}. The request is now <strong>{STAGE_LABELS[app.stage as Stage]}</strong>
+            Recorded: <strong>{ACTION_LABELS[committed.action as TaskAction] ?? committed.action}</strong> at {stageLabel(committed.stage as Stage, app.approval_policy)}, {formatLagos(committed.created_at)}. The request is now <strong>{stageLabel(app.stage as Stage, app.approval_policy)}</strong>
             {c.openTask ? ` with ${c.openTask.assignee_name ?? "the Super Admin for assignment"}.` : "."}
           </span>
         </div>
@@ -219,7 +219,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
       {sp.submitted && (
         <div className="alert alert-success" role="status" style={{ marginBottom: 12 }}>
           <CheckCircle2 {...ic} />
-          Submitted. The request is with {c.openTask?.assignee_name ?? "the Super Admin for assignment"} for {STAGE_LABELS[app.stage as Stage].toLowerCase()}.
+          Submitted. The request is with {c.openTask?.assignee_name ?? "the Super Admin for assignment"} for {stageLabel(app.stage as Stage, app.approval_policy).toLowerCase()}.
         </div>
       )}
       {staleDeepLink && (
@@ -255,7 +255,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           {!myTask && c.openTask && (
             <div className="card">
               <p className="eyebrow">Current step</p>
-              <h2 style={{ marginBottom: 4 }}>{STAGE_LABELS[c.openTask.stage as Stage]}</h2>
+              <h2 style={{ marginBottom: 4 }}>{stageLabel(c.openTask.stage as Stage, app.approval_policy)}</h2>
               <p className="small" style={{ margin: 0 }}>
                 {c.openTask.required_action}
               </p>
@@ -659,7 +659,7 @@ function History({ c }: { c: Case }) {
             return (
               <li key={t.id} className={t.status === "OPEN" ? "open" : "done"}>
                 <div className="row" style={{ gap: 8 }}>
-                  <strong>{STAGE_LABELS[t.stage as Stage]}</strong>
+                  <strong>{stageLabel(t.stage as Stage, c.app.approval_policy)}</strong>
                   {t.status === "OPEN" ? <span className="badge badge-yellow">Current</span> : d ? <span className={`badge ${d.action === "REJECT" ? "badge-red" : ["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(d.action) ? "badge-warn" : "badge-green"}`}>{ACTION_LABELS[d.action as TaskAction] ?? d.action}</span> : null}
                   {d?.invalidated_at && <span className="badge badge-red" title={d.invalidated_reason}><AlertTriangle className="icon" aria-hidden="true" />Invalidated</span>}
                 </div>
@@ -680,7 +680,7 @@ function History({ c }: { c: Case }) {
           <h2>Corrections</h2>
           <div className="table-wrap"><table className="data responsive"><thead><tr><th>Requested</th><th>From</th><th>To</th><th>Reason</th><th>Resolution</th></tr></thead><tbody>
             {c.corrections.map((x: Case["corrections"][number]) => (
-              <tr key={x.id}><td className="small nowrap" data-label="Requested">{formatLagos(x.created_at)}<div className="muted">{x.requested_by_name}</div></td><td className="small" data-label="From">{STAGE_LABELS[x.from_stage as Stage]}</td><td className="small" data-label="To">{STAGE_LABELS[x.to_stage as Stage]}</td><td className="small" data-label="Reason">{x.reason}</td><td className="small" data-label="Resolution">{x.resolution ?? "Open"}{x.resolved_at && <div className="muted">{formatLagos(x.resolved_at)}</div>}</td></tr>
+              <tr key={x.id}><td className="small nowrap" data-label="Requested">{formatLagos(x.created_at)}<div className="muted">{x.requested_by_name}</div></td><td className="small" data-label="From">{stageLabel(x.from_stage as Stage, c.app.approval_policy)}</td><td className="small" data-label="To">{stageLabel(x.to_stage as Stage, c.app.approval_policy)}</td><td className="small" data-label="Reason">{x.reason}</td><td className="small" data-label="Resolution">{x.resolution ?? "Open"}{x.resolved_at && <div className="muted">{formatLagos(x.resolved_at)}</div>}</td></tr>
             ))}
           </tbody></table></div>
         </div>
@@ -862,7 +862,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
           />,
         );
       }
-      else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${STAGE_LABELS[(openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW"]}`} doneHref={doneHref} />);
+      else body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${stageLabel((openCorrection?.from_stage as Stage) ?? "UNIT_HEAD_REVIEW", app.approval_policy)}`} doneHref={doneHref} />);
       break;
     }
     case "SECOND_CREDIT_REVIEW":

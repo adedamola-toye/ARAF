@@ -207,3 +207,12 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
 export interface StageRoleInfo {
   roles: Role[] | "INITIATOR" | "FIRST_REVIEWER";
 }
+
+/** Stage label under an approval policy (RETAIL_CX_V1 renames two shared stages). */
+export function stageLabel(stage: Stage, policy?: string | null): string {
+  if (policy === "RETAIL_CX_V1") {
+    if (stage === "FIRST_CREDIT_REVIEW") return "CX credit review";
+    if (stage === "TEAM_LEAD_REVIEW") return "Team Lead certification";
+  }
+  return STAGE_LABELS[stage];
+}

@@ -68,7 +68,7 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
        selected_rbe_id=$8, endorser_id=$9, first_reviewer_id=$10, second_reviewer_id=$11, pack_co3_id=$12, do1_id=$13, do2_id=$14,
        active_correction_id=$15, customer_id=$16, lock_version = lock_version + 1, updated_at=$17,
        oss_reviewer_id=$18, team_lead_id=$19, hrs_id=$20, hou_id=$21, team=$22, outlet_location_id=$23, assigned_rm_id=$24,
-       customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28
+       customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28, origination_location_id=$29
      WHERE id=$1`,
     [
       app.id, app.stage, app.status, app.route, app.current_version_id, app.requested_amount_kobo, app.customer_name,
@@ -76,7 +76,7 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
       app.active_correction_id, app.customer_id, now,
       app.oss_reviewer_id ?? null, app.team_lead_id ?? null, app.hrs_id ?? null, app.hou_id ?? null, app.team ?? null, app.outlet_location_id ?? null,
       app.assigned_rm_id ?? null, app.customer_profile ?? null, app.financing_structure ?? null, app.product_config_id ?? null,
-      app.location_snapshot ? JSON.stringify(app.location_snapshot) : null,
+      app.location_snapshot ? JSON.stringify(app.location_snapshot) : null, app.origination_location_id ?? null,
     ],
   );
 }

@@ -55,7 +55,7 @@ export interface AppRow {
   customer_id: string | null;
   applicant_type: "INDIVIDUAL" | "ENTERPRISE" | "LIMITED";
   initiator_id: string;
-  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER" | "DELIGHT_OFFICER";
+  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER" | "DELIGHT_OFFICER" | "TEAM_LEAD" | "UNIT_HEAD";
   region: string | null;
   business_unit: string | null;
   status: string;
@@ -81,6 +81,8 @@ export interface AppRow {
   repayment_prompts_active_at: Date | null;
   closed_at: Date | null;
   workflow: "WAKEELBOOST" | "RETAIL";
+  /** Approval policy pinned at first submission (STANDARD = the chain in force before RETAIL_CX_V1). */
+  approval_policy?: "STANDARD" | "RETAIL_CX_V1";
   product_code: string | null;
   product_label: string | null;
   product_config_id: string | null;
@@ -88,6 +90,8 @@ export interface AppRow {
   financing_structure: string | null;
   team: string | null;
   outlet_location_id: string | null;
+  /** Where the request was originated (RM-selected location, or the Delight Officer's outlet); reporting only. */
+  origination_location_id?: string | null;
   location_snapshot: Record<string, unknown> | null;
   assigned_rm_id: string | null;
   oss_reviewer_id: string | null;
@@ -164,9 +168,11 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       return { roles: ["HEAD_OF_UNIT"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, ...(await priorApprovers(tx, app.id))], scopeNote: "Head of Unit (must not have already decided on this request)" };
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION": {
+      const prior = (await priorApprovers(tx, app.id)).filter((x) => x !== app.first_reviewer_id);
+      if (app.approval_policy === "RETAIL_CX_V1")
+        return { roles: ["CX_CREDIT_REVIEWER"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior], scopeNote: "CX Credit Reviewer (not involved earlier on this request)" };
       const route = getRoute(app.route);
       if (!route) throw new Error("Route not set");
-      const prior = (await priorApprovers(tx, app.id)).filter((x) => x !== app.first_reviewer_id);
       return { roles: route.firstReviewRoles, exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior] };
     }
     case "SECOND_CREDIT_REVIEW": {

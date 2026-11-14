@@ -3,7 +3,7 @@ import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
 import { initiatorRequests } from "@/server/domain/views";
 import { type Stage } from "@/server/domain/stages";
-import { ROLE_LABELS, type Role, INITIATOR_ROLES } from "@/server/domain/roles";
+import { ROLE_LABELS, type Role, INITIATOR_ROLES, RETAIL_INITIATOR_ROLES } from "@/server/domain/roles";
 import { formatKobo } from "@/server/money";
 import { formatDuration, formatLagos } from "@/server/time";
 import { REMINDER_MIN_AGE_MS } from "@/server/domain/workflow";
@@ -17,7 +17,7 @@ export const metadata = { title: "View Progress" };
 export default async function Progress() {
   const { session, roles } = await requireUser();
   const rows = await initiatorRequests(db, session.staffId);
-  const isInitiator = INITIATOR_ROLES.some((r) => roles.includes(r));
+  const isInitiator = [...INITIATOR_ROLES, ...RETAIL_INITIATOR_ROLES].some((r) => roles.includes(r));
   const now = Date.now();
   const drafts = rows.filter((r) => r.status === "DRAFT");
   const live = rows.filter((r) => r.status !== "DRAFT");

@@ -9,7 +9,7 @@ type Cfg = any;
 
 const CONVENTIONS: [string, string][] = [["", "Not configured"], ["FLAT_PER_ANNUM", "Flat per annum"], ["FLAT_FOR_TENOR", "Flat once for the tenor"], ["FLAT_PER_MONTH", "Flat per month"]];
 const INSURANCE: [string, string][] = [["", "Not configured"], ["CUSTOMER", "Customer bears the cost"], ["BANK", "Bank bears the cost"], ["NOT_APPLICABLE", "Not applicable"]];
-const DENOMS: [string, string][] = [["", "Not configured"], ["VERIFIED_MONTHLY_NET_SALARY", "Verified monthly net salary"], ["VERIFIED_MONTHLY_GROSS_SALARY", "Verified monthly gross salary"], ["AVERAGE_MONTHLY_BUSINESS_TURNOVER", "Average monthly business turnover"], ["AVERAGE_MONTHLY_NET_CASH_INFLOW", "Average monthly net cash inflow"], ["AVERAGE_MONTHLY_NET_PROFIT", "Average monthly net profit"]];
+const DENOMS: [string, string][] = [["", "Not configured"], ["VERIFIED_MONTHLY_NET_SALARY", "Verified monthly net salary"], ["VERIFIED_MONTHLY_GROSS_SALARY", "Verified monthly gross salary"], ["AVERAGE_MONTHLY_BUSINESS_TURNOVER", "Average monthly business turnover"], ["AVERAGE_MONTHLY_NET_CASH_INFLOW", "Average monthly net cash inflow"], ["AVERAGE_MONTHLY_NET_PROFIT", "Average monthly net profit"], ["AVERAGE_MONTHLY_INFLOW_FROM_ANNUAL", "Average monthly inflow (annual inflow ÷ 12)"]];
 const TRI: [string, string][] = [["", "Not configured"], ["true", "Yes"], ["false", "No"]];
 const k2n = (k: number | null) => (k === null || k === undefined ? "" : String(k / 100));
 
@@ -51,6 +51,16 @@ export function ConfigEditor({ productCode, initial, roles, canPropose }: { prod
       <input type="hidden" name="config" value={advanced ? raw : JSON.stringify(cfg)} />
       <p className="small muted" style={{ margin: 0 }}>Fields shown as “Not configured” block the actions listed above. Nothing is filled in automatically. A different person holding the configuration approver role must approve the change.</p>
       <div className="grid-3">
+        <Sel
+          id={`${productCode}-policy`}
+          label="Approval chain"
+          value={cfg.approvalPolicy ?? "STANDARD"}
+          options={[
+            ["STANDARD", "Standard: Team Lead → Head of Retail Sales → Head of Unit → credit reviews → Unit Head → DH"],
+            ["RETAIL_CX_V1", "CX policy: Team Lead certification → CX credit review → Unit Head → DH"],
+          ]}
+          onChange={(v) => upd((c) => (c.approvalPolicy = v as "STANDARD" | "RETAIL_CX_V1"))}
+        />
         <Sel id={`${productCode}-hou`} label="Head of Unit stage" value={cfg.businessReview.headOfUnitStage ?? ""} options={[["", "Not configured"], ["DISTINCT", "Distinct stage after Head of Retail Sales"], ["NOT_REQUIRED", "Not required"]]} onChange={(v) => upd((c) => (c.businessReview.headOfUnitStage = v || null))} />
         <Sel id={`${productCode}-rr`} label="Restructuring approval role" value={cfg.servicing.restructureApproverRole ?? ""} options={roleOpts} onChange={(v) => upd((c) => (c.servicing.restructureApproverRole = v || null))} />
         <Txt id={`${productCode}-exp`} label="Draft expiry (days, blank = never)" value={cfg.draftExpiryDays ?? ""} onChange={(v) => upd((c) => (c.draftExpiryDays = nOrNull(v)))} />
@@ -64,8 +74,10 @@ export function ConfigEditor({ productCode, initial, roles, canPropose }: { prod
               <AmountInput id={`${productCode}-${p}-max`} value={k2n(r.maxAmountKobo)} onChange={(v) => upd((c) => (c.profiles[p].maxAmountKobo = v ? amountToKobo(v) : null))} />
             </div>
             <Txt id={`${productCode}-${p}-ten`} label="Maximum tenor (months)" value={r.maxTenorMonths ?? ""} onChange={(v) => upd((c) => (c.profiles[p].maxTenorMonths = nOrNull(v)))} />
+            <Txt id={`${productCode}-${p}-mten`} label="Minimum repayment period (months)" value={r.minTenorMonths ?? ""} onChange={(v) => upd((c) => (c.profiles[p].minTenorMonths = nOrNull(v)))} />
             <Txt id={`${productCode}-${p}-dsr`} label="Maximum DSR (%)" value={r.dsr.maxPercent ?? ""} onChange={(v) => upd((c) => (c.profiles[p].dsr.maxPercent = v || null))} />
             <Sel id={`${productCode}-${p}-den`} label="DSR denominator" value={r.dsr.denominator ?? ""} options={DENOMS} onChange={(v) => upd((c) => (c.profiles[p].dsr.denominator = v || null))} />
+            <Txt id={`${productCode}-${p}-rec`} label="Inflow recognised for affordability (%)" value={r.dsr.inflowRecognitionPercent ?? "100"} onChange={(v) => upd((c) => (c.profiles[p].dsr.inflowRecognitionPercent = v || "100"))} />
             <Sel id={`${productCode}-${p}-dex`} label="DSR exceptions permitted" value={String(r.dsr.exceptionAllowed)} options={[["false", "No"], ["true", "Yes"]]} onChange={(v) => upd((c) => (c.profiles[p].dsr.exceptionAllowed = v === "true"))} />
             <Sel id={`${productCode}-${p}-der`} label="DSR exception authority" value={r.dsr.exceptionApproverRole ?? ""} options={roleOpts} onChange={(v) => upd((c) => (c.profiles[p].dsr.exceptionApproverRole = v || null))} />
             <Txt id={`${productCode}-${p}-stm`} label="Bank statement period (months)" value={r.statementMonths ?? ""} onChange={(v) => upd((c) => (c.profiles[p].statementMonths = nOrNull(v)))} />

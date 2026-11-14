@@ -28,9 +28,19 @@ export const PROFILE_LABELS: Record<CustomerProfile, string> = {
   BUSINESS_OWNER: "Business owner / registered business",
 };
 
+/** Built-in contract types; more are added by a Super Admin in the contract_types catalogue. */
 export const STRUCTURE_CODES = ["STANDARD", "MURABAHA", "IJARAH"] as const;
-export type StructureCode = (typeof STRUCTURE_CODES)[number];
-export const STRUCTURE_LABELS: Record<StructureCode, string> = { STANDARD: "Standard", MURABAHA: "Murabaha", IJARAH: "Ijarah" };
+/** A contract type code (built-in or from the catalogue). */
+export type StructureCode = string;
+export const CONTRACT_CODE_RE = /^[A-Z][A-Z0-9_]{1,30}$/;
+const BUILTIN_LABELS: Record<string, string> = { STANDARD: "Standard", MURABAHA: "Murabaha", IJARAH: "Ijarah" };
+/** Contract type label: the name stored with the configuration, else the built-in name, else the code. */
+export function structureLabel(code: string | null | undefined, stored?: string | null): string {
+  if (!code) return "";
+  return stored || BUILTIN_LABELS[code] || code.charAt(0) + code.slice(1).toLowerCase().replace(/_/g, " ");
+}
+/** Lookup kept for existing callers; unknown codes fall back to a readable form of the code. */
+export const STRUCTURE_LABELS: Record<string, string> = new Proxy(BUILTIN_LABELS, { get: (t, k: string) => structureLabel(k, t[k]) });
 
 /**
  * How a quoted rate relates to the tenor. The bank must choose one per structure before final
@@ -59,6 +69,7 @@ export const DSR_DENOMINATORS = [
   "AVERAGE_MONTHLY_BUSINESS_TURNOVER",
   "AVERAGE_MONTHLY_NET_CASH_INFLOW",
   "AVERAGE_MONTHLY_NET_PROFIT",
+  "AVERAGE_MONTHLY_INFLOW_FROM_ANNUAL",
 ] as const;
 export type DsrDenominator = (typeof DSR_DENOMINATORS)[number];
 export const DSR_DENOMINATOR_LABELS: Record<DsrDenominator, string> = {
@@ -67,7 +78,10 @@ export const DSR_DENOMINATOR_LABELS: Record<DsrDenominator, string> = {
   AVERAGE_MONTHLY_BUSINESS_TURNOVER: "Average monthly business turnover (statement credits)",
   AVERAGE_MONTHLY_NET_CASH_INFLOW: "Average monthly net cash inflow",
   AVERAGE_MONTHLY_NET_PROFIT: "Average monthly net profit",
+  AVERAGE_MONTHLY_INFLOW_FROM_ANNUAL: "Average monthly inflow (verified annual inflow ÷ 12)",
 };
+/** Denominators derived from an annual figure entered by the officer (and the recognition factor). */
+export const ANNUAL_DENOMINATORS: readonly DsrDenominator[] = ["AVERAGE_MONTHLY_INFLOW_FROM_ANNUAL"];
 
 export const DOC_STAGES = ["SUBMISSION", "CREDIT", "OFFER", "PRE_DISBURSEMENT"] as const;
 export type DocStage = (typeof DOC_STAGES)[number];
@@ -89,7 +103,9 @@ const kobo = z.number().int().positive();
 const roleRef = z.string().refine((r) => isRole(r), "Unknown role.");
 
 export const structureSchema = z.object({
-  code: z.enum(STRUCTURE_CODES),
+  /** Name of the contract type when the configuration was proposed (display only). */
+  label: z.string().max(60).nullish(),
+  code: z.string().regex(CONTRACT_CODE_RE, "Contract type code: capitals, digits and underscores."),
   ratePercent: pct.nullable(),
   rateConvention: z.enum(RATE_CONVENTIONS).nullable(),
   insuranceBearer: z.enum(INSURANCE_BEARERS).nullable(),
@@ -107,7 +123,7 @@ export const docRequirementSchema = z.object({
   coverageFrom: z.enum(["statementMonths", "payslipMonths"]).nullable().default(null),
   /** Conditional requirements (amount band, structure). */
   amountAboveKobo: kobo.nullable().default(null),
-  structures: z.array(z.enum(STRUCTURE_CODES)).nullable().default(null),
+  structures: z.array(z.string().regex(CONTRACT_CODE_RE)).nullable().default(null),
   /** Exception type that can stand in for this document, when configured (e.g. AFS). */
   exceptionType: z.enum(["AFS", "DOCUMENT"]).nullable().default(null),
   note: z.string().max(300).nullable().default(null),
@@ -120,10 +136,14 @@ export const profileRulesSchema = z.object({
   eligibilityNote: z.string().max(300).nullable().default(null),
   maxAmountKobo: kobo.nullable(),
   maxTenorMonths: z.number().int().min(1).max(360).nullable(),
-  structures: z.array(structureSchema),
+  /** Minimum repayment period. Null = no minimum. */
+  minTenorMonths: z.number().int().min(1).max(360).nullable().default(null),
+  structures: z.array(structureSchema).refine((a) => new Set(a.map((s) => s.code)).size === a.length, "Each contract type can appear only once."),
   dsr: z.object({
     maxPercent: pct.nullable(),
     denominator: z.enum(DSR_DENOMINATORS).nullable(),
+    /** Share of verified inflow recognised for affordability (conservative assessment). 100 = all of it. */
+    inflowRecognitionPercent: pct.default("100"),
     exceptionAllowed: z.boolean().default(false),
     exceptionApproverRole: roleRef.nullable().default(null),
   }),
@@ -144,8 +164,17 @@ export const profileRulesSchema = z.object({
 });
 export type ProfileRules = z.infer<typeof profileRulesSchema>;
 
+export const APPROVAL_POLICIES = ["STANDARD", "RETAIL_CX_V1"] as const;
+export type ApprovalPolicy = (typeof APPROVAL_POLICIES)[number];
+export const APPROVAL_POLICY_LABELS: Record<ApprovalPolicy, string> = {
+  STANDARD: "Standard: Team Lead → Head of Retail Sales → Head of Unit → first and second credit review → Unit Head → Divisional Head",
+  RETAIL_CX_V1: "CX policy: Team Lead certification → CX credit review → Unit Head → Divisional Head",
+};
+
 export const productConfigSchema = z.object({
   profiles: z.object({ SALARY_EARNER: profileRulesSchema.optional(), BUSINESS_OWNER: profileRulesSchema.optional() }),
+  /** Approval chain for requests submitted under this version (pinned on each request at first submission). */
+  approvalPolicy: z.enum(APPROVAL_POLICIES).default("STANDARD"),
   businessReview: z.object({
     /** DISTINCT: Head of Unit approval is a separate stage after Head of Retail Sales. */
     headOfUnitStage: z.enum(["DISTINCT", "NOT_REQUIRED"]).nullable(),
@@ -341,6 +370,7 @@ export function configGaps(cfg: ProductConfig, opts: { profile?: CustomerProfile
     const g = (key: string, label: string, blocks: BlockedAction, structure?: StructureCode) => gaps.push({ key: `profiles.${p}.${key}`, label: `${PROFILE_LABELS[p]}: ${label}`, blocks, profile: p, structure });
     if (r.maxAmountKobo === null) g("maxAmountKobo", "maximum financing amount", "SUBMISSION");
     if (r.maxTenorMonths === null) g("maxTenorMonths", "maximum tenor", "SUBMISSION");
+    if (r.minTenorMonths !== null && r.maxTenorMonths !== null && r.minTenorMonths > r.maxTenorMonths) g("minTenorMonths", `minimum tenor (${r.minTenorMonths}) above the maximum (${r.maxTenorMonths})`, "SUBMISSION");
     if (r.dsr.maxPercent === null) g("dsr.maxPercent", "maximum DSR", "SUBMISSION");
     if (r.dsr.denominator === null) g("dsr.denominator", "DSR income / business denominator", "SUBMISSION");
     if (r.dsr.exceptionAllowed && !r.dsr.exceptionApproverRole) g("dsr.exceptionApproverRole", "DSR exception approver role", "DSR_EXCEPTION");
@@ -473,6 +503,10 @@ export async function proposeProductConfig(ctx: Ctx, p: { productCode: string; c
     const parsed = productConfigSchema.safeParse(p.config);
     if (!parsed.success) throw invalid("The configuration is not valid.", Object.fromEntries(parsed.error.issues.map((i) => [i.path.join("."), i.message])));
     if ((p.reason ?? "").trim().length < 3) throw invalid("Give a reason for the change.", { reason: "Reason is required." });
+    const used = [...new Set(Object.values(parsed.data.profiles).flatMap((r) => (r ? r.structures.map((x) => x.code) : [])))];
+    const known = new Set((await tx.query<{ code: string }>("SELECT code FROM contract_types WHERE code = ANY($1)", [used])).rows.map((r) => r.code));
+    const unknown = used.filter((c) => !known.has(c));
+    if (unknown.length) throw invalid(`Unknown contract type: ${unknown.join(", ")}. Add it to the contract type list first.`, { structures: "Unknown contract type." });
     if (!(p.effectiveFrom instanceof Date) || Number.isNaN(p.effectiveFrom.getTime())) throw invalid("Enter a valid effective date.", { effectiveFrom: "Invalid date." });
     const open = await tx.query("SELECT 1 FROM product_configs WHERE product_code = $1 AND status = 'PROPOSED'", [p.productCode]);
     if (open.rowCount) throw conflict("A proposed change is already awaiting approval for this product. Approve, reject or withdraw it first.");

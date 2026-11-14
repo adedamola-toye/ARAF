@@ -2,12 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
-import { retailDashboard, retailScope } from "@/server/retail-reports";
+import { BREAKDOWN_DIMENSIONS, retailBreakdown, retailDashboard, retailScope, type BreakdownDimension } from "@/server/retail-reports";
 import { listProducts, PROFILE_LABELS, type CustomerProfile } from "@/server/domain/products";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { STAGE_LABELS, type Stage } from "@/server/domain/stages";
 import { formatKobo } from "@/server/money";
-import { formatDuration } from "@/server/time";
+import { formatDuration, formatLagos } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
 import { WaitChip } from "@/components/Status";
 
@@ -24,6 +24,8 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const products = await listProducts(db, { retailOnly: true });
   const f = { from: sp.from ?? null, to: sp.to ?? null, product: sp.product ?? null };
   const d = await retailDashboard(db, scope, f, now);
+  const by = (Object.keys(BREAKDOWN_DIMENSIONS) as BreakdownDimension[]).includes(sp.by as BreakdownDimension) ? (sp.by as BreakdownDimension) : "location";
+  const bd = await retailBreakdown(db, scope, f, by);
   const a = d.amounts;
   const n = (s: string) => Number(s);
   const qs = new URLSearchParams(Object.entries(f).filter(([, v]) => v) as [string, string][]).toString();
@@ -164,6 +166,61 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           )}
         </section>
       </div>
+
+      <section className="card" aria-labelledby="h-bd" style={{ marginTop: "var(--space-5)" }}>
+        <div className="card-head">
+          <h2 id="h-bd">Performance by {BREAKDOWN_DIMENSIONS[by].toLowerCase()}</h2>
+          <span className="small muted">
+            Data as of {formatLagos(now)} · last request change {bd.freshness.lastApplicationChange ? formatLagos(bd.freshness.lastApplicationChange) : "—"} · last disbursement recorded {bd.freshness.lastDisbursementRecorded ? formatLagos(bd.freshness.lastDisbursementRecorded) : "—"}
+          </span>
+        </div>
+        <nav className="row" aria-label="Group by">
+          {(Object.entries(BREAKDOWN_DIMENSIONS) as [BreakdownDimension, string][]).map(([k, label]) => {
+            const p = new URLSearchParams(qs);
+            p.set("by", k);
+            return (
+              <Link key={k} href={`?${p.toString()}#h-bd`} className={`btn btn-sm ${k === by ? "btn-primary" : "btn-ghost"}`} aria-current={k === by ? "true" : undefined}>
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+        {bd.rows.length === 0 ? (
+          <p className="muted">No submitted requests in this scope and period.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th scope="col">{BREAKDOWN_DIMENSIONS[by]}</th>
+                  <th scope="col" className="num">Submitted</th>
+                  <th scope="col" className="num">Requested</th>
+                  <th scope="col" className="num">In progress</th>
+                  <th scope="col" className="num">Approved</th>
+                  <th scope="col" className="num">Declined</th>
+                  <th scope="col" className="num">Disbursed</th>
+                  <th scope="col" className="num">Disbursed value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bd.rows.map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.key}</td>
+                    <td className="num">{r.submitted}</td>
+                    <td className="num">{formatKobo(r.requestedKobo)}</td>
+                    <td className="num">{r.inProgress}</td>
+                    <td className="num">{r.approved}</td>
+                    <td className="num">{r.declined}</td>
+                    <td className="num">{r.disbursedCount}</td>
+                    <td className="num">{formatKobo(r.disbursedKobo)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="small muted" style={{ marginBottom: 0 }}>Location is where the request was originated (the Relationship Manager&apos;s selected location or the Delight Officer&apos;s outlet); requests created before locations were recorded show as not recorded.</p>
+      </section>
 
       <section aria-labelledby="h-pipe" style={{ marginTop: "var(--space-5)" }}>
         <h2 id="h-pipe" className="section-title">Pipeline: current stage, owner and elapsed time</h2>
