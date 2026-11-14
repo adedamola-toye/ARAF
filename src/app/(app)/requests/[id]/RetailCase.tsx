@@ -1,3 +1,6 @@
+import { currentPhotoReview, MIN_SKIP_REASON, photoSkips } from "@/server/domain/photo-review";
+import { retailCreditStatus } from "@/server/domain/retail-credit";
+import { PhotoVerification } from "./PhotoVerification";
 import { CreditSummary } from "@/components/CreditCheckPanel";
 import type { CreditCheckRow } from "@/server/credit/seedfi";
 import Link from "next/link";
@@ -35,6 +38,30 @@ export const RETAIL_MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Payment", stages: ["PAYMENT_RECONCILIATION", "COMPLETION"] },
   { label: "Fulfilment", stages: ["FULFILMENT", "COMPLETED"] },
 ];
+
+/** KYC information the Team Lead reviews for Vendor Financing (within existing access permissions). */
+async function KycReview({ c, b }: { c: Case; b: Awaited<ReturnType<typeof retailBits>> }) {
+  const { app, data } = b;
+  const credit = await retailCreditStatus(db, app.id, new Date());
+  const rm = (await db.query<{ full_name: string }>("SELECT full_name FROM staff WHERE id = $1", [app.initiator_id])).rows[0]?.full_name ?? "—";
+  const vendor = data.vendorId ? (await db.query<{ name: string }>("SELECT name FROM vendors WHERE id = $1", [data.vendorId])).rows[0]?.name ?? null : null;
+  const docs = c.documents.filter((d) => !d.superseded_at);
+  return (
+    <section key="kyc" className="summary-box" aria-labelledby="h-kyc">
+      <h3 id="h-kyc" style={{ marginTop: 0 }}>Customer and business KYC</h3>
+      <dl className="review-list small">
+        <div><dt>Customer</dt><dd>{data.customerName || app.customer_name || "—"}{data.businessName ? ` trading as ${data.businessName}` : ""}</dd></div>
+        <div><dt>BVN and credit check</dt><dd>{credit.length ? credit.map((p) => `${p.label}: BVN ending ${p.bvnLast4 ?? "—"} · ${p.latest ? (p.latest.status === "COMPLETED" ? `SeedFi ${p.latest.outcome} (score ${p.latest.score}) on ${formatLagos(p.latest.created_at)}` : "SeedFi unavailable") : "no SeedFi check recorded"}`).join("; ") : "—"}</dd></div>
+        <div><dt>Business address</dt><dd>{data.businessAddress || "—"}</dd></div>
+        <div><dt>Sector</dt><dd>{data.businessSector || "—"}</dd></div>
+        <div><dt>Vendor / supplier</dt><dd>{vendor ?? "—"}</dd></div>
+        <div><dt>Relationship Manager</dt><dd>{rm} · {formatKobo(Number(app.requested_amount_kobo ?? 0))}{data.tenorMonths ? ` over ${data.tenorMonths} months` : ""}{data.purpose ? ` · ${data.purpose}` : ""}</dd></div>
+        <div><dt>Supporting documents</dt><dd>{docs.length} on file (see Documents)</dd></div>
+      </dl>
+      <p className="small muted" style={{ margin: 0 }}>A good credit score does not override an unresolved identity mismatch: return the request if the customer&apos;s identity details do not agree.</p>
+    </section>
+  );
+}
 
 function Check({ ok, children }: { ok: boolean; children: React.ReactNode }) {
   return (
@@ -112,9 +139,20 @@ export async function RetailOverview({ c }: { c: Case }) {
   const nm = (id: string | null) => (id ? ppl.find((p: { id: string }) => p.id === id)?.full_name ?? name(id) : "—");
   const loc = app.location_snapshot as { outletName?: string; outletType?: string; city?: string; state?: string } | null;
   const out = b.prelim?.outputs as AffordabilityOutput | undefined;
+  const skips = await photoSkips(db, app.id);
+  const photoNow = await currentPhotoReview(db, app.id);
   return (
     <div className="stack">
       {app.suspended_at && <div className="alert alert-warn"><AlertTriangle className="icon" aria-hidden="true" /> Suspended: {app.suspension_reason}</div>}
+      {skips.map((k, i) => (
+        <div key={i} className="alert alert-warn" role="note">
+          <AlertTriangle className="icon" aria-hidden="true" />
+          <span>
+            <strong>Business Photograph Not Uploaded.</strong> Team Lead {k.team_lead} skipped the business photograph on {formatLagos(k.decided_at)}. Reason: “{k.skip_reason}”. This is not a rejection; take it into account in your decision.
+          </span>
+        </div>
+      ))}
+      {photoNow?.decision === "UPLOADED" && <p className="small" style={{ margin: 0 }}><span className="badge badge-green">Business photograph uploaded by the Team Lead</span> {formatLagos(photoNow.decided_at)} · see Documents</p>}
       <div className="metric-grid">
         <div className="metric"><div className="k">Requested (submitted)</div><div className="v">{formatKobo(app.requested_amount_kobo)}</div></div>
         <div className="metric"><div className="k">Structure · rate</div><div className="v v-text">{st ? `${STRUCTURE_LABELS[st.code]} ${st.ratePercent ?? "—"}%` : "—"}</div></div>
@@ -321,6 +359,29 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
           </div>,
         );
       if (tlBlocked.length) body.push(<Blocked key="tlb">Blocked until configured: {tlBlocked.map((g) => g.label).join("; ")}.</Blocked>);
+      let photoPending = false;
+      if (stage === "TEAM_LEAD_REVIEW") {
+        const review = await currentPhotoReview(db, app.id);
+        if (review?.required) {
+          photoPending = !review.decision;
+          body.push(await KycReview({ c, b }));
+          body.push(
+            <section key="photo" className="summary-box" aria-labelledby="h-photo">
+              <h3 id="h-photo" style={{ marginTop: 0 }}>Business Photograph Verification</h3>
+              {review.decision === "UPLOADED" ? (
+                <p className="small" style={{ margin: 0 }}><span className="badge badge-green">Photograph uploaded</span> by you on {formatLagos(review.decided_at)}. It is in Documents.</p>
+              ) : review.decision === "SKIPPED" ? (
+                <p className="small" style={{ margin: 0 }}><span className="badge badge-warn">Skipped</span> {formatLagos(review.decided_at)}. Reason: {review.skip_reason}. The Unit Head has been notified.</p>
+              ) : (
+                <>
+                  <p className="small muted" style={{ marginTop: 0 }}>Upload an existing photograph of the business the Relationship Manager presented, or skip and give the reason. You do not need to take a new photograph. Either choice lets you complete your review.</p>
+                  <PhotoVerification applicationId={app.id} minReason={MIN_SKIP_REASON} />
+                </>
+              )}
+            </section>,
+          );
+        }
+      }
       const actionMap: Record<string, [string, string, string]> = {
         OSS_REVIEW: ["RECOMMEND", "Recommend to Team Lead", "Completeness, outlet and state details, Altbox/Altshop location and evidence."],
         TEAM_LEAD_REVIEW: ["RECOMMEND", "Recommend to Head of Retail Sales", "Your independent view of the appraisal, proposal, financial evidence, DSR and commercial viability."],
@@ -328,8 +389,9 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
         HEAD_OF_UNIT_APPROVAL: ["APPROVE", "Grant business approval", "Final business approval before credit processing. This is not a credit approval."],
       };
       const [act, label, hint] = actionMap[stage];
-      if (!tlBlocked.length && pre.ok) body.push(<BusinessDecisionForm key="f" hidden={hidden} action={act} label={label} hint={hint} visitRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.visitRequired} rmPhotoRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.businessPhotos.rmPhotoRequired} doneHref={doneHref} />);
-      secondary.push(["RETURN", "Return to initiator for correction", false], ["REJECT", "Decline", true]);
+      if (photoPending) body.push(<p key="photo-wait" className="small muted">Complete Business Photograph Verification above to recommend, return or decline.</p>);
+      else if (!tlBlocked.length && pre.ok) body.push(<BusinessDecisionForm key="f" hidden={hidden} action={act} label={label} hint={hint} visitRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.visitRequired} rmPhotoRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.businessPhotos.rmPhotoRequired} doneHref={doneHref} />);
+      if (!photoPending) secondary.push(["RETURN", "Return to initiator for correction", false], ["REJECT", "Decline", true]);
       break;
     }
     case "FIRST_CREDIT_REVIEW":

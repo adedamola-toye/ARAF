@@ -7,6 +7,7 @@ export function TrackerSwitch({ enabled }: { enabled: boolean }) {
     <ActionForm action={trackerSwitchAction}>
       <input type="hidden" name="enabled" value={enabled ? "false" : "true"} />
       <div className="row">
+        <input name="reason" placeholder="Reason for the change" aria-label="Reason for the change" />
         <span>
           Tracker is <strong>{enabled ? "on" : "off"}</strong> for other users.
         </span>

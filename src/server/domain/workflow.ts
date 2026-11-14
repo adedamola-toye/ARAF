@@ -11,6 +11,7 @@
  *   6. writes audit events and outbox notifications.
  * See docs/WORKFLOW.md for the state map.
  */
+import { enterTeamLeadReview } from "./photo-review";
 import type { Tx } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
@@ -97,6 +98,7 @@ export async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen
   app.stage = stage;
   app.status = statusForStage(stage, app.status);
   await audit(tx, ctx, { action: "STAGE_CHANGED", applicationId: app.id, stage, details: { from, to: stage } });
+  if (stage === "TEAM_LEAD_REVIEW") await enterTeamLeadReview(tx, app, ctx.now);
   if (chosen) return openTask(tx, ctx, app, stage, chosen, note);
   return null;
 }
