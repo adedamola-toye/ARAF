@@ -14,7 +14,7 @@ import { formatNaira, formatRateE4, MARKUP_BASIS_LABELS, SHORT_MONTH_RULE_LABELS
 import { PhoneImage } from "../ui";
 import { ContractEditor } from "../AltClient";
 import { CONTRACT_DRAFT } from "@/lib/altphones-contract";
-import { contractAction, commitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
+import { contractAction, submitImportAction, discardImportAction, holidayAction, modelAction, policyAction, previewImportAction, pricingAction } from "../actions";
 
 export const metadata = { title: "Altphones settings" };
 
@@ -409,7 +409,7 @@ async function Imports({ preview }: { preview?: string }) {
       <section className="card" aria-labelledby="h-imp">
         <h2 id="h-imp">Altphones setup</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
-          Upload in this order. Each file is checked first and nothing is applied until you confirm. Download a template, fill it in Excel, and save as .xlsx or .csv.
+          Upload in this order. Each file is checked first and nothing is applied until you confirm. Download the CSV template, fill it in, and save it as CSV UTF-8. Delight Officers and Smile Associates are never created or assigned from a file: their access is managed in Users and roles.
         </p>
         <ol className="setup-steps">
           {(
@@ -419,12 +419,6 @@ async function Imports({ preview }: { preview?: string }) {
                 "Locations",
                 `${n(counts.branches, "Branch", "Branches")} · ${n(counts.shops, "Shop")} · ${n(counts.boxes, "BOX", "BOXes")}`,
                 "State, city, type (Branch, Shop or BOX) and name. Existing locations are skipped; duplicate names are refused.",
-              ],
-              [
-                "OFFICERS",
-                "Delight Officers and Smile Associates",
-                `${n(counts.dos, "Delight Officer")} · ${n(counts.sas, "Smile Associate")}`,
-                "Work email, name, route (Delight Officer or Smile Associate), state and home Branch/BOX. The route decides how they sign in; set Active to No to remove access. Emails must be in the bank directory.",
               ],
               [
                 "OPENING_STOCK",
@@ -504,19 +498,38 @@ async function Imports({ preview }: { preview?: string }) {
             {open.summary.errors > 0 && <span className="badge badge-red">{open.summary.errors} errors</span>}
           </div>
           {open.errors.length > 0 && (
-            <ul className="alt-import-errors small">
-              {open.errors.slice(0, 200).map((e: { row: number; message: string; skipped?: boolean }, i: number) => (
-                <li key={i} className={e.skipped ? "muted" : "err"}>
-                  Row {e.row}: {e.message}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="alt-import-errors small">
+                {open.errors.slice(0, 50).map((e: { row: number; message: string; skipped?: boolean }, i: number) => (
+                  <li key={i} className={e.skipped ? "muted" : "err"}>
+                    Row {e.row}: {e.message}
+                  </li>
+                ))}
+              </ul>
+              <p className="small" style={{ margin: 0 }}>
+                {open.errors.length > 50 ? `Showing 50 of ${open.errors.length}. ` : ""}
+                <a href={`/api/altphones/imports/${open.id}/errors`}>Download the error report (CSV)</a> with the row, field, error and suggested correction.
+              </p>
+            </>
           )}
           <div className="action-bar">
-            {open.summary.errors === 0 && open.summary.valid > 0 ? (
-              <ActionForm action={commitImportAction} className="inline-form">
+            {open.summary.valid > 0 ? (
+              <ActionForm action={submitImportAction} className="stack">
                 <input type="hidden" name="importId" value={open.id} />
-                <SubmitButton>Import {open.summary.valid} records</SubmitButton>
+                {open.summary.errors > 0 && (
+                  <>
+                    <label className="check">
+                      <input type="checkbox" name="partial" value="1" /> Submit a partial import: leave out the {open.summary.errors} invalid row{open.summary.errors === 1 ? "" : "s"}
+                    </label>
+                    <div className="field">
+                      <label htmlFor="imp-note">Reason for the partial import</label>
+                      <input id="imp-note" name="note" placeholder="e.g. rows for closed outlets are being confirmed separately" />
+                    </div>
+                  </>
+                )}
+                <div>
+                  <SubmitButton>Submit {open.summary.valid} records for Unit Head approval</SubmitButton>
+                </div>
               </ActionForm>
             ) : (
               <span className="small">{open.summary.errors ? "Correct the errors in the file and upload it again." : "Nothing new to import."}</span>
@@ -547,11 +560,13 @@ async function Imports({ preview }: { preview?: string }) {
                 {list.map((i) => (
                   <tr key={i.id}>
                     <td>{i.filename}</td>
-                    <td className="small">{IMPORT_LABELS[i.kind as ImportKind]}</td>
+                    <td className="small">{IMPORT_LABELS[i.kind as ImportKind] ?? "Officers (retired)"}</td>
                     <td>
-                      <span className={`badge ${i.status === "COMMITTED" ? "badge-green" : i.status === "DISCARDED" ? "" : "badge-warn"}`}>
-                        {i.status === "COMMITTED" ? `Imported ${i.summary.applied ?? 0}` : i.status === "DISCARDED" ? "Discarded" : "Awaiting confirmation"}
+                      <span className={`badge ${i.status === "COMMITTED" ? "badge-green" : i.status === "REJECTED" ? "badge-red" : i.status === "DISCARDED" ? "" : "badge-warn"}`}>
+                        {i.status === "COMMITTED" ? `Imported ${i.summary.applied ?? 0}${i.summary.invalidLeftOut ? ` (${i.summary.invalidLeftOut} left out)` : ""}` : i.status === "DISCARDED" ? "Discarded" : i.status === "REJECTED" ? "Rejected by Unit Head" : i.status === "SUBMITTED" ? "Awaiting Unit Head approval" : "Checked, not submitted"}
                       </span>
+                      {i.decision_note && <div className="small muted">{i.decision_note}</div>}
+                      {i.errors?.length > 0 && <div className="small"><a href={`/api/altphones/imports/${i.id}/errors`}>Error report</a></div>}
                     </td>
                     <td className="small muted">
                       {formatLagos(i.committed_at ?? i.created_at)} · {i.by_name}

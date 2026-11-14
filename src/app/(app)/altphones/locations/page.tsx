@@ -7,6 +7,8 @@ import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
 import { REGIONS } from "@/server/domain/roles";
 import { BPM_ROLE } from "@/server/altphones/core";
+import { IMPORT_LABELS, listImports as listSetupImports, type ImportKind } from "@/server/altphones/imports";
+import { commitImportAction, rejectImportAction } from "../actions";
 import {
   addressRequests,
   bpmRequests,
@@ -754,8 +756,40 @@ async function BpmTab() {
 async function Requests({ me, canApprove }: { me: string; canApprove: boolean }) {
   const [pending, recent, bpmPending] = await Promise.all([addressRequests(db, "PENDING"), addressRequests(db, "ALL"), bpmRequests(db, "PENDING")]);
   const done = recent.filter((r) => r.status !== "PENDING").slice(0, 30);
+  const setup = (await listSetupImports(db, 50)).filter((i) => i.status === "SUBMITTED");
   return (
     <>
+      {setup.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-imppend">
+          <h2 id="h-imppend">Setup imports awaiting the Unit Head</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>Nothing in these files is applied until a Unit Head who did not upload or submit it approves. Approval re-checks every row against the current records.</p>
+          <ul className="plain-list">
+            {setup.map((i) => (
+              <li key={i.id} className="summary-box">
+                <strong>{IMPORT_LABELS[i.kind as ImportKind] ?? i.kind}</strong>: {i.filename} · {i.summary.valid} ready{i.summary.errors ? `, ${i.summary.errors} invalid` : ""}
+                {i.partial && <span className="badge badge-warn" style={{ marginLeft: 6 }}>Partial import</span>}
+                <div className="small muted">Uploaded by {i.by_name}, submitted {i.submitted_at ? formatLagos(i.submitted_at) : "—"}{i.submit_note ? ` · ${i.submit_note}` : ""}</div>
+                {i.errors?.length > 0 && <div className="small"><a href={`/api/altphones/imports/${i.id}/errors`}>Error report (CSV)</a></div>}
+                {canApprove && i.created_by !== me && i.submitted_by !== me ? (
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <ActionForm action={commitImportAction} className="inline-form">
+                      <input type="hidden" name="importId" value={i.id} />
+                      <SubmitButton>Approve and import</SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={rejectImportAction} className="inline-form">
+                      <input type="hidden" name="importId" value={i.id} />
+                      <input name="note" placeholder="Reason for rejecting" aria-label="Reason for rejecting" />
+                      <SubmitButton className="btn btn-danger">Reject</SubmitButton>
+                    </ActionForm>
+                  </div>
+                ) : (
+                  <p className="small muted" style={{ margin: "6px 0 0" }}>{canApprove ? "You uploaded or submitted this file, so another Unit Head must approve it." : "Waiting for the Unit Head."}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="card action-panel" aria-labelledby="h-bpmpend">
         <h2 id="h-bpmpend">BPM mappings awaiting the Unit Head</h2>
         {bpmPending.length === 0 ? (

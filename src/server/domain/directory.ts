@@ -13,6 +13,7 @@
  *             Admin to review; their access is not changed automatically.
  * Every import can be previewed (dry run) first and is audited (counts, file name and fingerprint).
  */
+import { readCsv } from "../csv";
 import ExcelJS from "exceljs";
 import type { Db } from "../db";
 import { withTx } from "../db";
@@ -352,6 +353,6 @@ export async function readSpreadsheet(filename: string, data: Buffer, maxBytes =
       throw invalid("The Excel file could not be read. Save it as .xlsx (not .xls) or export it as CSV.");
     }
   }
-  if (ext === "csv" || ext === "txt") return parseCsv(data.toString("utf8"));
-  throw invalid("Upload an Excel .xlsx or a .csv file.");
+  if (ext === "csv" || ext === "txt") return readCsv(data, maxBytes);
+  throw invalid("Upload a .csv file (CSV UTF-8). Excel .xlsx is also accepted.");
 }

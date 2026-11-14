@@ -15,29 +15,20 @@ import { conflict, forbidden, invalid, notFound } from "../errors";
 import { sha256Hex } from "../crypto";
 import { holdsRole } from "../domain/access";
 import { readSpreadsheet } from "../domain/directory";
-import { REGIONS, normaliseNigerianState } from "../domain/roles";
+import { normaliseNigerianState } from "../domain/roles";
 import { imeiProblem, isEmail, isImei, isTenure, normalisePhone } from "@/lib/altphones";
-import { config } from "../config";
 import { currentSettings, isUuid, nextRef } from "./core";
 import { post } from "./stock";
 
-export type ImportKind = "LOCATIONS" | "OFFICERS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK";
+/** Officer (Delight Officer / Smile Associate) uploads were removed: officers are never created or assigned from a spreadsheet. */
+export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK";
 export const IMPORT_LABELS: Record<ImportKind, string> = {
   LOCATIONS: "Branches, Shops and BOX locations",
-  OFFICERS: "Delight Officers and Smile Associates",
   OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements" };
 export const MAX_IMPORT_ROWS = 20_000;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
-  OFFICERS: {
-    email: ["email", "emailaddress", "workemail"],
-    fullName: ["fullname", "name", "staffname"],
-    route: ["route", "role", "channel"],
-    state: ["state", "region"],
-    home: ["homelocation", "location", "branchorbox", "branch", "box"],
-    active: ["active", "status"],
-  },
   OPENING_STOCK: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], quantity: ["quantity", "qty", "units"], imeis: ["imeis", "imei"], note: ["note", "notes", "source"] },
   LOCATIONS: { state: ["state"], city: ["city", "town", "towncity", "lga"], type: ["type", "locationtype", "outlettype"], name: ["name", "locationname", "outletname", "branch", "locations", "location"], address: ["address"], sourceName: ["sourcename", "originalname", "listedname"], sourceType: ["sourcetype", "originaltype", "listedas"], aliases: ["aliases", "alsoknownas", "registerlabels", "otherlabels"] },
   TRANSACTIONS: {
@@ -57,7 +48,6 @@ const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
   STOCK: { reference: ["reference", "ref"], location: ["location", "branchorshop"], model: ["phonemodel", "model"], movement: ["movement", "movementtype", "type"], quantity: ["quantity", "qty", "units"], date: ["date", "movementdate"], note: ["note", "notes", "comment"] },
 };
 const REQUIRED: Record<ImportKind, string[]> = {
-  OFFICERS: ["email", "fullName", "route"],
   OPENING_STOCK: ["location", "model", "quantity"],
   LOCATIONS: ["state", "city", "type", "name"],
   TRANSACTIONS: ["reference", "type", "customerName", "model", "imei", "date", "origin", "supply"],
@@ -65,7 +55,6 @@ const REQUIRED: Record<ImportKind, string[]> = {
 };
 
 export const TEMPLATES: Record<ImportKind, string> = {
-  OFFICERS: "Email,Full name,Route,State,Home location,Active\r\nfirstname.lastname@altbank.ng,Firstname Lastname,Delight Officer,LAGOS,Ikeja Branch,Yes\r\nother.person@altbank.ng,Other Person,Smile Associate,LAGOS,Yaba Altbox,Yes\r\n",
   OPENING_STOCK: "Location,Phone model,Quantity,IMEIs,Note\r\nIkeja Branch,Altphone L1 Series — Black & Gold,20,,Opening count 2026-11-13\r\nYaba Altshop,Altphone L1 Series — Green,10,356938035643809;490154203237518,Delivery note 001\r\n",
   LOCATIONS: "State,City,Type,Name,Source name,Source type,Aliases\r\nLAGOS,Ikeja,Branch,Ikeja Branch,,,IKEJA\r\nLAGOS,Yaba,Shop,Yaba Altshop,,,\r\nABUJA,Abuja,Shop,Dei Dei Altshop,DEI DEI,ALTSHOP,\r\n",
   TRANSACTIONS:
@@ -169,48 +158,6 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       const taken = aliases.length ? (await q.query<{ label: string }>("SELECT label FROM altphones_location_aliases WHERE label = ANY($1)", [aliases])).rows.map((x) => x.label) : [];
       if (taken.length) { err(r, `${r.name}: alias already used by another location: ${taken.join(", ")}.`); continue; }
       ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, sourceName: (r.sourceName || r.name).trim(), sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
-    }
-  } else if (kind === "OFFICERS") {
-    const loc = await locationIndex(q);
-    const seen = new Set<string>();
-    for (const r of rows) {
-      const email = r.email.toLowerCase().replace(/^mailto:/, "");
-      const routeN = norm(r.route);
-      const role = ["do", "delightofficer", "delight"].includes(routeN) ? "DELIGHT_OFFICER" : ["sa", "smileassociate", "smile"].includes(routeN) ? "SMILE_ASSOCIATE" : null;
-      const activeN = norm(r.active ?? "");
-      const active = activeN === "" || ["yes", "y", "true", "active", "1"].includes(activeN) ? true : ["no", "n", "false", "inactive", "0"].includes(activeN) ? false : null;
-      const state = (r.state ?? "").toUpperCase();
-      const problems: string[] = [];
-      if (!/^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(email)) problems.push("email is not valid");
-      else if (!email.endsWith(`@${config.staffEmailDomain}`)) problems.push(`email must be an @${config.staffEmailDomain} address`);
-      if (r.fullName.length < 3) problems.push("full name is missing");
-      if (!role) problems.push(`route "${r.route}" must be Delight Officer (DO) or Smile Associate (SA)`);
-      if (active === null) problems.push("active must be Yes or No");
-      if (state && !(REGIONS as readonly string[]).includes(state)) problems.push(`"${r.state}" is not a Nigerian state`);
-      if (seen.has(email)) problems.push("email appears more than once in the file");
-      let home: { id: string; outlet_type: string; name: string } | null = null;
-      if (r.home) {
-        const m = loc(r.home);
-        if (m.length !== 1) problems.push(m.length ? `home location "${r.home}" matches more than one location` : `home location "${r.home}" was not found`);
-        else {
-          home = m[0];
-          if (role === "DELIGHT_OFFICER" && home.outlet_type !== "BRANCH") problems.push("a Delight Officer's home location must be a Branch");
-          if (role === "SMILE_ASSOCIATE" && home.outlet_type !== "ALTBOX") problems.push("a Smile Associate's home location must be a BOX");
-        }
-      }
-      const staff = email ? (await q.query<{ id: string; status: string }>("SELECT id, status FROM staff WHERE email = $1", [email])).rows[0] : undefined;
-      if (!staff && active) {
-        const dir = (await q.query<{ active: boolean; is_group_mailbox: boolean }>("SELECT active, is_group_mailbox FROM bank_directory WHERE email = $1", [email])).rows[0];
-        if (!dir || !dir.active) problems.push("not in the bank directory — staff can only be provisioned from the directory");
-        else if (dir.is_group_mailbox) problems.push("group mailboxes cannot be officers");
-      }
-      if (staff && staff.status !== "ACTIVE" && active) problems.push("the staff record is suspended; reactivate it in Users & roles first");
-      if (problems.length) {
-        err(r, `${email || "Row"}: ${problems.join("; ")}.`);
-        continue;
-      }
-      seen.add(email);
-      ok.push({ row: Number(r._row), email, fullName: r.fullName.replace(/\s+/g, " ").trim(), role, active, state: state || null, homeId: home?.id ?? null, staffId: staff?.id ?? null });
     }
   } else if (kind === "OPENING_STOCK") {
     const loc = await locationIndex(q);
@@ -384,17 +331,65 @@ export async function previewImport(ctx: Ctx, kind: string, filename: string, da
   });
 }
 
-export async function commitImport(ctx: Ctx, id: string) {
+/**
+ * Submit a checked file for approval. With invalid rows it can go forward only as an explicit partial
+ * import (the invalid rows are left out and listed in the error report) with a note explaining why.
+ */
+export async function submitImport(ctx: Ctx, id: string, p: { partial?: boolean; note?: string } = {}) {
   return withTx(async (tx) => {
     const actor = await requireAdmin(tx, ctx);
+    if (!isUuid(id)) throw notFound("Import not found.");
+    const imp = (await tx.query("SELECT * FROM altphones_imports WHERE id = $1 FOR UPDATE", [id])).rows[0];
+    if (!imp) throw notFound("Import not found.");
+    if (imp.status !== "PREVIEW") throw conflict("This import has already been submitted, committed or discarded.");
+    const sum = imp.summary as { valid: number; errors: number };
+    if (!sum.valid) throw invalid("Nothing in this file is ready to import.");
+    const note = (p.note ?? "").trim();
+    if (sum.errors > 0) {
+      if (!p.partial) throw invalid(`The file has ${sum.errors} invalid row${sum.errors === 1 ? "" : "s"}. Correct the file and upload it again, or submit a partial import that leaves them out.`);
+      if (note.length < 10) throw invalid("Explain why the invalid rows are being left out (at least 10 characters).", { note: "Give a reason for the partial import." });
+    }
+    if ((await tx.query("SELECT 1 FROM altphones_imports WHERE kind = $1 AND sha256 = $2 AND status = 'SUBMITTED'", [imp.kind, imp.sha256])).rowCount) throw conflict("This file is already waiting for approval.");
+    await tx.query("UPDATE altphones_imports SET status = 'SUBMITTED', submitted_by = $2, submitted_at = $3, partial = $4, submit_note = $5 WHERE id = $1", [id, actor.staffId, ctx.now, sum.errors > 0, note || null]);
+    await audit(tx, ctx, { action: "ALTPHONES_IMPORT_SUBMITTED", reason: note || null, details: { importId: id, kind: imp.kind, partial: sum.errors > 0, ...sum } });
+    return { ok: true };
+  });
+}
+
+async function requireImportApprover(q: Db, ctx: Ctx, imp: { created_by: string; submitted_by: string | null }) {
+  if (!ctx.actor) throw forbidden();
+  if (!(await holdsRole(q, ctx.actor.staffId, "UNIT_HEAD"))) throw forbidden("Only a Unit Head can approve an Altphones import.");
+  if (ctx.actor.staffId === imp.created_by || ctx.actor.staffId === imp.submitted_by) throw forbidden("You cannot approve an import you uploaded or submitted.");
+  return ctx.actor;
+}
+
+export async function rejectImport(ctx: Ctx, id: string, note: string) {
+  return withTx(async (tx) => {
+    if (!isUuid(id)) throw notFound("Import not found.");
+    const imp = (await tx.query("SELECT * FROM altphones_imports WHERE id = $1 FOR UPDATE", [id])).rows[0];
+    if (!imp) throw notFound("Import not found.");
+    const actor = await requireImportApprover(tx, ctx, imp);
+    if (imp.status !== "SUBMITTED") throw conflict("This import is not waiting for approval.");
+    if ((note ?? "").trim().length < 5) throw invalid("Give the reason for rejecting the import.", { note: "Reason required." });
+    await tx.query("UPDATE altphones_imports SET status = 'REJECTED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note.trim()]);
+    await audit(tx, ctx, { action: "ALTPHONES_IMPORT_REJECTED", reason: note.trim(), details: { importId: id, kind: imp.kind } });
+    return { ok: true };
+  });
+}
+
+/** Unit Head approval: re-validates against the database and applies the valid rows in one transaction. */
+export async function commitImport(ctx: Ctx, id: string) {
+  return withTx(async (tx) => {
     if (!isUuid(id)) throw notFound("Import not found.");
     await tx.query("SELECT pg_advisory_xact_lock(hashtext('altphones_import'))");
     const imp = (await tx.query("SELECT * FROM altphones_imports WHERE id = $1 FOR UPDATE", [id])).rows[0];
     if (!imp) throw notFound("Import not found.");
-    if (imp.status !== "PREVIEW") throw conflict("This import has already been committed or discarded.");
+    const actor = await requireImportApprover(tx, ctx, imp);
+    if (imp.status !== "SUBMITTED") throw conflict(imp.status === "PREVIEW" ? "This import has not been submitted for approval yet." : "This import has already been decided.");
     const kind = imp.kind as ImportKind;
     const v = await validate(tx, kind, imp.rows as Row[]);
-    if (v.errors.length) throw invalid(`The file still has ${v.errors.length} error${v.errors.length === 1 ? "" : "s"} (records may have changed since the preview). Correct the file and upload it again.`);
+    if (v.errors.length && !imp.partial) throw invalid(`The file now has ${v.errors.length} error${v.errors.length === 1 ? "" : "s"} (records changed since the preview). Reject it and ask for a corrected file.`);
+    if (!v.ok.length) throw invalid("No row in this file can be imported any more. Reject it.");
     const settings = await currentSettings(tx);
     let applied = 0;
     for (const o of v.ok) {
@@ -407,8 +402,6 @@ export async function commitImport(ctx: Ctx, id: string) {
           )
         ).rows[0].id;
         for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);
-      } else if (kind === "OFFICERS") {
-        await applyOfficer(tx, ctx, o);
       } else if (kind === "OPENING_STOCK") {
         const imeis = o.imeis as string[];
         if (imeis.length) {
@@ -422,8 +415,8 @@ export async function commitImport(ctx: Ctx, id: string) {
       }
       applied++;
     }
-    const summary = { ...imp.summary, applied, skipped: v.skipped.length };
-    await tx.query("UPDATE altphones_imports SET status = 'COMMITTED', committed_by = $2, committed_at = $3, summary = $4 WHERE id = $1", [id, actor.staffId, ctx.now, JSON.stringify(summary)]);
+    const summary = { ...imp.summary, applied, skipped: v.skipped.length, invalidLeftOut: v.errors.length };
+    await tx.query("UPDATE altphones_imports SET status = 'COMMITTED', committed_by = $2, committed_at = $3, summary = $4, decided_by = $2, decided_at = $3, skipped_invalid = $5 WHERE id = $1", [id, actor.staffId, ctx.now, JSON.stringify(summary), v.errors.length]);
     await audit(tx, ctx, { action: "ALTPHONES_IMPORT_COMMITTED", details: { kind, importId: id, ...summary } });
     return summary;
   });
@@ -485,7 +478,7 @@ export async function discardImport(ctx: Ctx, id: string) {
   return withTx(async (tx) => {
     await requireAdmin(tx, ctx);
     if (!isUuid(id)) throw notFound("Import not found.");
-    const r = await tx.query("UPDATE altphones_imports SET status = 'DISCARDED' WHERE id = $1 AND status = 'PREVIEW'", [id]);
+    const r = await tx.query("UPDATE altphones_imports SET status = 'DISCARDED' WHERE id = $1 AND status IN ('PREVIEW','SUBMITTED')", [id]);
     if (!r.rowCount) throw conflict("This import cannot be discarded.");
     return { ok: true };
   });
@@ -494,42 +487,24 @@ export async function discardImport(ctx: Ctx, id: string) {
 export async function listImports(q: Db, limit = 20) {
   return (
     await q.query(
-      `SELECT i.id, i.kind, i.filename, i.status, i.summary, i.errors, i.created_at, i.committed_at, s.full_name AS by_name
-         FROM altphones_imports i LEFT JOIN staff s ON s.id = i.created_by ORDER BY i.created_at DESC LIMIT $1`,
+      `SELECT i.id, i.kind, i.filename, i.status, i.summary, i.errors, i.created_at, i.committed_at, i.created_by, i.submitted_by, i.submitted_at, i.partial, i.submit_note, i.decision_note,
+              s.full_name AS by_name, d.full_name AS decided_by_name
+         FROM altphones_imports i LEFT JOIN staff s ON s.id = i.created_by LEFT JOIN staff d ON d.id = i.decided_by ORDER BY i.created_at DESC LIMIT $1`,
       [limit],
     )
   ).rows;
 }
 
-const ROUTE_ROLES = ["DELIGHT_OFFICER", "SMILE_ASSOCIATE"];
 
-/** Create or update a Delight Officer / Smile Associate: the route decides which of the two roles they hold. */
-async function applyOfficer(tx: Tx, ctx: Ctx, o: Record<string, unknown>) {
-  let staffId = o.staffId as string | null;
-  const role = o.role as string;
-  if (!staffId) {
-    staffId = (
-      await tx.query<{ id: string }>("INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,'Retail',$4,$5,$5) RETURNING id", [o.email, o.fullName, o.state, ctx.actor!.staffId, ctx.now])
-    ).rows[0].id;
-    await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId, email: o.email, via: "ALTPHONES_OFFICER_UPLOAD" } });
-  } else if (o.state) {
-    await tx.query("UPDATE staff SET region = coalesce(region, $2), updated_at = $3 WHERE id = $1", [staffId, o.state, ctx.now]);
-  }
-  if (staffId === ctx.actor!.staffId) throw invalid("You cannot change your own role assignments in an upload.");
-  const held = (await tx.query<{ role: string }>("SELECT role FROM role_assignments WHERE staff_id = $1 AND active AND role = ANY($2)", [staffId, ROUTE_ROLES])).rows.map((r) => r.role);
-  const revoke = o.active ? held.filter((r) => r !== role) : held;
-  for (const r of revoke) {
-    await tx.query("UPDATE role_assignments SET active = false, revoked_by = $3, revoked_at = $4 WHERE staff_id = $1 AND role = $2 AND active", [staffId, r, ctx.actor!.staffId, ctx.now]);
-    await audit(tx, ctx, { action: "ROLE_REVOKED", actorRole: "SUPER_ADMIN", details: { staffId, role: r, via: "ALTPHONES_OFFICER_UPLOAD" } });
-  }
-  if (o.active && !held.includes(role)) {
-    await tx.query("INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at) VALUES ($1,$2,$3,'Retail',$4,$5)", [staffId, role, o.state, ctx.actor!.staffId, ctx.now]);
-    await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId, role, via: "ALTPHONES_OFFICER_UPLOAD" } });
-  }
-  if (o.active && o.homeId) {
-    await tx.query(
-      "INSERT INTO altphones_officer_homes (staff_id, location_id, updated_by, updated_at) VALUES ($1,$2,$3,$4) ON CONFLICT (staff_id) DO UPDATE SET location_id = EXCLUDED.location_id, updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at",
-      [staffId, o.homeId, ctx.actor!.staffId, ctx.now],
-    );
-  }
+/** The error report for an import (row, field, error, suggested correction) as CSV. */
+export async function importErrorReport(q: Db, ctx: Ctx, id: string): Promise<{ filename: string; csv: string }> {
+  if (!ctx.actor) throw forbidden();
+  const ok = (await holdsRole(q, ctx.actor.staffId, "SUPER_ADMIN")) || (await holdsRole(q, ctx.actor.staffId, "UNIT_HEAD"));
+  if (!ok) throw forbidden();
+  if (!isUuid(id)) throw notFound("Import not found.");
+  const imp = (await q.query<{ filename: string; errors: { row: number; message: string; field?: string; skipped?: boolean }[] }>("SELECT filename, errors FROM altphones_imports WHERE id = $1", [id])).rows[0];
+  if (!imp) throw notFound("Import not found.");
+  const { errorReportCsv } = await import("@/lib/csv");
+  const rows = imp.errors.map((e) => ({ row: e.row, field: e.field ?? null, message: e.skipped ? `Skipped: ${e.message}` : e.message, suggestion: e.skipped ? "No action needed: the record already exists." : null }));
+  return { filename: `${imp.filename.replace(/\.[^.]+$/, "")}-errors.csv`, csv: errorReportCsv(rows) };
 }

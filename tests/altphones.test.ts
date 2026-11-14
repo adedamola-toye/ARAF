@@ -26,7 +26,12 @@ import {
 import { confirmDisbursement, decide } from "@/server/altphones/approvals";
 import { saveModel, savePricing } from "@/server/altphones/catalogue";
 import { decideReplenishment, requestReplenishment, stockOverview } from "@/server/altphones/stock";
-import { commitImport, previewImport } from "@/server/altphones/imports";
+import { commitImport, previewImport, submitImport } from "@/server/altphones/imports";
+/** Uploader submits; a Unit Head approves (commits). */
+async function approveImport(id: string) {
+  await submitImport(await ctxFor("superadmin@altbank.ng"), id);
+  return commitImport(await ctxFor("unit.head@altbank.ng"), id);
+}
 import { viewableApp } from "@/server/altphones/core";
 import { grantRole } from "@/server/domain/admin";
 
@@ -432,10 +437,10 @@ describe("historical imports", () => {
     ].join("\n");
     const bad = await previewImport(admin, "TRANSACTIONS", "legacy.csv", Buffer.from(csv));
     expect(bad.summary).toMatchObject({ rows: 3, valid: 2, errors: 1 });
-    await expect(commitImport(admin, bad.id)).rejects.toMatchObject({ code: "VALIDATION" });
+    await expect(submitImport(admin, bad.id)).rejects.toMatchObject({ code: "VALIDATION" });
     const good = await previewImport(admin, "TRANSACTIONS", "legacy.csv", Buffer.from(csv.split("\n").slice(0, 3).join("\n")));
     expect(good.summary).toMatchObject({ valid: 2, errors: 0 });
-    await commitImport(admin, good.id);
+    await approveImport(good.id);
     const apps = (await db.query("SELECT status, legacy, channel, legacy_ref FROM altphones_applications WHERE legacy ORDER BY legacy_ref")).rows;
     expect(apps).toEqual([
       { status: "COMPLETED", legacy: true, channel: "DO", legacy_ref: "LEG-1" },
@@ -456,7 +461,7 @@ describe("historical imports", () => {
     const p1 = await previewImport(admin, "STOCK", "stock.csv", Buffer.from(csv));
     expect(p1.summary).toMatchObject({ valid: 2, errors: 1 }); // BOX row refused
     const ok = await previewImport(admin, "STOCK", "stock.csv", Buffer.from(csv.split("\n").slice(0, 3).join("\n")));
-    await commitImport(admin, ok.id);
+    await approveImport(ok.id);
     expect(await stockOf("Wuse Altshop", models[1])).toEqual({ physical: 7, reserved: 0, available: 7 });
     const ov = (await stockOverview(db)).find((x) => x.location_name === "Wuse Altshop" && x.model_id === models[1])!;
     expect([ov.opening, ov.sales, ov.remaining]).toEqual([10, 3, 7]);
@@ -472,42 +477,17 @@ describe("historical imports", () => {
     const p = await previewImport(admin, "LOCATIONS", "locations.csv", Buffer.from(csv));
     expect(p.summary).toMatchObject({ rows: 5, valid: 2, errors: 2, skipped: 1 });
     const fixed = await previewImport(admin, "LOCATIONS", "locations-fixed.csv", Buffer.from(csv.split("\n").slice(0, 4).join("\n") + "\n"));
-    await commitImport(admin, fixed.id);
+    await approveImport(fixed.id);
     expect((await db.query("SELECT outlet_type FROM locations WHERE name IN ('Lekki Altshop','Lekki Altbox') ORDER BY name")).rows.map((r) => r.outlet_type)).toEqual(["ALTBOX", "ALTSHOP"]);
   });
 });
 
 describe("setup uploads", () => {
-  it("provisions Delight Officers and Smile Associates with their route and home location", async () => {
+  it("never creates or assigns Delight Officers or Smile Associates from a file", async () => {
     const admin = await ctxFor(ALT.admin);
-    const roles = async (email: string) =>
-      (await db.query("SELECT role FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE s.email = $1 AND ra.active AND ra.role IN ('DELIGHT_OFFICER','SMILE_ASSOCIATE') ORDER BY role", [email])).rows.map((r) => r.role);
-    const head = "Email,Full name,Route,State,Home location,Active";
-    const csv = [
-      head,
-      "new.officer@altbank.ng,Nkechi New-Officer,Delight Officer,LAGOS,Ikeja Branch,Yes",
-      "nobody@altbank.ng,Not In Directory,DO,LAGOS,,Yes",
-      "someone@gmail.com,Outside,SA,LAGOS,,Yes",
-      "new.officer2@altbank.ng,Wrong Home,SA,LAGOS,Ikeja Branch,Yes",
-      "x@altbank.ng,Bad Route,Cashier,LAGOS,,Yes",
-    ].join("\n");
-    const p = await previewImport(admin, "OFFICERS", "officers.csv", Buffer.from(csv));
-    expect(p.summary).toMatchObject({ rows: 5, valid: 1, errors: 4 });
-    await expect(commitImport(admin, p.id)).rejects.toMatchObject({ code: "VALIDATION" });
-    const ok = await previewImport(admin, "OFFICERS", "officers-ok.csv", Buffer.from(csv.split("\n").slice(0, 2).join("\n")));
-    await commitImport(admin, ok.id);
-    expect(await roles("new.officer@altbank.ng")).toEqual(["DELIGHT_OFFICER"]);
-    const home = (await db.query("SELECT l.name FROM altphones_officer_homes h JOIN staff s ON s.id = h.staff_id JOIN locations l ON l.id = h.location_id WHERE s.email = 'new.officer@altbank.ng'")).rows[0];
-    expect(home.name).toBe("Ikeja Branch");
-    // Switching route revokes the other one; the home must suit the new route.
-    const sw = await previewImport(admin, "OFFICERS", "officers-switch.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,Yaba Altbox,Yes\n`));
-    await commitImport(admin, sw.id);
-    expect(await roles("new.officer@altbank.ng")).toEqual(["SMILE_ASSOCIATE"]);
-    // Active = No removes Altphones access.
-    const off = await previewImport(admin, "OFFICERS", "officers-off.csv", Buffer.from(`${head}\nnew.officer@altbank.ng,Nkechi New-Officer,SA,LAGOS,,No\n`));
-    await commitImport(admin, off.id);
-    expect(await roles("new.officer@altbank.ng")).toEqual([]);
-    await expect(previewImport(await ctxFor(ALT.pm), "OFFICERS", "x.csv", Buffer.from(csv))).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const csv = "Email,Full name,Route,State,Home location,Active\nnew.officer@altbank.ng,Nkechi New-Officer,Delight Officer,LAGOS,Ikeja Branch,Yes\n";
+    await expect(previewImport(admin, "OFFICERS", "officers.csv", Buffer.from(csv))).rejects.toMatchObject({ code: "VALIDATION" });
+    expect((await db.query("SELECT 1 FROM staff WHERE email = 'new.officer@altbank.ng'")).rowCount).toBe(0);
   });
 
   it("loads opening stock at Branches and Shops with optional IMEIs, never at a BOX, and only once", async () => {
@@ -518,7 +498,7 @@ describe("setup uploads", () => {
     expect(p.summary).toMatchObject({ rows: 3, valid: 1, errors: 2 }); // BOX row and repeated location/model refused
     const good = csv.split("\n").slice(0, 2).join("\n") + "\n";
     const ok = await previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good));
-    await commitImport(admin, ok.id);
+    await approveImport(ok.id);
     expect(await stockOf("Wuse Altshop", models[2])).toEqual({ physical: before.physical + 4, reserved: before.reserved, available: before.available + 4 });
     expect((await db.query("SELECT count(*)::int AS n FROM altphones_devices WHERE imei = ANY($1) AND status = 'IN_STOCK'", [[IMEI[0], IMEI[1]]])).rows[0].n).toBe(2);
     await expect(previewImport(admin, "OPENING_STOCK", "opening-ok.csv", Buffer.from(good))).rejects.toMatchObject({ code: "CONFLICT" });

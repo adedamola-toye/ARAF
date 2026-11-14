@@ -7,7 +7,7 @@ import type { Db } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
 import { audit } from "../audit";
-import { conflict, forbidden, invalid, notFound } from "../errors";
+import { conflict, forbidden, gate, invalid, notFound } from "../errors";
 import { holdsRole } from "./access";
 import { REGIONS } from "./roles";
 
@@ -90,9 +90,13 @@ export async function saveLocation(ctx: Ctx, p: LocationInput) {
     // Addresses are never typed here: they come from the location master (profiling workbook or an approved request).
     const vals = [p.state, p.city.trim(), p.outletType, p.name.trim(), p.ossStaffId || null, (p.team ?? "").trim() || null, p.active, actor.staffId, ctx.now, (p.businessUnit ?? "").trim() || null, !!p.rmOrigination];
     try {
+      const SHOP_OR_BOX = ["ALTSHOP", "ALTBOX"];
+      const viaPm = "New Altshops and Altboxes, a change into one, and reactivating one are proposed by the Altphones Product Manager (Altphones → Locations) and take effect only after Unit Head approval.";
+      if (!p.id && SHOP_OR_BOX.includes(p.outletType)) throw gate(viaPm);
       if (p.id) {
         const before = (await tx.query("SELECT * FROM locations WHERE id = $1 FOR UPDATE", [p.id])).rows[0];
         if (!before) throw notFound();
+        if (SHOP_OR_BOX.includes(p.outletType) && ((!before.active && p.active) || !SHOP_OR_BOX.includes(before.outlet_type) || before.outlet_type !== p.outletType)) throw gate(viaPm);
         await tx.query(
           `UPDATE locations SET state=$2, city=$3, outlet_type=$4, name=$5, oss_staff_id=$6, team=$7, active=$8, updated_by=$9, updated_at=$10, business_unit=$11, rm_origination=$12 WHERE id=$1`,
           [p.id, ...vals],

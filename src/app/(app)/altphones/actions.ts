@@ -23,7 +23,7 @@ import {
 import { confirmDisbursement, decide, type Decision } from "@/server/altphones/approvals";
 import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
-import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
+import { commitImport, discardImport, previewImport, rejectImport, submitImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
 import { applyProfiling, decideAddressRequest, decideBpmRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
@@ -179,7 +179,11 @@ export const previewImportAction = async (_p: ActionState, fd: FormData) =>
     if (!(file instanceof File) || file.size === 0) throw invalid("Choose a CSV or Excel file.", { file: "Choose a file." });
     return previewImport(ctx, s(fd, "kind"), file.name, Buffer.from(await file.arrayBuffer()));
   }, "File checked. Review the result below before importing.");
-export const commitImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => commitImport(ctx, s(fd, "importId")), (r) => `Imported ${(r as { applied: number }).applied} records.`);
+export const submitImportAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => submitImport(ctx, s(fd, "importId"), { partial: s(fd, "partial") === "1", note: s(fd, "note") }), "Submitted. A Unit Head must approve it before anything is imported.");
+export const commitImportAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => commitImport(ctx, s(fd, "importId")), (r) => { const x = r as { applied: number; invalidLeftOut: number }; return `Approved: ${x.applied} records imported${x.invalidLeftOut ? `, ${x.invalidLeftOut} invalid rows left out` : ""}.`; });
+export const rejectImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => rejectImport(ctx, s(fd, "importId"), s(fd, "note")), "Import rejected.");
 export const discardImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => discardImport(ctx, s(fd, "importId")), "Import discarded.");
 
 export const contractAction = async (_p: ActionState, fd: FormData) =>
