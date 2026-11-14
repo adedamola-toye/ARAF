@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
 import { decideTarget, markSummarySeen, proposeTarget, type TargetMetric } from "@/server/domain/performance";
@@ -36,11 +37,13 @@ export async function proposeTargetAction(_: FormState, fd: FormData): Promise<F
 export async function decideTargetAction(_: FormState, fd: FormData): Promise<FormState> {
   const { ctx } = await requireUser();
   const decision = String(fd.get("decision") ?? "") as "APPROVE" | "REJECT" | "WITHDRAW";
+  let outcome: string;
   try {
     const r = await decideTarget(ctx, String(fd.get("id") ?? ""), decision, String(fd.get("note") ?? ""));
-    revalidatePath("/performance/targets");
-    return { ok: true, message: r.status === "APPROVED" ? `Target approved${r.superseded ? "; it replaces the previous target" : ""}.` : r.status === "REJECTED" ? "Proposal rejected." : "Proposal withdrawn." };
+    outcome = r.status === "APPROVED" && r.superseded ? "replaced" : r.status.toLowerCase();
   } catch (e) {
     return toActionError(e);
   }
+  // The decided row loses its form, so the confirmation is shown at page level.
+  redirect(`/performance/targets?decided=${outcome}`);
 }

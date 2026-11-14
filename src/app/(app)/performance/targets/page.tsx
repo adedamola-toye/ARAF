@@ -11,8 +11,10 @@ export const metadata = { title: "Performance targets" };
 
 const STATUS_BADGE: Record<string, string> = { APPROVED: "badge badge-green", PROPOSED: "badge badge-warn", REJECTED: "badge badge-red", WITHDRAWN: "badge", SUPERSEDED: "badge" };
 
-export default async function TargetsPage() {
+export default async function TargetsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const { session, ctx } = await requireUser();
+  const DECIDED: Record<string, string> = { approved: "Target approved. It now applies.", replaced: "Target approved. It replaces the previous target, which stays in the history.", rejected: "Proposal rejected.", withdrawn: "Proposal withdrawn." };
+  const decided = DECIDED[(await searchParams).decided ?? ""] ?? null;
   const access = await targetAccess(db, session.staffId);
   if (!access.propose && !access.approve) redirect("/forbidden");
   const targets = await listTargets(db);
@@ -23,6 +25,11 @@ export default async function TargetsPage() {
   return (
     <>
       <PageHeader eyebrow="Performance" title="Performance targets" intro="Monthly targets for Relationship Managers, Team Leads and teams. A target applies only after a different approver approves it; replacing a target keeps the earlier one in the history." />
+      {decided && (
+        <div className="alert alert-success" role="status">
+          {decided}
+        </div>
+      )}
       {access.propose && (
         <section className="card" aria-labelledby="h-prop">
           <h2 id="h-prop">Propose a target</h2>

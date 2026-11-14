@@ -95,7 +95,7 @@ Rate conventions supported:
 
 The convention is chosen per structure; nothing is assumed. Reducing-balance pricing is not implemented (see limitations).
 
-## 3. Affordability (versioned engine `retail-affordability@1`)
+## 3. Affordability (versioned engine `retail-affordability@2`)
 
 DSR = (existing monthly obligations + proposed monthly obligation) ÷ configured monthly denominator × 100.
 - **Preliminary (at submission):** uses the proposed obligation calculated from the terms when the convention is configured. Otherwise it uses the initiator's estimate, flagged as such.
@@ -198,3 +198,57 @@ OTP sign-in and never grants a permission:
 **Integration point:** no Staff Personal Request workflow exists yet. `/staff-request` is a signed-in placeholder
 that says so; replace it (or repoint `/enter/staff-personal-request`) when the product, eligibility and approval
 route are defined.
+
+## 11. CX approval chain, locations, performance and repayment monitoring
+
+**CX approval chain (`RETAIL_CX_V1`).** Set per product in the product configuration (maker-checker).
+The chain is Initiator → Team Lead certification → CX credit review (`CX_CREDIT_REVIEWER`) → Unit Head →
+Divisional Head → offer and disbursement. Migration 025 proposes it for Vendor Financing, Alt Drive and
+Alt Power. It applies only after a Product Config Approver approves those proposals. WakeelBoost stays
+on the standard chain.
+
+**Self-review rules.** Team Leads and Unit Heads may originate on CX products, but never review their
+own request:
+- A Team Lead's request skips Team Lead certification.
+- A Unit Head's request goes to another Unit Head, or to the Divisional Head if there is none.
+- Each of these rules is audited as `ROUTING_RULE_APPLIED`.
+
+**Origination locations (migration 027).** Migration 027 adds the AltLounge outlet type and seeds six
+locations, all selectable by RMs:
+- AltLounge Allen Lagos 1 and 2
+- AltLounge Jericho Ibadan
+- AltLounge Tanke Ilorin
+- Altbank Kano
+- Altbank Abuja
+
+Rules:
+- RMs must choose an active, RM-selectable location. Team Leads and Unit Heads may choose one.
+- The location is stored as `applications.origination_location_id` and is used only for reporting. It
+  does not change routing.
+- Super Admins manage locations at `/admin/locations`, which shows the requests, RMs and audited change
+  history for each location.
+- Locations are deactivated, never deleted.
+
+**Performance (migration 028).**
+- **Targets** (`/performance/targets`) are monthly, per person or team. They are measured as disbursed
+  value or disbursed count. A Super Admin, Head of Retail Sales or Unit Head proposes a target, and a
+  *different* Unit Head, Divisional Head or Head of Retail Sales approves it. Nobody decides their own
+  target. Proposals cannot be changed: approving a replacement supersedes the previous target.
+- **Daily summary.** RMs and Team Leads see it once per Lagos day, on their first page, and at
+  `/performance` at any time.
+- **Data source.** Figures come only from recorded disbursements (`disbursed_on`). Run rate uses working
+  days: weekends and the holiday calendar are excluded.
+- **Missing targets.** With no approved target, the summary says "Target not configured".
+- **Team Leads** see their own originations and their team total side by side. The two are never added
+  together.
+
+**Dashboards.** The retail dashboard breaks results down by location, state, product, team or RM, with
+data-freshness stamps. CX Credit Reviewers get the organisation-wide scope.
+
+**Repayment monitoring (`/repayments`, migration 029).**
+- **What it compares.** The expected schedule against repayments recorded in ARAF, as manual entries with
+  evidence. Results are bucketed by days past due and broken down by product and location.
+- **Core banking.** Core banking is **not connected**, and the page says so. `src/server/integrations/cbs.ts`
+  defines the adapter interface only; no adapter exists.
+- **PDO** is seeded as *awaiting definition* and is not calculated until Credit approves a definition.
+- **WakeelBoost** repayment actuals are not recorded in ARAF, so WakeelBoost is not shown.
