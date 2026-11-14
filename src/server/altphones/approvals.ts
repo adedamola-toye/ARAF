@@ -49,7 +49,7 @@ export async function decide(ctx: Ctx, id: string, p: { action: Decision; commen
       if (!st) throw conflict("This application is not waiting for a review decision.");
       checkLock(app, p.lockVersion);
       await requireReviewer(tx, ctx, app, st.role);
-      if (st.stage === "BPM" && app.routed_to_placeholder) throw gate("This application is with the Placeholder BPM: no Business Performance Manager is mapped to its location yet. Once a mapping is approved it moves to that BPM.");
+      if (st.stage === "BPM" && app.routed_to_placeholder && !app.routed_bpm_id) throw gate("No Placeholder BPM is set and no Business Performance Manager is mapped to this location, so nobody can review it yet.");
       if (st.stage === "BPM" && app.routed_bpm_id && app.routed_bpm_id !== ctx.actor!.staffId) throw forbidden("This application is routed to the Business Performance Manager mapped to its location.");
       if (st.stage === "UNIT_HEAD") {
         const uh = await routeUnitHead(tx, app);

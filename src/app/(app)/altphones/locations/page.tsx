@@ -13,6 +13,7 @@ import {
   bpmStates,
   unroutedLocations,
   placeholderWaiting,
+  placeholderBpm,
   PLACEHOLDER_BPM,
   type ImportSummary,
   importSources,
@@ -61,7 +62,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
   ];
   const tab: Tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : access.manage ? "locations" : "requests";
   const pending = [...(await addressRequests(db, "PENDING")), ...(await bpmRequests(db, "PENDING"))];
-  const [unrouted, waiting] = await Promise.all([unroutedStates(db), placeholderWaiting(db)]);
+  const [unrouted, waiting, ph] = await Promise.all([unroutedStates(db), placeholderWaiting(db), placeholderBpm(db)]);
 
   return (
     <>
@@ -77,6 +78,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
               <p style={{ margin: 0 }}>
                 <strong>
                   Smile Associate sales from {n(unrouted.reduce((a, u) => a + u.locations, 0))} Altshops and Altboxes go to the {PLACEHOLDER_BPM}
+                  {ph.id ? ` (${ph.name})` : " — not set yet, so they cannot be reviewed"}
                 </strong>{" "}
                 because no active Business Performance Manager is mapped: {unrouted.map((u) => `${u.state} (${u.locations})`).join(", ")}.
                 {access.manage && (
@@ -90,10 +92,10 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
             {waiting.length > 0 && (
               <p style={{ margin: unrouted.length ? "8px 0 0" : 0 }}>
                 <strong>
-                  {n(waiting.length)} application{waiting.length === 1 ? " is" : "s are"} waiting with the {PLACEHOLDER_BPM}
+                  {n(waiting.length)} application{waiting.length === 1 ? " is" : "s are"} at the BPM stage with the {PLACEHOLDER_BPM}
                 </strong>{" "}
-                ({waiting.slice(0, 5).map((w) => `${w.ref} · ${w.location ?? "?"}`).join("; ")}
-                {waiting.length > 5 ? "; …" : ""}). They move to the mapped BPM automatically when a mapping is approved.
+                ({waiting.slice(0, 5).map((w) => `${w.ref} · ${w.location ?? "?"}${w.holder ? "" : " · unassigned"}`).join("; ")}
+                {waiting.length > 5 ? "; …" : ""}). Each moves to the location&apos;s BPM automatically when a mapping is approved.
               </p>
             )}
             {waiting.length > 0 && access.manage && (
@@ -112,7 +114,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
           </Link>
         ))}
       </nav>
-      {tab === "locations" && <Master sp={sp} canManage={access.manage} />}
+      {tab === "locations" && <Master sp={sp} canManage={access.manage} ph={ph} />}
       {tab === "import" && access.manage && <ImportTab sp={sp} />}
       {tab === "bpm" && access.manage && <BpmTab />}
       {tab === "requests" && <Requests me={session.staffId} canApprove={access.approve} />}
@@ -120,7 +122,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
   );
 }
 
-async function Master({ sp, canManage }: { sp: Record<string, string | undefined>; canManage: boolean }) {
+async function Master({ sp, canManage, ph }: { sp: Record<string, string | undefined>; canManage: boolean; ph: { name: string | null } }) {
   const f = {
     state: (REGIONS as readonly string[]).includes(sp.state ?? "") ? sp.state! : "",
     type: ["BRANCH", "ALTSHOP", "ALTBOX"].includes(sp.type ?? "") ? sp.type! : "",
@@ -267,7 +269,7 @@ async function Master({ sp, canManage }: { sp: Record<string, string | undefined
                   <td className="small" style={{ maxWidth: 360 }}>
                     {l.address ?? <span className="muted">—</span>}
                   </td>
-                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ? <>{l.bpm_name}{l.bpm_for_location && <div className="muted">for this location</div>}</> : (l.bpm_email ? <span className="text-danger">{PLACEHOLDER_BPM} ({l.bpm_email} not set up)</span> : <span className="text-danger">{PLACEHOLDER_BPM}</span>))}</td>
+                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ? <>{l.bpm_name}{l.bpm_for_location && <div className="muted">for this location</div>}</> : (l.bpm_email ? <span className="text-danger">{PLACEHOLDER_BPM} ({l.bpm_email} not set up)</span> : <span className="text-danger">{PLACEHOLDER_BPM}{ph.name ? `: ${ph.name}` : " (not set)"}</span>))}</td>
                   <td>
                     <span className={`badge ${ADDRESS_BADGE[l.address_status][0]}`}>{ADDRESS_BADGE[l.address_status][1]}</span>
                     {!l.active && <div className="small muted">Inactive</div>}
@@ -570,8 +572,47 @@ async function BpmTab() {
   const saLocations = (await db.query<{ id: string; name: string; state: string; outlet_type: string }>("SELECT id, name, state, outlet_type FROM locations WHERE active AND outlet_type IN ('ALTSHOP','ALTBOX') ORDER BY state, name")).rows;
   const bpms = (await db.query<{ email: string; full_name: string }>("SELECT DISTINCT s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE s.status = 'ACTIVE' ORDER BY s.full_name", [BPM_ROLE])).rows;
   const uncoveredIds = new Set(uncovered.map((u) => u.id));
+  const ph = await placeholderBpm(db);
+  const phPending = pending.find((r) => r.scope === "PLACEHOLDER");
   return (
     <>
+      <section className="card action-panel" aria-labelledby="h-ph">
+        <h2 id="h-ph">{PLACEHOLDER_BPM}</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Reviews Smile Associate sales from Altshops and Altboxes that have no BPM mapped, until the right BPM is mapped to the location. Any active @altbank.ng staff member with the Business Performance Manager role can hold it. The Unit Head approves the choice.
+        </p>
+        <p>
+          <strong>Now:</strong> {ph.id ? `${ph.name} (${ph.email})` : ph.email ? <span className="text-danger">{ph.problem}</span> : <span className="text-danger">Not set — sales from unmapped locations wait unassigned.</span>}
+          {phPending && (
+            <span className="small muted">
+              {" "}
+              · {phPending.ref} to change it to {phPending.bpm_name ?? phPending.bpm_email ?? "nobody"} is awaiting the Unit Head
+            </span>
+          )}
+        </p>
+        <ActionForm action={requestBpmAction} className="filters" resetOnSuccess>
+          <input type="hidden" name="scope" value="PLACEHOLDER" />
+          <div className="field">
+            <label htmlFor="ph-bpm">Placeholder BPM</label>
+            <select id="ph-bpm" name="email" defaultValue="" required>
+              <option value="">Choose the person</option>
+              {bpms
+                .filter((b) => b.email.endsWith("@altbank.ng"))
+                .map((b) => (
+                  <option key={b.email} value={b.email}>
+                    {b.full_name} — {b.email}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ph-note">Reason</label>
+            <input id="ph-note" name="note" required placeholder="For example: covers unmapped locations until BPMs are assigned" />
+          </div>
+          <SubmitButton>Send to the Unit Head</SubmitButton>
+        </ActionForm>
+      </section>
+
       <section className="card action-panel" aria-labelledby="h-bpmreq">
         <h2 id="h-bpmreq">Request a BPM mapping</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
@@ -637,7 +678,7 @@ async function BpmTab() {
             <ul className="plain-list">
               {pending.map((r) => (
                 <li key={r.id} className="small">
-                  <span className="mono">{r.ref}</span> · {r.scope === "STATE" ? `all of ${r.state}` : `${r.location_name} (${r.state})`} → {r.bpm_name ?? r.bpm_email ?? "remove mapping"} · {r.requested_by_name}
+                  <span className="mono">{r.ref}</span> · {r.scope === "PLACEHOLDER" ? PLACEHOLDER_BPM : r.scope === "STATE" ? `all of ${r.state}` : `${r.location_name} (${r.state})`} → {r.bpm_name ?? r.bpm_email ?? "remove mapping"} · {r.requested_by_name}
                 </li>
               ))}
             </ul>
@@ -724,7 +765,7 @@ async function Requests({ me, canApprove }: { me: string; canApprove: boolean })
             {bpmPending.map((r) => (
               <div key={r.id} className="alt-repl">
                 <div>
-                  <strong>{r.scope === "STATE" ? `All Altshops and Altboxes in ${r.state}` : `${r.location_name} (${TYPE_LABEL[r.outlet_type as keyof typeof TYPE_LABEL]}, ${r.state})`}</strong>
+                  <strong>{r.scope === "PLACEHOLDER" ? `${PLACEHOLDER_BPM} (Altshops and Altboxes with no BPM mapped)` : r.scope === "STATE" ? `All Altshops and Altboxes in ${r.state}` : `${r.location_name} (${TYPE_LABEL[r.outlet_type as keyof typeof TYPE_LABEL]}, ${r.state})`}</strong>
                   <div>→ {r.bpm_email ? `${r.bpm_name ?? "?"} (${r.bpm_email})` : "remove the mapping"}</div>
                   <div className="small muted">
                     <span className="mono">{r.ref}</span> · {r.requested_by_name} · {formatLagos(r.requested_at)}

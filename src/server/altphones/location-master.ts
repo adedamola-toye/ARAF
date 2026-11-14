@@ -405,10 +405,34 @@ export interface BpmRoute {
   id: string | null;
   name: string | null;
   email: string | null;
+  /** Why the location has no BPM of its own (kept when the Placeholder BPM stands in). */
   problem: string | null;
+  /** True when the Placeholder BPM stands in for the location's BPM. */
+  placeholder?: boolean;
 }
-/** The BPM mapped to a location (through its state). */
-export async function bpmForLocation(q: Db, locationId: string | null): Promise<BpmRoute> {
+
+/** The Placeholder BPM: the person set (PM request, Unit Head approval) to cover locations with no BPM. */
+export async function placeholderBpm(q: Db): Promise<{ id: string | null; name: string | null; email: string | null; problem: string | null }> {
+  const m = (await q.query<{ bpm_email: string }>("SELECT bpm_email FROM altphones_bpm_placeholder")).rows[0];
+  if (!m) return { id: null, name: null, email: null, problem: "No Placeholder BPM is set." };
+  const st = (await q.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [m.bpm_email])).rows[0];
+  if (!st) return { id: null, name: null, email: m.bpm_email, problem: `The Placeholder BPM (${m.bpm_email}) is not set up in ARAF.` };
+  if (!(await holdsRole(q, st.id, BPM_ROLE))) return { id: null, name: st.full_name, email: m.bpm_email, problem: `The Placeholder BPM, ${st.full_name}, does not hold the Business Performance Manager role.` };
+  return { id: st.id, name: st.full_name, email: m.bpm_email, problem: null };
+}
+/**
+ * The BPM for a location: its own mapping, else its state's, else the Placeholder BPM (unless only the real mapping is
+ * wanted). When nobody is usable, `id` is null and `problem` says why.
+ */
+export async function bpmForLocation(q: Db, locationId: string | null, opts: { placeholder?: boolean } = {}): Promise<BpmRoute> {
+  const own = await mappedBpm(q, locationId);
+  if (own.id || opts.placeholder === false || !locationId) return own;
+  const ph = await placeholderBpm(q);
+  return ph.id ? { id: ph.id, name: ph.name, email: ph.email, problem: own.problem, placeholder: true } : own;
+}
+
+/** The BPM mapped to a location (by location, then by state), without the Placeholder BPM. */
+async function mappedBpm(q: Db, locationId: string | null): Promise<BpmRoute> {
   if (!locationId) return { id: null, name: null, email: null, problem: "No operating location is selected." };
   const l = (await q.query<{ state: string; name: string }>("SELECT state, name FROM locations WHERE id = $1", [locationId])).rows[0];
   if (!l) return { id: null, name: null, email: null, problem: "The location was not found." };
@@ -437,8 +461,9 @@ export async function requestBpmMapping(ctx: Ctx, p: { scope: string; state?: st
       loc = isUuid(p.locationId ?? "") ? ((await tx.query("SELECT id, name, state, outlet_type FROM locations WHERE id = $1", [p.locationId])).rows[0] ?? null) : null;
       if (!loc) e.locationId = "Choose a location.";
       else if (!["ALTSHOP", "ALTBOX"].includes(loc.outlet_type)) e.locationId = "Only Altshops and Altboxes are routed to a BPM; Branch sales go to the Product Manager.";
-    } else e.scope = "Choose a state or a location.";
+    } else if (p.scope !== "PLACEHOLDER") e.scope = "Choose a state, a location, or the Placeholder BPM.";
     const email = (p.email ?? "").trim().toLowerCase();
+    if (p.scope === "PLACEHOLDER" && email && !email.endsWith(`@${config.staffEmailDomain}`)) e.email = `The Placeholder BPM must have an @${config.staffEmailDomain} email.`;
     let bpmName: string | null = null;
     if (email) {
       const st = (await tx.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [email])).rows[0];
@@ -449,12 +474,14 @@ export async function requestBpmMapping(ctx: Ctx, p: { scope: string; state?: st
     if (note.length < 5) e.note = "Say why (shown to the Unit Head).";
     if (Object.keys(e).length) throw invalid("Check the BPM mapping.", e);
     const open = (
-      await tx.query<{ ref: string }>(
-        loc ? "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'LOCATION' AND location_id = $1" : "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'STATE' AND state = $1",
-        [loc ? loc.id : state],
-      )
+      await (p.scope === "PLACEHOLDER"
+        ? tx.query<{ ref: string }>("SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'PLACEHOLDER'")
+        : tx.query<{ ref: string }>(
+            loc ? "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'LOCATION' AND location_id = $1" : "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'STATE' AND state = $1",
+            [loc ? loc.id : state],
+          ))
     ).rows[0];
-    if (open) throw conflict(`Mapping request ${open.ref} for ${loc ? loc.name : state} is still awaiting the Unit Head.`);
+    if (open) throw conflict(`Mapping request ${open.ref} for ${p.scope === "PLACEHOLDER" ? "the Placeholder BPM" : loc ? loc.name : state} is still awaiting the Unit Head.`);
     const ref = await nextRef(tx, "altphones_bpm_request_seq", "BPM", ctx.now);
     await tx.query("INSERT INTO altphones_bpm_requests (ref, scope, state, location_id, bpm_email, note, requested_by, requested_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
       ref,
@@ -466,7 +493,7 @@ export async function requestBpmMapping(ctx: Ctx, p: { scope: string; state?: st
       ctx.actor!.staffId,
       ctx.now,
     ]);
-    const what = loc ? `${loc.name} (${loc.state})` : `all Altshops and Altboxes in ${state}`;
+    const what = p.scope === "PLACEHOLDER" ? "Altshops and Altboxes with no BPM mapped (Placeholder BPM)" : loc ? `${loc.name} (${loc.state})` : `all Altshops and Altboxes in ${state}`;
     await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_REQUESTED", details: { ref, scope: p.scope, target: what, bpm: email || null, note } });
     const uh = (await currentSettings(tx)).unit_head_staff_id;
     const to = (await roleHolders(tx, ["UNIT_HEAD"])).filter((a) => (!uh || a.id === uh) && a.id !== ctx.actor!.staffId);
@@ -504,7 +531,15 @@ export async function decideBpmRequest(ctx: Ctx, id: string, p: { decision: stri
       const st = (await tx.query<{ id: string }>("SELECT id FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [r.bpm_email])).rows[0];
       if (!st || !(await holdsRole(tx, st.id, BPM_ROLE))) throw conflict(`${r.bpm_email} is no longer an active Business Performance Manager. Reject this request.`);
     }
-    if (r.scope === "STATE") {
+    if (r.scope === "PLACEHOLDER") {
+      if (r.bpm_email)
+        await tx.query(
+          `INSERT INTO altphones_bpm_placeholder (id, bpm_email, updated_by, approved_by, updated_at) VALUES (true,$1,$2,$3,$4)
+           ON CONFLICT (id) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+          [r.bpm_email, r.requested_by, actor.staffId, ctx.now],
+        );
+      else await tx.query("DELETE FROM altphones_bpm_placeholder");
+    } else if (r.scope === "STATE") {
       if (r.bpm_email)
         await tx.query(
           `INSERT INTO altphones_bpm_states (state, bpm_email, source, updated_by, approved_by, updated_at) VALUES ($1,$2,'MANUAL',$3,$4,$5)
@@ -546,13 +581,23 @@ export async function rerouteWaiting(tx: Tx, ctx: Ctx): Promise<number> {
   const waiting = (await tx.query<AltApp>("SELECT * FROM altphones_applications WHERE routed_to_placeholder AND status = 'UNDER_BPM_REVIEW' ORDER BY submitted_at FOR UPDATE")).rows;
   let moved = 0;
   for (const app of waiting) {
+    // The location's own BPM if one is mapped now; otherwise the (possibly new) Placeholder BPM.
     const bpm = await bpmForLocation(tx, app.origin_location_id);
-    if (!bpm.id || bpm.id === app.originator_id) continue;
+    if (!bpm.id || bpm.id === app.originator_id || bpm.id === app.routed_bpm_id) continue;
     const fresh = (
-      await tx.query<AltApp>("UPDATE altphones_applications SET routed_bpm_id = $2, routed_to_placeholder = false, updated_at = $3, lock_version = lock_version + 1 WHERE id = $1 RETURNING *", [app.id, bpm.id, ctx.now])
+      await tx.query<AltApp>("UPDATE altphones_applications SET routed_bpm_id = $2, routed_to_placeholder = $3, updated_at = $4, lock_version = lock_version + 1 WHERE id = $1 RETURNING *", [
+        app.id,
+        bpm.id,
+        Boolean(bpm.placeholder),
+        ctx.now,
+      ])
     ).rows[0];
-    await recordEvent(tx, ctx, fresh, { action: "ROUTED_TO_BPM", details: { from: PLACEHOLDER_BPM, to: bpm.name } });
-    await notifyStaffIds(tx, ctx, fresh, "BPM_QUEUE", [bpm.id], "Altphones application awaiting your review", [`${fresh.ref} (Smile Associate sale) was waiting for a BPM mapping and is now routed to you as the Business Performance Manager for its location.`]);
+    await recordEvent(tx, ctx, fresh, { action: "ROUTED_TO_BPM", details: { from: app.routed_bpm_id ? PLACEHOLDER_BPM : "unassigned", to: bpm.name, placeholder: Boolean(bpm.placeholder) } });
+    await notifyStaffIds(tx, ctx, fresh, "BPM_QUEUE", [bpm.id], "Altphones application awaiting your review", [
+      bpm.placeholder
+        ? `${fresh.ref} (Smile Associate sale) is routed to you as the ${PLACEHOLDER_BPM}: no Business Performance Manager is mapped to its location yet.`
+        : `${fresh.ref} (Smile Associate sale) is now routed to you as the Business Performance Manager for its location.`,
+    ]);
     moved++;
   }
   return moved;
@@ -562,7 +607,7 @@ export async function rerouteWaitingNow(ctx: Ctx) {
   return withTx(async (tx) => {
     if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can re-route applications.");
     const moved = await rerouteWaiting(tx, ctx);
-    const left = (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM altphones_applications WHERE routed_to_placeholder AND status = 'UNDER_BPM_REVIEW'")).rows[0].n;
+    const left = (await tx.query<{ n: number }>("SELECT count(*)::int AS n FROM altphones_applications WHERE routed_to_placeholder AND routed_bpm_id IS NULL AND status = 'UNDER_BPM_REVIEW'")).rows[0].n;
     await audit(tx, ctx, { action: "ALTPHONES_PLACEHOLDER_REROUTED", details: { moved, stillWaiting: left } });
     return { moved, left };
   });
@@ -571,9 +616,9 @@ export async function rerouteWaitingNow(ctx: Ctx) {
 /** Applications waiting with the Placeholder BPM. */
 export async function placeholderWaiting(q: Db) {
   return (
-    await q.query<{ id: string; ref: string; customer_name: string | null; submitted_at: Date; location: string | null; state: string | null; problem: string | null }>(
-      `SELECT a.id, a.ref, a.customer_name, a.submitted_at, l.name AS location, l.state, NULL::text AS problem
-         FROM altphones_applications a LEFT JOIN locations l ON l.id = a.origin_location_id
+    await q.query<{ id: string; ref: string; customer_name: string | null; submitted_at: Date; location: string | null; state: string | null; holder: string | null }>(
+      `SELECT a.id, a.ref, a.customer_name, a.submitted_at, l.name AS location, l.state, s.full_name AS holder
+         FROM altphones_applications a LEFT JOIN locations l ON l.id = a.origin_location_id LEFT JOIN staff s ON s.id = a.routed_bpm_id
         WHERE a.routed_to_placeholder AND a.status = 'UNDER_BPM_REVIEW' ORDER BY a.submitted_at`,
     )
   ).rows;

@@ -61,8 +61,8 @@ export default async function AltReviews({ searchParams }: { searchParams: Promi
         <section className="card" aria-labelledby="q-ph">
           <h2 id="q-ph">With the Placeholder BPM ({q.placeholder.length})</h2>
           <p className="small muted" style={{ marginTop: 0 }}>
-            Smile Associate sales from locations with no Business Performance Manager mapped. Nobody can approve them as the placeholder: request a BPM mapping for the location under{" "}
-            <Link href="/altphones/locations?tab=bpm">Locations → BPM mapping</Link>; once the Unit Head approves it, they move to that BPM automatically.
+            Smile Associate sales from locations with no Business Performance Manager mapped. The Placeholder BPM reviews them; request a BPM mapping for the location under{" "}
+            <Link href="/altphones/locations?tab=bpm">Locations → BPM mapping</Link> and, once the Unit Head approves it, any still at the BPM stage move to that BPM.
           </p>
           <AppTable rows={q.placeholder} empty="" showOfficer />
         </section>

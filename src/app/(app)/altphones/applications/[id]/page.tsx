@@ -763,8 +763,8 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                   <dd>
                     {app.routed_to_placeholder ? (
                       <>
-                        {PLACEHOLDER_BPM}
-                        <div className="small muted">Waiting for a BPM to be mapped to this location</div>
+                        {app.routed_bpm_id ? `${nm(app.routed_bpm_id)} (${PLACEHOLDER_BPM})` : `${PLACEHOLDER_BPM} — not set`}
+                        <div className="small muted">No BPM is mapped to this location yet</div>
                       </>
                     ) : (
                       nm(app.routed_bpm_id)

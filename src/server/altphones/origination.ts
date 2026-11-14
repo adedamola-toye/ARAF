@@ -908,9 +908,9 @@ export async function submitForApproval(ctx: Ctx, id: string, p: { comments?: st
         const o = await originLocation(tx, app.origin_location_id, ["ALTSHOP", "ALTBOX"]);
         if (o.problem) throw gate(`Submission is blocked: ${o.problem}`);
         const bpm = await bpmForLocation(tx, app.origin_location_id);
-        if (bpm.id && bpm.id === app.originator_id) throw gate("Submission is blocked: the Business Performance Manager mapped to this location is the selling officer.");
+        if (bpm.id && bpm.id === app.originator_id) throw gate(`Submission is blocked: the ${bpm.placeholder ? PLACEHOLDER_BPM : "Business Performance Manager mapped to this location"} is the selling officer.`);
         if (bpm.id) routedBpm = { id: bpm.id, name: bpm.name };
-        else placeholder = bpm.problem;
+        if (!bpm.id || bpm.placeholder) placeholder = bpm.problem ?? "no BPM is mapped to its location";
       }
       const to: AltStatus = app.channel === "SA" ? "UNDER_BPM_REVIEW" : "UNDER_PM_REVIEW";
       app = await transition(tx, ctx, app, {
@@ -918,12 +918,15 @@ export async function submitForApproval(ctx: Ctx, id: string, p: { comments?: st
         to,
         role: app.originator_role,
         comments: p.comments?.trim() || null,
-        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null, routed_bpm_id: routedBpm?.id ?? null, routed_to_placeholder: app.channel === "SA" && !routedBpm },
-        details: routedBpm ? { routedTo: routedBpm.name } : app.channel === "SA" ? { routedTo: PLACEHOLDER_BPM, reason: placeholder } : undefined,
+        set: { submission_count: app.submission_count + 1, submitted_at: ctx.now, bpm_reviewer_id: null, pm_reviewer_id: null, unit_head_id: null, routed_bpm_id: routedBpm?.id ?? null, routed_to_placeholder: app.channel === "SA" && placeholder !== null },
+        details: app.channel !== "SA" ? undefined : placeholder !== null ? { routedTo: routedBpm ? `${routedBpm.name} (${PLACEHOLDER_BPM})` : `${PLACEHOLDER_BPM} (not set)`, reason: placeholder } : { routedTo: routedBpm?.name },
       });
-      if (to === "UNDER_BPM_REVIEW" && routedBpm) await notifyStaffIds(tx, ctx, app, "BPM_QUEUE", [routedBpm.id], "Altphones application awaiting your review", [`${app.ref} (Smile Associate sale) is waiting for your review as the Business Performance Manager for this location.`]);
-      else if (to === "UNDER_BPM_REVIEW")
-        await notifyRole(tx, ctx, app, "PLACEHOLDER_BPM", [PM_ROLE], "Altphones application waiting for a BPM mapping", [`${app.ref} (Smile Associate sale) is with the ${PLACEHOLDER_BPM}: ${placeholder ?? "no BPM is mapped to its location"}`, "Request a BPM mapping for the location (Altphones → Locations → BPM mapping); once the Unit Head approves it, the application moves to that BPM automatically."], [app.originator_id]);
+      if (to === "UNDER_BPM_REVIEW" && routedBpm)
+        await notifyStaffIds(tx, ctx, app, "BPM_QUEUE", [routedBpm.id], "Altphones application awaiting your review", [
+          placeholder !== null ? `${app.ref} (Smile Associate sale) is routed to you as the ${PLACEHOLDER_BPM}: no Business Performance Manager is mapped to its location yet.` : `${app.ref} (Smile Associate sale) is waiting for your review as the Business Performance Manager for this location.`,
+        ]);
+      if (to === "UNDER_BPM_REVIEW" && placeholder !== null)
+        await notifyRole(tx, ctx, app, "PLACEHOLDER_BPM", [PM_ROLE], "Altphones application routed to the Placeholder BPM", [`${app.ref} (Smile Associate sale) is with the ${PLACEHOLDER_BPM}${routedBpm ? ` (${routedBpm.name})` : ", but no Placeholder BPM is set, so nobody can review it yet"}: ${placeholder}.`, "Request a BPM mapping for the location (Altphones → Locations → BPM mapping); once the Unit Head approves it, the application moves to that BPM if it is still at the BPM stage."], [app.originator_id]);
       else await notifyRole(tx, ctx, app, "PM_QUEUE", [PM_ROLE], "Altphones application awaiting product review", [`${app.ref} is waiting for Product Manager review.`], [app.originator_id]);
       return { lockVersion: app.lock_version };
     }),
