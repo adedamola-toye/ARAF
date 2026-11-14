@@ -96,9 +96,9 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 - States are normalised on import: ABUJA → FCT (ABUJA), PORT HARCOURT → RIVERS, JOS → PLATEAU, LAGOS/OGUN → OGUN; "X STATE" → X.
 - **Register labels (aliases)** map free-text labels used in registers and reports (e.g. a market or team name) to a location. They are upper-case, unique, and matched by imports alongside the location name.
 - The supplied opening dataset is in `data/altphones/`:
-  - `opening-locations.csv` — 68 locations (Agege Stadium reclassified from ALTBOX to Shop, source type kept; DEI DEI once). City holds the supplied state label.
-  - `opening-stock.csv` — 43 rows with stock, 150 units, all under the colour-not-recorded pool. Zero-stock locations need no row.
-- **Loading it in production (Super Admin, only once authorised):** Altphones settings → Setup uploads → *Locations* → upload `opening-locations.csv`, check, import; then *Opening stock* → upload `opening-stock.csv`, check, import. Inventory should then show 68 new locations and 150 units. The same file cannot be imported twice. From then on every sale and movement is posted to the ledger and stock counts continue from there.
+  - `opening-locations.csv` — 69 locations, as supplied. Agege Stadium is reclassified from ALTBOX to Shop (source type kept). DEI DEI was supplied twice, as an ALTSHOP and as a BRANCH, and is kept as two locations, *DEI DEI ALTSHOP* and *DEI DEI BRANCH*, both listed as "DEI DEI"; because that label matches both, a file naming only "DEI DEI" is refused rather than guessed. City holds the supplied state label.
+  - `opening-stock.csv` — 44 rows with stock, 152 units, all under the colour-not-recorded pool. Zero-stock locations need no row.
+- **Loading it in production (Super Admin, only once authorised):** Altphones settings → Setup uploads → *Locations* → upload `opening-locations.csv`, check, import; then *Opening stock* → upload `opening-stock.csv`, check, import. Inventory should then show 69 new locations and 152 units. The same file cannot be imported twice. From then on every sale and movement is posted to the ledger and stock counts continue from there.
 
 ## 8. Imports
 
@@ -106,7 +106,7 @@ Altphones settings → Setup uploads (Super Admin). CSV or Excel, with downloada
 
 Setup, in order:
 
-1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address, Source type (optional, the type as originally listed), Aliases (optional register labels separated by `;`). Existing locations are skipped; duplicate names and aliases already in use are refused.
+1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address, Source name (optional, the name as originally listed when it differs), Source type (optional, the type as originally listed), Aliases (optional register labels separated by `;`). Existing locations are skipped; duplicate names and aliases already in use are refused.
 2. **Delight Officers and Smile Associates**: Email, Full name, Route (Delight Officer/DO or Smile Associate/SA), State, Home location, Active (Yes/No). The route is the role they sign in with. A new email must be an active @altbank.ng address in the bank directory and gets a staff record. Changing the route removes the other route; Active = No removes both. A Delight Officer's home must be a Branch and a Smile Associate's a BOX; it is preselected when they start a sale. Suspended staff are refused.
 3. **Opening stock**: Location, Phone model, Quantity, IMEIs (optional, separated by spaces or commas), Note. Branches and Shops only; one row per location and phone; IMEIs must be valid, unique and not already registered, and no more than the quantity. Posted as Opening stock movements and the IMEIs registered as in stock.
 

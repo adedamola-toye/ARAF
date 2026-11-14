@@ -34,10 +34,10 @@ afterEach(() => {
 async function loadOpeningData() {
   const admin = await ctxFor(ALT.admin);
   const l = await previewImport(admin, "LOCATIONS", "opening-locations.csv", LOCATIONS);
-  expect(l.summary).toMatchObject({ rows: 68, errors: 0 });
+  expect(l.summary).toMatchObject({ rows: 69, errors: 0 });
   await commitImport(admin, l.id);
   const s = await previewImport(admin, "OPENING_STOCK", "opening-stock.csv", STOCK);
-  expect(s.summary).toMatchObject({ rows: 43, errors: 0 });
+  expect(s.summary).toMatchObject({ rows: 44, errors: 0 });
   await commitImport(admin, s.id);
 }
 const pool = async () => (await poolModelId(db))!;
@@ -60,20 +60,29 @@ describe("states as supplied", () => {
   });
 });
 
-describe("opening inventory (68 locations, 150 units)", () => {
-  it("loads every location with its original labels, keeps zero-stock locations, and totals 150 colour-agnostic units", async () => {
+describe("opening inventory (69 locations, 152 units)", () => {
+  it("loads every location with its original labels, keeps zero-stock locations, and totals 152 colour-agnostic units", async () => {
     await loadOpeningData();
     const all = await locationStock(db);
     const opening = all.filter((l) => l.source_name);
-    expect(opening).toHaveLength(68);
-    expect(opening.reduce((a, l) => a + l.physical, 0)).toBe(150);
+    expect(opening).toHaveLength(69);
+    expect(opening.reduce((a, l) => a + l.physical, 0)).toBe(152);
     expect(opening.filter((l) => l.physical === 0)).toHaveLength(25);
     const agege = (await db.query("SELECT outlet_type, source_type, state, source_state FROM locations WHERE name = 'AGEGE STADIUM'")).rows[0];
     expect(agege).toEqual({ outlet_type: "ALTSHOP", source_type: "ALTBOX", state: "LAGOS", source_state: "LAGOS" }); // reclassified, original kept
     expect((await db.query("SELECT state, source_state FROM locations WHERE name = 'RUMOKORO ALTSHOP'")).rows[0]).toEqual({ state: "RIVERS", source_state: "PORT HARCOURT" });
     expect((await db.query("SELECT state, city FROM locations WHERE name = 'OGIJO'")).rows[0]).toEqual({ state: "OGUN", city: "Ogijo" });
-    expect((await db.query("SELECT count(*)::int AS n FROM locations WHERE name = 'DEI DEI'")).rows[0].n).toBe(1);
-    expect(await bal("DEI DEI", await pool())).toEqual({ physical: 2, reserved: 0 });
+    // DEI DEI was supplied twice (as an ALTSHOP and as a BRANCH): two locations, both listed as "DEI DEI".
+    expect((await db.query("SELECT name, outlet_type, source_type FROM locations WHERE source_name = 'DEI DEI' ORDER BY name")).rows).toEqual([
+      { name: "DEI DEI ALTSHOP", outlet_type: "ALTSHOP", source_type: "ALTSHOP" },
+      { name: "DEI DEI BRANCH", outlet_type: "BRANCH", source_type: "BRANCH" },
+    ]);
+    expect(await bal("DEI DEI ALTSHOP", await pool())).toEqual({ physical: 2, reserved: 0 });
+    expect(await bal("DEI DEI BRANCH", await pool())).toEqual({ physical: 2, reserved: 0 });
+    // The shared original label is ambiguous, so an import that names only "DEI DEI" is refused rather than guessed.
+    const amb = await previewImport(await ctxFor(ALT.admin), "OPENING_STOCK", "dei.csv", Buffer.from("Location,Phone model,Quantity\nDEI DEI,Altphone L1 Series — colour not recorded,1\n"));
+    expect(amb.summary).toMatchObject({ valid: 0, errors: 1 });
+    expect(JSON.stringify((await db.query("SELECT errors FROM altphones_imports WHERE id = $1", [amb.id])).rows[0].errors)).toMatch(/matches more than one location/);
     expect(await bal("ENUGU", await pool())).toEqual({ physical: 9, reserved: 0 });
     // The same files cannot be applied twice.
     await expect(previewImport(await ctxFor(ALT.admin), "LOCATIONS", "opening-locations.csv", LOCATIONS)).rejects.toMatchObject({ code: "CONFLICT" });
