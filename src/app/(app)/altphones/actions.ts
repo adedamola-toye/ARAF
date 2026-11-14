@@ -25,6 +25,7 @@ import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModel
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
+import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const on = (fd: FormData, k: string) => ["on", "true", "1"].includes(String(fd.get(k) ?? ""));
@@ -182,3 +183,56 @@ export const discardImportAction = async (_p: ActionState, fd: FormData) => run(
 
 export const contractAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => saveContract(ctx, { template: String(fd.get("template") ?? ""), reason: s(fd, "reason") }), (r) => `Contract wording saved as settings version ${(r as { version: number }).version}. New contracts use it; contracts already accepted keep their text.`);
+
+// ---------- historical migration ----------
+
+export async function stageRegisterAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  let id: string;
+  try {
+    const file = fd.get("file");
+    if (!(file instanceof File) || file.size === 0) throw invalid("Choose the register workbook.", { file: "Choose a file." });
+    id = (await stageRegister(ctx, { filename: file.name, data: Buffer.from(await file.arrayBuffer()), asAt: s(fd, "asAt") })).id;
+  } catch (e) {
+    return toActionError(e);
+  }
+  redirect(`/altphones/migration/${id}`);
+}
+export const setAsAtAction = async (_p: ActionState, fd: FormData) => run((ctx) => setAsAt(ctx, s(fd, "batchId"), s(fd, "asAt")), "As-at date saved and every record re-evaluated.");
+/** Label links: pairs of fields "label_<n>" and "to_<n>"; blanks are skipped. */
+const pairs = (fd: FormData) =>
+  [...fd.keys()]
+    .filter((k) => k.startsWith("label_"))
+    .map((k) => ({ label: s(fd, k), to: s(fd, `to_${k.slice(6)}`) }))
+    .filter((x) => x.to);
+export const mapLocationsAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => mapLocations(ctx, s(fd, "batchId"), pairs(fd).map((x) => ({ label: x.label, locationId: x.to }))), (r) => `${(r as { saved: number }).saved} location label${(r as { saved: number }).saved === 1 ? "" : "s"} linked.`);
+export const mapReferrersAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => mapReferrers(ctx, s(fd, "batchId"), pairs(fd).map((x) => ({ label: x.label, staffId: x.to }))), (r) => `${(r as { saved: number }).saved} name${(r as { saved: number }).saved === 1 ? "" : "s"} linked to staff.`);
+export const decideRecordAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => decideRecord(ctx, s(fd, "recordId"), { decision: s(fd, "decision"), classification: s(fd, "classification"), note: s(fd, "note") }),
+    (r) => {
+      const b = (r as { blocked: number }).blocked;
+      return `Decision saved. ${b ? `${b} record${b === 1 ? "" : "s"} still need${b === 1 ? "s" : ""} a decision.` : "No records are blocked."}`;
+    },
+  );
+export const submitBatchAction = async (_p: ActionState, fd: FormData) => run((ctx) => submitBatch(ctx, s(fd, "batchId"), s(fd, "note")), (r) => `${(r as { ref: string }).ref} sent to the Unit Head for approval.`);
+export const discardBatchAction = async (_p: ActionState, fd: FormData) => run((ctx) => discardBatch(ctx, s(fd, "batchId"), s(fd, "reason")), (r) => `${(r as { ref: string }).ref} discarded. Its staged personal data has been cleared.`);
+export const decideBatchAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => decideBatch(ctx, s(fd, "batchId"), { decision: s(fd, "decision"), comment: s(fd, "comment") }),
+    (r) => {
+      const x = r as { ref: string; published: number };
+      return x.published ? `${x.ref} approved: ${x.published.toLocaleString("en-NG")} historical accounts published as verified.` : `${x.ref} returned to the preparer.`;
+    },
+  );
+export const decideMatchingAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) =>
+      decideMatching(ctx, s(fd, "batchId"), { sheet: s(fd, "f_sheet"), status: s(fd, "f_status"), issue: s(fd, "f_issue"), q: s(fd, "f_q") }, { decision: s(fd, "decision"), classification: s(fd, "classification"), note: s(fd, "note") }),
+    (r) => {
+      const x = r as { decided: number; blocked: number };
+      return `${x.decided.toLocaleString("en-NG")} records decided. ${x.blocked ? `${x.blocked.toLocaleString("en-NG")} still need a decision.` : "No records are blocked."}`;
+    },
+  );

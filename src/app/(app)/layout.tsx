@@ -13,6 +13,7 @@ import { signOutAction, switchWorkspaceAction } from "./shell-actions";
 import { retailScope as retailScopeFor } from "@/server/retail-reports";
 import { viewsFor, staffActionCount } from "@/server/staff/views";
 import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
+import { migrationAccess } from "@/server/altphones/migration";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 
@@ -24,6 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const altWs = ws === "DELIGHT_OFFICER" || ws === "SMILE_ASSOCIATE";
   const isInitiatorWs = isInitiatorRole(ws) && !altWs;
   const alt = await altphonesAccess(db, session.staffId);
+  const altMigration = (await migrationAccess(db, session.staffId)).view;
   const altReviewCount = alt.reviewer ? await reviewQueueCount(db, session.staffId) : 0;
   const retailScope = await retailScopeFor(db, session.staffId);
   const pendingExceptions = Number((await db.query(`SELECT count(*) AS n FROM policy_exceptions pe JOIN applications a ON a.id = pe.application_id WHERE pe.status = 'REQUESTED' AND pe.requested_by <> $1 AND a.initiator_id <> $1 AND pe.approver_role IN (SELECT role FROM role_assignments WHERE staff_id = $1 AND active)`, [session.staffId])).rows[0].n);
@@ -88,7 +90,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
-        {(alt.any) && (
+        {(alt.any || altMigration) && (
           <div className="nav-section">
             <span className="nav-title">Altphones</span>
             {alt.originator && (altWs || !isInitiatorRole(ws)) && (
@@ -109,6 +111,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {alt.inventory && (
               <NavLink href="/altphones/inventory" icon={<Boxes {...ic} />}>
                 Inventory
+              </NavLink>
+            )}
+            {altMigration && (
+              <NavLink href="/altphones/migration" icon={<History {...ic} />}>
+                Historical migration
               </NavLink>
             )}
             {(alt.pm || alt.admin) && (

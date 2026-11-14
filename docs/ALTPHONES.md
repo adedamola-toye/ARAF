@@ -100,7 +100,37 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
   - `opening-stock.csv` — 44 rows with stock, 152 units, all under the colour-not-recorded pool. Zero-stock locations need no row.
 - **Loading it in production (Super Admin, only once authorised):** Altphones settings → Setup uploads → *Locations* → upload `opening-locations.csv`, check, import; then *Opening stock* → upload `opening-stock.csv`, check, import. Inventory should then show 69 new locations and 152 units. The same file cannot be imported twice. From then on every sale and movement is posted to the ledger and stock counts continue from there.
 
-## 8. Imports
+## 8. Historical migration (Altphones operations, phase 2)
+
+Altphones → Historical migration. The register the team kept before ARAF (one workbook with INTERNAL, EXTERNAL, COMPLETED REPAYMENT and CANCELED REQUEST sheets) is brought in as a staged batch, checked, reconciled and approved before anything is published.
+
+**Who does what.** The Altphones Product Manager (or a Super Admin) uploads and prepares a batch; the Altphones Unit Head approves or returns it. The approver can never be the person who prepared or submitted it. One batch is open at a time and the same workbook cannot be uploaded twice.
+
+**How rows are classified** (from the register's evidence, up to the batch's as-at date; nothing is assumed complete):
+
+| Sheet / evidence | Status |
+|---|---|
+| COMPLETED REPAYMENT | Completed (the team's register is the evidence) |
+| CANCELED REQUEST | Cancelled |
+| Every instalment marked *yes* | Completed |
+| Any month marked *no* (a missed repayment) | In arrears — arrears = missed months × monthly repayment |
+| Only *yes* marks, instalments still to come | Current |
+| No marks, repayment starts after the as-at date | Not yet started |
+| No marks, repayment should have started | Needs review — the preparer sets the status from the team's records, with a reason, or excludes the record |
+
+Outstanding = (tenor − months paid) × monthly repayment. Month marks after the as-at date are shown but not counted.
+
+**Checks.** Records with these need a decision before the batch can be submitted: no repayment marks; values in the wrong columns; unreadable number of phones, repayment amount or tenor; the same IMEI on another row; an IMEI already in ARAF; the same customer (BVN) on another sheet. Everything else is reported for information (amounts or tenors Excel had turned into dates and that were converted back, unusual tenors, missing/invalid IMEI, BVN or account number, blank months between marks, unlinked labels, repeat customers). A decision is *include* (optionally with the status from the team's records) or *exclude*, always with a reason when it overrides the register or resolves a check; *Decide all … matching this filter* applies one decision to every undecided record in a filtered list.
+
+**Labels.** Location labels are linked to a Branch, Shop or BOX (saved as register labels, so later files match automatically); "Referred by" names that match a staff member exactly are linked automatically and the rest can be linked by hand. Labels that are not a place or a person may stay unlinked; the text is kept.
+
+**Reconciliation** (shown to the preparer and the Unit Head): rows read vs staged per sheet; records read = included + excluded; records, phones, outstanding and arrears by status; down payments and amounts collected per the register; label link coverage; NIN kept/left out.
+
+**Publishing** (Unit Head approval) re-checks the batch against the database, then creates one verified historical account per included record with its month-by-month evidence (paid/missed), registers each valid IMEI as an issued legacy device so it can never be sold or migrated again, and clears the staging copies of personal data. **It never moves stock.** Account number, phone, BVN, NIN and address are encrypted; screens show only the last four digits. The NIN is kept while repayment is not complete and left out for completed accounts. Returning a batch sends it back to the preparer with the Unit Head's reason; discarding one clears its staged personal data.
+
+**Production run (once authorised):** the Product Manager uploads the register with the as-at date (31 October 2026 for the current workbook), links location labels and "Referred by" names, decides the blocked records, and submits; the Unit Head reviews the reconciliation and approves.
+
+## 9. Imports
 
 Altphones settings → Setup uploads (Super Admin). CSV or Excel, with downloadable templates. A file is checked first (nothing applied), then imported only if it has no errors; it is re-validated at commit, and the same file cannot be imported twice. Every applied row is audited.
 
@@ -117,12 +147,13 @@ Historical records:
 
 Import stock *positions* separately from historical transactions so nothing is counted twice.
 
-## 9. Code map
+## 10. Code map
 
 - `migrations/009_altphones.sql` — tables, constraints, append-only triggers, BOX stock guard.
 - `migrations/018_altphones_inventory_operations.sql` — location source labels, register aliases, the stock pool, stock counts.
+- `migrations/019_altphones_historical_migration.sql` — migration batches and staged records, officer labels, verified historical accounts and their monthly evidence.
 - `src/lib/altphones.ts` — statuses, calculator, repayment dates, validators (shared with the browser).
-- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`.
+- `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`, `register` (reads the historical register workbook), `migration` (staging, checks, classification, reconciliation, approval, publishing).
 - `src/app/(app)/altphones/` — home/catalogue, sales, application page, receipt, reviews, inventory, settings.
 - `src/app/api/altphones/` — product images, Paystack webhook, import templates.
-- `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).
+- `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts), `tests/altphones-migration.test.ts` (register reading, classification, checks, maker-checker publishing); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).

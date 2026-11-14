@@ -1,0 +1,33 @@
+export const STATUS_BADGE: Record<string, string> = { DRAFT: "badge-warn", SUBMITTED: "badge-blue", PUBLISHED: "badge-green", DISCARDED: "" };
+export const STATUS_LABEL: Record<string, string> = { DRAFT: "Being prepared", SUBMITTED: "Awaiting Unit Head", PUBLISHED: "Published", DISCARDED: "Discarded" };
+export const CLASS_BADGE: Record<string, string> = { CURRENT: "badge-green", IN_ARREARS: "badge-red", NOT_STARTED: "badge-blue", COMPLETED: "badge-dark", CANCELLED: "", NEEDS_REVIEW: "badge-warn" };
+export const ISSUE_LABEL: Record<string, string> = {
+  NO_EVIDENCE: "No repayment marks",
+  SHIFTED_COLUMNS: "Values in the wrong columns",
+  UNITS_UNREADABLE: "Number of phones unreadable",
+  INSTALMENT_UNREADABLE: "Repayment amount unreadable",
+  TENOR_UNREADABLE: "Tenor unreadable",
+  DUPLICATE_IMEI: "Same IMEI on another row",
+  IMEI_ALREADY_REGISTERED: "IMEI already in ARAF",
+  CUSTOMER_IN_OTHER_SHEET: "Same customer on another sheet",
+  REPEAT_CUSTOMER: "Customer on more than one row",
+  ALREADY_MIGRATED_CUSTOMER: "Customer already migrated",
+  ARAF_CUSTOMER: "Customer also bought through ARAF",
+  LOCATION_UNMAPPED: "Location label not linked",
+  LOCATION_AMBIGUOUS: "Location label matches several",
+  REFERRER_UNMAPPED: "Referred by not linked to staff",
+  MONTHS_AFTER_AS_AT: "Marks after the as-at date",
+  AMOUNT_REPAIRED: "Amount converted back from a date",
+  TENOR_REPAIRED: "Tenor converted back from a date",
+  TENOR_UNUSUAL: "Unusual tenor",
+  DOWN_PAYMENT_SUSPECT: "Down payment looks wrong",
+  DOWN_PAYMENT_UNREADABLE: "Down payment unreadable",
+  START_DATE_UNREADABLE: "Start date unreadable",
+  IMEI_MISSING: "No IMEI",
+  IMEI_INVALID: "IMEI not 15 digits",
+  BVN_INVALID: "BVN missing or not 11 digits",
+  ACCOUNT_INVALID: "Account number not 10 digits",
+  MULTI_UNIT: "More than one phone",
+  GAP_IN_MONTHS: "Blank months between marks",
+  MONTH_VALUE_UNREADABLE: "Month cell not yes/no",
+};
