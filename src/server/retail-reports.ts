@@ -21,7 +21,7 @@ export interface RetailScope {
   ownId: string | null;
 }
 
-const ALL_ROLES = ["SUPER_ADMIN", "REPORTING_ADMIN", "HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "CREDIT_OFFICER_1", "CREDIT_OFFICER_2", "CREDIT_OFFICER_3", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "UNIT_HEAD", "DIVISIONAL_HEAD", "DISBURSEMENT_OFFICER_1", "DISBURSEMENT_OFFICER_2", "COLLECTIONS_OFFICER"];
+const ALL_ROLES = ["SUPER_ADMIN", "REPORTING_ADMIN", "HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "CREDIT_OFFICER_1", "CREDIT_OFFICER_2", "CREDIT_OFFICER_3", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "UNIT_HEAD", "DIVISIONAL_HEAD", "DISBURSEMENT_OFFICER_1", "DISBURSEMENT_OFFICER_2", "COLLECTIONS_OFFICER", "CX_CREDIT_REVIEWER"];
 
 /** Organisation-wide for leadership, credit, operations and reporting; team, outlet or own cases otherwise. */
 export async function retailScope(q: Db, staffId: string): Promise<RetailScope | null> {
@@ -174,6 +174,118 @@ export async function retailDashboard(q: Db, scope: RetailScope, f: RetailFilter
     paymentStatus,
     pos,
     portfolio: { byStatus, outstandingTotal, overdueTotal, due30, overdueList: overdueList.sort((a, b) => b.dpd - a.dpd).slice(0, 20) },
+  };
+}
+
+export const BREAKDOWN_DIMENSIONS = { location: "Location", state: "State", product: "Product", team: "Team", rm: "Relationship Manager" } as const;
+export type BreakdownDimension = keyof typeof BREAKDOWN_DIMENSIONS;
+const DIM_SQL: Record<BreakdownDimension, string> = {
+  location: "coalesce(lo.name, '(location not recorded)')",
+  state: "coalesce(lo.state, '(location not recorded)')",
+  product: "coalesce(a.product_label, a.product_code)",
+  team: "coalesce(a.team, '(no team)')",
+  rm: "coalesce(rs.full_name, '(no Relationship Manager)')",
+};
+
+/**
+ * Executive breakdown by location, state, product, team or responsible Relationship Manager, within the
+ * viewer's scope and filters. Counts and amounts come straight from applications and disbursements; the
+ * location is where the request was originated (RM-selected location or Delight Officer outlet).
+ */
+export async function retailBreakdown(q: Db, scope: RetailScope, f: RetailFilters, dim: BreakdownDimension) {
+  const { sql, params } = where(scope, f);
+  const rows = (
+    await q.query<{ k: string; submitted: string; requested: string; approved: string; declined: string; disbursed_n: string; disbursed: string; in_progress: string }>(
+      `SELECT ${DIM_SQL[dim]} AS k,
+              count(*) FILTER (WHERE a.submitted_at IS NOT NULL)::text AS submitted,
+              coalesce(sum(a.requested_amount_kobo) FILTER (WHERE a.submitted_at IS NOT NULL),0)::text AS requested,
+              count(*) FILTER (WHERE a.business_approved_at IS NOT NULL)::text AS approved,
+              count(*) FILTER (WHERE a.status = 'REJECTED')::text AS declined,
+              count(*) FILTER (WHERE a.status = 'IN_PROGRESS' AND a.stage <> 'DRAFT')::text AS in_progress,
+              count(di.id)::text AS disbursed_n,
+              coalesce(sum(di.amount_kobo),0)::text AS disbursed
+         FROM applications a
+         LEFT JOIN locations lo ON lo.id = coalesce(a.origination_location_id, a.outlet_location_id)
+         LEFT JOIN staff rs ON rs.id = (CASE WHEN a.initiator_role = 'DELIGHT_OFFICER' THEN a.assigned_rm_id ELSE a.initiator_id END)
+         LEFT JOIN disbursements di ON di.application_id = a.id
+        WHERE ${sql} AND a.stage <> 'DRAFT'
+        GROUP BY 1 ORDER BY coalesce(sum(di.amount_kobo),0) DESC, count(*) DESC, 1 LIMIT 200`,
+      params,
+    )
+  ).rows;
+  const fresh = (
+    await q.query<{ apps: Date | null; disb: Date | null }>(
+      `SELECT (SELECT max(a.updated_at) FROM applications a WHERE ${sql}) AS apps,
+              (SELECT max(di.recorded_at) FROM disbursements di JOIN applications a ON a.id = di.application_id WHERE ${sql}) AS disb`,
+      params,
+    )
+  ).rows[0];
+  return {
+    rows: rows.map((r) => ({ key: r.k, submitted: Number(r.submitted), requestedKobo: Number(r.requested), approved: Number(r.approved), declined: Number(r.declined), inProgress: Number(r.in_progress), disbursedCount: Number(r.disbursed_n), disbursedKobo: Number(r.disbursed) })),
+    freshness: { lastApplicationChange: fresh?.apps ?? null, lastDisbursementRecorded: fresh?.disb ?? null },
+  };
+}
+
+export const DPD_BUCKETS = ["Current", "1–30 days", "31–60 days", "61–90 days", "Over 90 days"] as const;
+const bucketOf = (dpd: number) => (dpd <= 0 ? 0 : dpd <= 30 ? 1 : dpd <= 60 ? 2 : dpd <= 90 ? 3 : 4);
+
+/**
+ * Repayment monitoring for retail facilities in the viewer's scope, from ARAF's own records: the expected
+ * schedule (repayment_instalments) and recorded repayments (repayment_events). No core banking figures are
+ * used or implied. Past Due Obligation (PDO) is not calculated until its definition is approved.
+ */
+export async function repaymentMonitor(q: Db, scope: RetailScope, f: RetailFilters, now: Date) {
+  const { sql, params } = where(scope, f);
+  const asOf = lagosDate(now);
+  const facs = (
+    await q.query<{ id: string; ref: string; customer_name: string; application_id: string; product: string; location: string | null; status: string }>(
+      `SELECT fa.id, a.ref, a.customer_name, a.id AS application_id, coalesce(a.product_label, a.product_code) AS product, lo.name AS location, fa.status
+         FROM facilities fa JOIN applications a ON a.id = fa.application_id
+         LEFT JOIN locations lo ON lo.id = coalesce(a.origination_location_id, a.outlet_location_id)
+        WHERE ${sql} AND fa.status IN ('ACTIVE','IN_ARREARS','RESTRUCTURED')`,
+      params,
+    )
+  ).rows;
+  const totals = { facilities: facs.length, dueToDateKobo: 0, paidKobo: 0, overdueKobo: 0, outstandingKobo: 0 };
+  const buckets = DPD_BUCKETS.map((label) => ({ label, count: 0, overdueKobo: 0, outstandingKobo: 0 }));
+  const byProduct = new Map<string, { count: number; overdueKobo: number; outstandingKobo: number }>();
+  const byLocation = new Map<string, { count: number; overdueKobo: number; outstandingKobo: number }>();
+  const overdue: { ref: string; customer: string; applicationId: string; product: string; dpd: number; overdueKobo: number; outstandingKobo: number; nextDue: string | null }[] = [];
+  for (const fa of facs) {
+    const p = await facilityPosition(q, fa.id, asOf);
+    totals.dueToDateKobo += p.dueToDateKobo;
+    totals.paidKobo += p.paidKobo;
+    totals.overdueKobo += p.overdueKobo;
+    totals.outstandingKobo += p.outstandingKobo;
+    const b = buckets[bucketOf(p.daysPastDue)];
+    b.count++;
+    b.overdueKobo += p.overdueKobo;
+    b.outstandingKobo += p.outstandingKobo;
+    for (const [m, k] of [[byProduct, fa.product], [byLocation, fa.location ?? "(location not recorded)"]] as const) {
+      const g = m.get(k) ?? { count: 0, overdueKobo: 0, outstandingKobo: 0 };
+      g.count++;
+      g.overdueKobo += p.overdueKobo;
+      g.outstandingKobo += p.outstandingKobo;
+      m.set(k, g);
+    }
+    if (p.overdueKobo > 0) overdue.push({ ref: fa.ref, customer: fa.customer_name, applicationId: fa.application_id, product: fa.product, dpd: p.daysPastDue, overdueKobo: p.overdueKobo, outstandingKobo: p.outstandingKobo, nextDue: p.nextDue?.dueDate ?? null });
+  }
+  const sources = (
+    await q.query<{ source: string; n: string; last: Date | null }>(
+      `SELECT re.source, count(*)::text AS n, max(re.recorded_at) AS last FROM repayment_events re JOIN facilities fa ON fa.id = re.facility_id JOIN applications a ON a.id = fa.application_id WHERE ${sql} GROUP BY 1`,
+      params,
+    )
+  ).rows;
+  const pdo = (await q.query<{ status: string; definition: string | null; name: string }>("SELECT name, status, definition FROM credit_metric_definitions WHERE code = 'PDO'")).rows[0] ?? null;
+  return {
+    asOf,
+    totals,
+    buckets,
+    byProduct: [...byProduct.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.overdueKobo - a.overdueKobo),
+    byLocation: [...byLocation.entries()].map(([key, v]) => ({ key, ...v })).sort((a, b) => b.overdueKobo - a.overdueKobo),
+    overdue: overdue.sort((a, b) => b.dpd - a.dpd).slice(0, 100),
+    sources: sources.map((s) => ({ source: s.source, count: Number(s.n), last: s.last })),
+    pdo,
   };
 }
 

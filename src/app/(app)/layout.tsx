@@ -94,6 +94,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Retail dashboard
             </NavLink>
           )}
+          {retailScope?.kind === "ALL" && !altWs && (
+            <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
+              Repayment monitoring
+            </NavLink>
+          )}
           {roles.includes("VENDOR_MANAGER") && (
             <NavLink href="/vendors" icon={<Building2 {...ic} />}>
               Vendor register
