@@ -31,7 +31,8 @@ export interface ModelRow {
 }
 
 export async function listModels(q: Db, opts: { activeOnly?: boolean } = {}): Promise<ModelRow[]> {
-  return (await q.query<ModelRow>(`SELECT * FROM altphones_models ${opts.activeOnly ? "WHERE active" : ""} ORDER BY active DESC, sort_order, name`)).rows;
+  // The colour-not-recorded stock pool is not a catalogue phone: it never appears here.
+  return (await q.query<ModelRow>(`SELECT * FROM altphones_models WHERE NOT stock_pool ${opts.activeOnly ? "AND active" : ""} ORDER BY active DESC, sort_order, name`)).rows;
 }
 
 async function requirePm(q: Db, ctx: Ctx) {
@@ -63,6 +64,7 @@ export async function saveModel(ctx: Ctx, p: { id?: string | null; name: string;
     let id = p.id || null;
     if (id) {
       if (!isUuid(id)) throw notFound("Phone not found.");
+      if ((await tx.query("SELECT 1 FROM altphones_models WHERE id = $1 AND stock_pool", [id])).rowCount) throw invalid("The colour-not-recorded stock pool is not a catalogue phone and cannot be edited here.");
       const r = await tx.query("UPDATE altphones_models SET name = $2, specifications = $3, active = $4, sort_order = $5, updated_by = $6, updated_at = $7 WHERE id = $1", [id, name, specs, p.active, sort, actor.staffId, ctx.now]);
       if (!r.rowCount) throw notFound("Phone not found.");
     } else {

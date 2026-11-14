@@ -22,7 +22,7 @@ import {
 } from "@/server/altphones/origination";
 import { confirmDisbursement, decide, type Decision } from "@/server/altphones/approvals";
 import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
-import { decideReplenishment, requestReplenishment } from "@/server/altphones/stock";
+import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
 
@@ -146,6 +146,30 @@ export const replenishAction = async (_p: ActionState, fd: FormData) =>
   );
 export const decideStockAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => decideReplenishment(ctx, s(fd, "id"), { decision: s(fd, "decision") as "APPROVE" | "REJECT", comment: s(fd, "comment") }), (r) => `${(r as { ref: string }).ref} decided.`);
+
+/** Physical count: one "count_<modelId>" field per phone line; blanks are not counted. */
+export const stockCountAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) =>
+      submitStockCount(ctx, {
+        locationId: s(fd, "locationId"),
+        countedOn: s(fd, "countedOn"),
+        note: s(fd, "note"),
+        lines: [...fd.keys()].filter((k) => k.startsWith("count_")).map((k) => ({ modelId: k.slice(6), counted: s(fd, k) })),
+      }),
+    (r) => {
+      const x = r as { ref: string; variance: number };
+      return `Count ${x.ref} sent for approval (${x.variance >= 0 ? "+" : ""}${x.variance} against the ledger).`;
+    },
+  );
+export const decideStockCountAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => decideStockCount(ctx, s(fd, "id"), { decision: s(fd, "decision") as "APPROVE" | "REJECT", comment: s(fd, "comment") }),
+    (r) => {
+      const x = r as { ref: string; adjustment: number };
+      return `${x.ref} decided${x.adjustment ? ` (${x.adjustment > 0 ? "+" : ""}${x.adjustment} posted to the ledger)` : ""}.`;
+    },
+  );
 
 export const previewImportAction = async (_p: ActionState, fd: FormData) =>
   run(async (ctx) => {

@@ -7,7 +7,7 @@ import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
 import { type AppRow, assignmentSpec, eligibleStaff, notifyAssignment } from "./assignment";
-import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, type Role } from "./roles";
+import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, normaliseNigerianState, type Role } from "./roles";
 import type { Stage } from "./stages";
 import { validateTemplate, DOCX_MIME } from "./offer";
 import { assertDocx, validateDocxTemplate } from "./offer-docx";
@@ -328,8 +328,7 @@ export interface BulkStaffSummary {
 export function normaliseState(v: string): string | null {
   const s = v.toUpperCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ").replace(/\s+STATE$/, "").trim();
   if (!s) return null;
-  if (["ABUJA", "FCT", "FCT ABUJA", "FCT (ABUJA)", "FEDERAL CAPITAL TERRITORY"].includes(s)) return "FCT (ABUJA)";
-  return s;
+  return normaliseNigerianState(s) ?? s; // unresolved labels are returned as written so validation reports them
 }
 const headerKey = (h: string) => h.toLowerCase().replace(/[^a-z]/g, "");
 const COLS: Record<string, string[]> = {

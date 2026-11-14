@@ -187,3 +187,30 @@ export function isInitiatorRole(v: unknown): v is InitiatorRole {
 
 export const ADMIN_ROLES: readonly Role[] = ["SUPER_ADMIN", "REPORTING_ADMIN"];
 export const REPORTING_ROLES: readonly Role[] = ["SUPER_ADMIN", "REPORTING_ADMIN"];
+
+/**
+ * A state as people write it ("Lagos", "lagos state", "Abuja", "Port Harcourt", "Jos", "Lagos/Ogun") →
+ * the state as ARAF stores it, or null when it cannot be resolved. City labels used in place of a state
+ * map to their state (Port Harcourt → RIVERS, Jos → PLATEAU); "Lagos/Ogun" (Ogijo) is recorded as OGUN.
+ */
+const STATE_ALIASES: Record<string, string> = {
+  ABUJA: "FCT (ABUJA)",
+  FCT: "FCT (ABUJA)",
+  "FCT ABUJA": "FCT (ABUJA)",
+  "FEDERAL CAPITAL TERRITORY": "FCT (ABUJA)",
+  "PORT HARCOURT": "RIVERS",
+  PH: "RIVERS",
+  JOS: "PLATEAU",
+  "LAGOS/OGUN": "OGUN",
+  "LAGOS / OGUN": "OGUN",
+  "AKWA-IBOM": "AKWA IBOM",
+  "CROSS-RIVER": "CROSS RIVER",
+};
+export function normaliseNigerianState(label: string | null | undefined): string | null {
+  const s = String(label ?? "").toUpperCase().replace(/_/g, " ").replace(/\s+/g, " ").replace(/\s+STATE$/, "").trim();
+  if (!s) return null;
+  if (STATE_ALIASES[s]) return STATE_ALIASES[s];
+  const plain = s.replace(/-/g, " ");
+  if (STATE_ALIASES[plain]) return STATE_ALIASES[plain];
+  return (REGIONS as readonly string[]).includes(plain) ? plain : (REGIONS as readonly string[]).includes(s) ? s : null;
+}

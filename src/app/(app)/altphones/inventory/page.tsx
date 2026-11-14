@@ -6,10 +6,11 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
 import { altphonesAccess, pendingReplenishments } from "@/server/altphones/views";
-import { stockOverview } from "@/server/altphones/stock";
+import { listStockCounts, locationStock, poolModelId, stockOverview } from "@/server/altphones/stock";
+import { REGIONS } from "@/server/domain/roles";
 import { listModels } from "@/server/altphones/catalogue";
 import { isUuid } from "@/server/altphones/core";
-import { decideStockAction, replenishAction } from "../actions";
+import { decideStockAction, decideStockCountAction, replenishAction, stockCountAction } from "../actions";
 
 export const metadata = { title: "Altphones inventory" };
 
@@ -50,6 +51,16 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
     : [];
   const pending = repl.filter((r) => r.status === "PENDING");
   const totals = rows.reduce((a, r) => ({ physical: a.physical + r.physical, reserved: a.reserved + r.reserved, available: a.available + r.available }), { physical: 0, reserved: 0, available: 0 });
+  const f = { state: (REGIONS as readonly string[]).includes(sp.state ?? "") ? sp.state! : "", type: ["BRANCH", "ALTSHOP"].includes(sp.type ?? "") ? sp.type! : "", stock: ["zero", "instock"].includes(sp.stock ?? "") ? sp.stock! : "", q: (sp.q ?? "").slice(0, 60) };
+  const [locRows, allLocs, counts, pool] = await Promise.all([locId ? Promise.resolve([]) : locationStock(db, f), locationStock(db), listStockCounts(db, { locationId: locId }), poolModelId(db)]);
+  const pendingCounts = counts.filter((c) => c.status === "SUBMITTED");
+  const poolName = pool ? ((await db.query<{ name: string }>("SELECT name FROM altphones_models WHERE id = $1", [pool])).rows[0]?.name ?? null) : null;
+  const requestModels = [...models.map((m) => ({ id: m.id, name: m.name + (m.active ? "" : " (inactive)") })), ...(pool && poolName ? [{ id: pool, name: poolName }] : [])];
+  // Count lines: every phone held here, plus colour-not-recorded units, plus the catalogue colours.
+  const countLines = locId
+    ? [...new Map([...shown.map((r) => [r.model_id, { id: r.model_id, name: r.model_name, physical: r.physical, reserved: r.reserved }] as const), ...(pool && poolName ? [[pool, { id: pool, name: poolName, physical: 0, reserved: 0 }] as const] : []), ...models.filter((m) => m.active).map((m) => [m.id, { id: m.id, name: m.name, physical: 0, reserved: 0 }] as const)].reverse()).values()].reverse()
+    : [];
+  const filtered = !!(f.state || f.type || f.stock || f.q);
   const locName = locId ? (locations.find((l) => l.id === locId)?.name ?? "Location") : null;
   return (
     <>
@@ -65,7 +76,9 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
             ["Physical stock", n(totals.physical)],
             ["Reserved", n(totals.reserved)],
             ["Available to sell", n(totals.available)],
-            ["Stock requests pending", n(pending.length)],
+            ["Locations (Branches and Shops)", n(allLocs.length)],
+            ["Locations with no stock", n(allLocs.filter((l) => l.physical === 0).length)],
+            ["Awaiting approval", n(pending.length + pendingCounts.length)],
           ] as [string, string][]
         ).map(([k, v]) => (
           <div key={k} className="metric">
@@ -113,7 +126,197 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
         </section>
       )}
 
-      <section className="card" aria-labelledby="h-stock">
+      {access.admin && pendingCounts.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-cnt-appr">
+          <h2 id="h-cnt-appr">Stock counts awaiting approval</h2>
+          <div className="stack">
+            {pendingCounts.map((c) => (
+              <div key={c.id} className="alt-repl">
+                <div>
+                  <strong>{c.location_name}</strong> — counted {c.counted_on}
+                  <div className="small muted">
+                    <span className="mono">{c.ref}</span> · {c.submitted_by_name} · {formatLagos(c.submitted_at)}
+                  </div>
+                  <div className="small">
+                    {c.lines.map((l) => `${l.model}: ${l.counted} counted (ledger ${l.system}${l.counted !== l.system ? `, ${l.counted - l.system > 0 ? "+" : ""}${l.counted - l.system}` : ""})`).join(" · ")}
+                  </div>
+                  {c.note && <div className="small muted">{c.note}</div>}
+                </div>
+                {c.submitted_by === session.staffId ? (
+                  <span className="small muted">Counted by you — another Super Admin must decide.</span>
+                ) : (
+                  <ActionForm action={decideStockCountAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={c.id} />
+                    <input name="comment" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <div className="action-bar">
+                      <SubmitButton name="decision" value="APPROVE">
+                        Approve count
+                      </SubmitButton>
+                      <SubmitButton name="decision" value="REJECT" className="btn btn-danger">
+                        Reject
+                      </SubmitButton>
+                    </div>
+                  </ActionForm>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!locId && (
+        <section className="card" aria-labelledby="h-locs">
+          <div className="card-head">
+            <h2 id="h-locs">Locations</h2>
+            <span className="small muted">
+              {n(locRows.length)} shown · {n(locRows.reduce((a, l) => a + l.physical, 0))} units
+            </span>
+          </div>
+          <form className="filters" method="get">
+            <div className="field">
+              <label htmlFor="f-q">Search</label>
+              <input id="f-q" name="q" type="search" defaultValue={f.q} placeholder="Location or city" />
+            </div>
+            <div className="field">
+              <label htmlFor="f-state">State</label>
+              <select id="f-state" name="state" defaultValue={f.state}>
+                <option value="">All states</option>
+                {[...new Set(allLocs.map((l) => l.state))].sort().map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="f-type">Type</label>
+              <select id="f-type" name="type" defaultValue={f.type}>
+                <option value="">Branches and Shops</option>
+                <option value="BRANCH">Branches</option>
+                <option value="ALTSHOP">Shops</option>
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="f-stock">Stock</label>
+              <select id="f-stock" name="stock" defaultValue={f.stock}>
+                <option value="">Any</option>
+                <option value="instock">In stock</option>
+                <option value="zero">No stock</option>
+              </select>
+            </div>
+            <button className="btn">Filter</button>
+            {filtered && (
+              <Link className="btn btn-ghost" href="/altphones/inventory">
+                Clear
+              </Link>
+            )}
+          </form>
+          {locRows.length === 0 ? (
+            <p className="muted small">No locations match.</p>
+          ) : (
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Location</th>
+                    <th scope="col">State</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" className="num">
+                      Physical
+                    </th>
+                    <th scope="col" className="num">
+                      Reserved
+                    </th>
+                    <th scope="col" className="num">
+                      Available
+                    </th>
+                    <th scope="col">Last count</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locRows.map((l) => (
+                    <tr key={l.id}>
+                      <td>
+                        <Link href={`/altphones/inventory?location=${l.id}`}>{l.name}</Link>
+                        {l.source_name && l.source_name !== l.name && <div className="small muted">Listed as {l.source_name}</div>}
+                      </td>
+                      <td>
+                        {l.state}
+                        {l.source_state && l.source_state.toUpperCase() !== l.state && <div className="small muted">Listed as {l.source_state}</div>}
+                      </td>
+                      <td>
+                        {l.outlet_type === "BRANCH" ? "Branch" : "Shop"}
+                        {l.source_type && !["BRANCH", "ALTSHOP", "SHOP"].includes(l.source_type.toUpperCase()) && <div className="small muted">Listed as {l.source_type}</div>}
+                      </td>
+                      <td className="num">{l.physical === 0 ? <span className="muted">0</span> : n(l.physical)}</td>
+                      <td className="num">{n(l.reserved)}</td>
+                      <td className="num">
+                        <strong>{n(l.available)}</strong>
+                      </td>
+                      <td className="small">{l.last_count ?? <span className="muted">—</span>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {locId && (access.pm || access.admin) && (
+        <section className="card" aria-labelledby="h-count">
+          <h2 id="h-count">Record a stock count</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Enter what is physically on the shelf. Nothing changes until another Super Admin approves; the difference to the ledger is then posted as a count adjustment. Leave a phone blank to skip it.
+          </p>
+          <ActionForm action={stockCountAction} className="stack" resetOnSuccess>
+            <input type="hidden" name="locationId" value={locId} />
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="countedOn">Date counted</label>
+                <input id="countedOn" name="countedOn" type="date" required defaultValue={new Date(Date.now() + 3600_000).toISOString().slice(0, 10)} />
+              </div>
+              <div className="field">
+                <label htmlFor="cnote">Note (optional)</label>
+                <input id="cnote" name="note" placeholder="Who counted, anything unusual" />
+              </div>
+            </div>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Phone</th>
+                    <th scope="col" className="num">
+                      Ledger now
+                    </th>
+                    <th scope="col" className="num">
+                      Reserved
+                    </th>
+                    <th scope="col">Counted</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {countLines.map((m) => (
+                    <tr key={m.id}>
+                      <td>{m.name}</td>
+                      <td className="num">{n(m.physical)}</td>
+                      <td className="num">{n(m.reserved)}</td>
+                      <td>
+                        <input name={`count_${m.id}`} type="number" min={m.reserved} max={100000} inputMode="numeric" aria-label={`Units of ${m.name} counted`} style={{ maxWidth: 120 }} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="action-bar">
+              <SubmitButton>Send count for approval</SubmitButton>
+            </div>
+          </ActionForm>
+        </section>
+      )}
+
+      <section className="card" aria-labelledby="h-stock" hidden={!locId}>
         <div className="card-head">
           <h2 id="h-stock">Stock by location</h2>
           {locId && (
@@ -272,10 +475,9 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
                 <label htmlFor="modelId">Phone</label>
                 <select id="modelId" name="modelId" required>
                   <option value="">Choose</option>
-                  {models.map((m) => (
+                  {requestModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
-                      {m.active ? "" : " (inactive)"}
                     </option>
                   ))}
                 </select>
@@ -305,6 +507,57 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
               <SubmitButton>Send for approval</SubmitButton>
             </div>
           </ActionForm>
+        </section>
+      )}
+
+      {counts.length > 0 && (
+        <section className="card" aria-labelledby="h-counts">
+          <h2 id="h-counts">Stock counts</h2>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th scope="col">Count</th>
+                  <th scope="col">Location</th>
+                  <th scope="col" className="num">
+                    Counted
+                  </th>
+                  <th scope="col" className="num">
+                    Difference
+                  </th>
+                  <th scope="col">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {counts.slice(0, 50).map((c) => {
+                  const counted = c.lines.reduce((a, l) => a + l.counted, 0);
+                  const diff = c.lines.reduce((a, l) => a + l.counted - l.system, 0);
+                  return (
+                    <tr key={c.id}>
+                      <td>
+                        <span className="mono">{c.ref}</span>
+                        <div className="small muted">
+                          {c.counted_on} · {c.submitted_by_name}
+                        </div>
+                      </td>
+                      <td>{c.location_name}</td>
+                      <td className="num">{n(counted)}</td>
+                      <td className="num">{diff === 0 ? "—" : `${diff > 0 ? "+" : ""}${diff}`}</td>
+                      <td>
+                        <span className={`badge ${c.status === "APPROVED" ? "badge-green" : c.status === "REJECTED" ? "badge-red" : "badge-warn"}`}>{c.status === "SUBMITTED" ? "Awaiting Super Admin" : c.status === "APPROVED" ? "Approved" : "Rejected"}</span>
+                        {c.decided_by_name && (
+                          <div className="small muted">
+                            {c.decided_by_name}
+                            {c.decision_note ? ` — ${c.decision_note}` : ""}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 

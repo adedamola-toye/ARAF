@@ -48,6 +48,8 @@ Separation of duties: the originator never reviews; one person never acts at two
 - Handover → `SALE` / `DISBURSEMENT` (physical −1 and reserved −1 in one entry; available is not deducted twice). One ledger entry per application and movement (unique index), so retries cannot double-count.
 - Rejection or cancellation → `RELEASE`; a paid application is flagged **Refund required**. Refunds follow the bank's refund process and are recorded by a Super Admin; ARAF does not initiate refunds. Reservations are never released just because an approval is slow.
 - IMEIs registered at stock receipt are earmarked at reservation; an unregistered unit's IMEI can be captured at handover (within the physical count).
+- **Colour not recorded (stock pool).** Units counted without a colour are held under one pool model, *Altphone L1 Series — colour not recorded*. It never appears in the catalogue and cannot be activated. A sale of any L1 colour reserves its own colour first and otherwise a pool unit at the same location; the application records which balance was used (`stock_model_id`), and the device issued is recorded as the colour the customer chose. Available stock shown to sellers is own colour + pool.
+- **Stock counts (maker-checker).** A Product Manager or Super Admin records a physical count per location and model (Inventory → open a location → *Record a stock count*). A count cannot be below what is reserved, cannot be dated in the future, and only one count per location can be open. A different Super Admin approves or rejects it (rejection needs a reason). On approval the difference to the ledger is posted as a `COUNT_ADJUSTMENT` with the count reference, and the location shows the date of its last approved count.
 
 ## 5. Integrations (credentials required)
 
@@ -88,13 +90,23 @@ BVNs are encrypted (AES-256-GCM) with an HMAC for matching; only the last 4 digi
 8. **Integrations** — section 5, plus the Paystack webhook URL. For production, generate a **new** Paystack live secret key in the Paystack dashboard and enter it only as `PAYSTACK_SECRET_KEY` in the production app's environment settings, with `PAYSTACK_TEST_MODE` unset or `false`. Never put keys in the repository, a chat or an email.
 9. Run migration `009_altphones.sql` (`npm run migrate`).
 
-## 7. Imports
+## 7. Locations and opening dataset (Altphones operations, phase 1)
+
+- Every Branch and Shop is listed on Inventory, including locations with no stock, with filters for state, type, stock (in stock / no stock) and a search. Each location keeps the name, state and type it was supplied under (`source_name`, `source_state`, `source_type`); where the operating value differs the screen shows *Listed as …*.
+- States are normalised on import: ABUJA → FCT (ABUJA), PORT HARCOURT → RIVERS, JOS → PLATEAU, LAGOS/OGUN → OGUN; "X STATE" → X.
+- **Register labels (aliases)** map free-text labels used in registers and reports (e.g. a market or team name) to a location. They are upper-case, unique, and matched by imports alongside the location name.
+- The supplied opening dataset is in `data/altphones/`:
+  - `opening-locations.csv` — 68 locations (Agege Stadium reclassified from ALTBOX to Shop, source type kept; DEI DEI once). City holds the supplied state label.
+  - `opening-stock.csv` — 43 rows with stock, 150 units, all under the colour-not-recorded pool. Zero-stock locations need no row.
+- **Loading it in production (Super Admin, only once authorised):** Altphones settings → Setup uploads → *Locations* → upload `opening-locations.csv`, check, import; then *Opening stock* → upload `opening-stock.csv`, check, import. Inventory should then show 68 new locations and 150 units. The same file cannot be imported twice. From then on every sale and movement is posted to the ledger and stock counts continue from there.
+
+## 8. Imports
 
 Altphones settings → Setup uploads (Super Admin). CSV or Excel, with downloadable templates. A file is checked first (nothing applied), then imported only if it has no errors; it is re-validated at commit, and the same file cannot be imported twice. Every applied row is audited.
 
 Setup, in order:
 
-1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address. Existing locations are skipped; duplicate names are refused.
+1. **Locations**: State, City, Type (Branch/Shop/BOX), Name, Address, Source type (optional, the type as originally listed), Aliases (optional register labels separated by `;`). Existing locations are skipped; duplicate names and aliases already in use are refused.
 2. **Delight Officers and Smile Associates**: Email, Full name, Route (Delight Officer/DO or Smile Associate/SA), State, Home location, Active (Yes/No). The route is the role they sign in with. A new email must be an active @altbank.ng address in the bank directory and gets a staff record. Changing the route removes the other route; Active = No removes both. A Delight Officer's home must be a Branch and a Smile Associate's a BOX; it is preselected when they start a sale. Suspended staff are refused.
 3. **Opening stock**: Location, Phone model, Quantity, IMEIs (optional, separated by spaces or commas), Note. Branches and Shops only; one row per location and phone; IMEIs must be valid, unique and not already registered, and no more than the quantity. Posted as Opening stock movements and the IMEIs registered as in stock.
 
@@ -105,11 +117,12 @@ Historical records:
 
 Import stock *positions* separately from historical transactions so nothing is counted twice.
 
-## 8. Code map
+## 9. Code map
 
 - `migrations/009_altphones.sql` — tables, constraints, append-only triggers, BOX stock guard.
+- `migrations/018_altphones_inventory_operations.sql` — location source labels, register aliases, the stock pool, stock counts.
 - `src/lib/altphones.ts` — statuses, calculator, repayment dates, validators (shared with the browser).
 - `src/server/altphones/` — `core` (records, access, routing, notifications), `origination`, `approvals`, `stock`, `catalogue` (catalogue and settings), `integrations` (SeedFi, Paystack), `imports`, `views`.
 - `src/app/(app)/altphones/` — home/catalogue, sales, application page, receipt, reviews, inventory, settings.
 - `src/app/api/altphones/` — product images, Paystack webhook, import templates.
-- `tests/altphones.test.ts`; `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).
+- `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).

@@ -24,10 +24,15 @@ export default async function AltphonesHome({ searchParams }: { searchParams: Pr
     redirect("/forbidden");
   }
   const [models, s, counts] = await Promise.all([listModels(db, { activeOnly: true }), currentSettings(db), myBucketCounts(db, session.staffId)]);
+  // Each colour can be sold from its own stock or from colour-not-recorded (pool) units at the same location.
   const stock = new Map(
     (await db.query<{ model_id: string; available: number; locations: number }>(
-      `SELECT model_id, sum(physical - reserved)::int AS available, count(*) FILTER (WHERE physical - reserved > 0)::int AS locations
-         FROM altphones_stock s JOIN locations l ON l.id = s.location_id WHERE l.active GROUP BY model_id`,
+      `SELECT m.id AS model_id, coalesce(sum(s.physical - s.reserved), 0)::int AS available,
+              count(DISTINCT s.location_id) FILTER (WHERE s.physical - s.reserved > 0)::int AS locations
+         FROM altphones_models m
+         JOIN altphones_stock s ON s.model_id = m.id OR s.model_id = (SELECT id FROM altphones_models WHERE stock_pool LIMIT 1)
+         JOIN locations l ON l.id = s.location_id AND l.active
+        WHERE m.active GROUP BY m.id`,
     )).rows.map((r) => [r.model_id, r]),
   );
   const creditMissing = creditReadiness(s);

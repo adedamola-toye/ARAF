@@ -8,6 +8,11 @@
  *   outright handover                        → SALE      (physical −1, reserved −1)
  *   credit disbursement                      → DISBURSEMENT (physical −1, reserved −1)
  *   approved replenishment / opening stock   → RECEIPT / OPENING (physical +n)
+ *   approved stock count                     → COUNT_ADJUSTMENT (physical ± variance)
+ *
+ * Colour-agnostic stock: units counted without a colour sit in the stock-pool model. A sale of any colour
+ * reserves its own colour when available at the supplying location, otherwise a pool unit there; the
+ * application records which balance it took (stock_model_id), so release and handover use the same one.
  */
 import type { Db, Tx } from "../db";
 import { withTx } from "../db";
@@ -21,7 +26,19 @@ import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail } from "../notify/templates";
 import { config } from "../config";
 
-export type Movement = "OPENING" | "RECEIPT" | "RESERVE" | "RELEASE" | "SALE" | "DISBURSEMENT" | "LEGACY_ADJUSTMENT";
+export type Movement = "OPENING" | "RECEIPT" | "RESERVE" | "RELEASE" | "SALE" | "DISBURSEMENT" | "LEGACY_ADJUSTMENT" | "COUNT_ADJUSTMENT";
+
+/** The colour-agnostic stock-pool model, if configured. */
+export async function poolModelId(q: Db): Promise<string | null> {
+  return (await q.query<{ id: string }>("SELECT id FROM altphones_models WHERE stock_pool LIMIT 1")).rows[0]?.id ?? null;
+}
+/** The balance an application's reservation sits in. */
+export const stockModelOf = (app: AltApp): string => app.stock_model_id ?? app.model_id;
+
+async function availableExact(q: Db, locationId: string, modelId: string): Promise<number> {
+  const r = (await q.query<{ a: number }>("SELECT physical - reserved AS a FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [locationId, modelId])).rows[0];
+  return r ? Number(r.a) : 0;
+}
 
 export async function locationInfo(q: Db, id: string | null | undefined): Promise<{ id: string; name: string; outlet_type: string; state: string; city: string; active: boolean } | null> {
   if (!id || !isUuid(id)) return null;
@@ -57,9 +74,10 @@ export async function post(
   return { physical, reserved, available: physical - reserved };
 }
 
+/** Units a sale of this model can take at a location: its own colour plus colour-not-recorded units. */
 export async function availableAt(q: Db, locationId: string, modelId: string): Promise<number> {
-  const r = (await q.query<{ a: number }>("SELECT physical - reserved AS a FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [locationId, modelId])).rows[0];
-  return r ? Number(r.a) : 0;
+  const pool = await poolModelId(q);
+  return (await availableExact(q, locationId, modelId)) + (pool && pool !== modelId ? await availableExact(q, locationId, pool) : 0);
 }
 
 /**
@@ -68,11 +86,17 @@ export async function availableAt(q: Db, locationId: string, modelId: string): P
  */
 export async function reserveUnit(tx: Tx, ctx: Ctx, app: AltApp): Promise<string | null> {
   if (app.reservation_status === "RESERVED") return app.device_id ?? null;
-  await post(tx, ctx, { locationId: app.supply_location_id, modelId: app.model_id, movement: "RESERVE", physical: 0, reserved: 1, applicationId: app.id, reference: app.ref });
+  // Own colour first; otherwise a colour-not-recorded unit at the same location; otherwise post() refuses.
+  const pool = await poolModelId(tx);
+  const fromPool = !!pool && pool !== app.model_id && (await availableExact(tx, app.supply_location_id, app.model_id)) < 1 && (await availableExact(tx, app.supply_location_id, pool)) >= 1;
+  const stockModel = fromPool ? pool! : app.model_id;
+  await post(tx, ctx, { locationId: app.supply_location_id, modelId: stockModel, movement: "RESERVE", physical: 0, reserved: 1, applicationId: app.id, reference: app.ref, note: fromPool ? "Colour-not-recorded unit" : null });
+  await tx.query("UPDATE altphones_applications SET stock_model_id = $2 WHERE id = $1", [app.id, stockModel]);
+  app.stock_model_id = stockModel;
   const dev = (
     await tx.query<{ id: string }>(
       `SELECT id FROM altphones_devices WHERE location_id = $1 AND model_id = $2 AND status = 'IN_STOCK' ORDER BY registered_at, imei LIMIT 1 FOR UPDATE SKIP LOCKED`,
-      [app.supply_location_id, app.model_id],
+      [app.supply_location_id, stockModel],
     )
   ).rows[0];
   if (dev) await tx.query("UPDATE altphones_devices SET status = 'RESERVED', application_id = $2 WHERE id = $1", [dev.id, app.id]);
@@ -81,7 +105,7 @@ export async function reserveUnit(tx: Tx, ctx: Ctx, app: AltApp): Promise<string
 
 export async function releaseUnit(tx: Tx, ctx: Ctx, app: AltApp, note: string) {
   if (app.reservation_status !== "RESERVED") return;
-  await post(tx, ctx, { locationId: app.supply_location_id, modelId: app.model_id, movement: "RELEASE", physical: 0, reserved: -1, applicationId: app.id, reference: app.ref, note });
+  await post(tx, ctx, { locationId: app.supply_location_id, modelId: stockModelOf(app), movement: "RELEASE", physical: 0, reserved: -1, applicationId: app.id, reference: app.ref, note });
   await tx.query("UPDATE altphones_devices SET status = 'IN_STOCK', application_id = NULL WHERE application_id = $1 AND status = 'RESERVED'", [app.id]);
 }
 
@@ -97,7 +121,7 @@ export async function issueUnit(tx: Tx, ctx: Ctx, app: AltApp, imeiRaw: string, 
   let dev = (await tx.query<{ id: string; status: string; location_id: string | null; model_id: string; application_id: string | null }>("SELECT * FROM altphones_devices WHERE imei = $1 FOR UPDATE", [imei])).rows[0];
   if (dev) {
     const mine = dev.status === "RESERVED" && dev.application_id === app.id;
-    const free = dev.status === "IN_STOCK" && dev.location_id === app.supply_location_id && dev.model_id === app.model_id;
+    const free = dev.status === "IN_STOCK" && dev.location_id === app.supply_location_id && dev.model_id === stockModelOf(app);
     if (!mine && !free) {
       throw invalid("This IMEI cannot be issued.", {
         imei: dev.status === "ISSUED" ? "This IMEI has already been issued to a customer." : dev.model_id !== app.model_id ? "This IMEI belongs to a different phone model." : "This IMEI is not in stock at the supplying location, or is reserved for another customer.",
@@ -107,9 +131,9 @@ export async function issueUnit(tx: Tx, ctx: Ctx, app: AltApp, imeiRaw: string, 
   } else {
     // A unit counted in stock without a registered IMEI: register it now, within the physical count.
     const tracked = Number(
-      (await tx.query<{ n: string }>("SELECT count(*) AS n FROM altphones_devices WHERE location_id = $1 AND model_id = $2 AND status IN ('IN_STOCK','RESERVED') AND (application_id IS DISTINCT FROM $3)", [app.supply_location_id, app.model_id, app.id])).rows[0].n,
+      (await tx.query<{ n: string }>("SELECT count(*) AS n FROM altphones_devices WHERE location_id = $1 AND model_id = $2 AND status IN ('IN_STOCK','RESERVED') AND (application_id IS DISTINCT FROM $3)", [app.supply_location_id, stockModelOf(app), app.id])).rows[0].n,
     );
-    const phys = (await tx.query<{ physical: number }>("SELECT physical FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [app.supply_location_id, app.model_id])).rows[0]?.physical ?? 0;
+    const phys = (await tx.query<{ physical: number }>("SELECT physical FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [app.supply_location_id, stockModelOf(app)])).rows[0]?.physical ?? 0;
     if (tracked + 1 > phys) throw invalid("This IMEI is not registered at the supplying location.", { imei: "Every unit in stock there already has a registered IMEI. Choose one of them." });
     await tx.query("UPDATE altphones_devices SET status = 'IN_STOCK', application_id = NULL WHERE application_id = $1 AND status = 'RESERVED'", [app.id]);
     dev = (
@@ -122,8 +146,9 @@ export async function issueUnit(tx: Tx, ctx: Ctx, app: AltApp, imeiRaw: string, 
       ])
     ).rows[0];
   }
-  await post(tx, ctx, { locationId: app.supply_location_id, modelId: app.model_id, movement, physical: -1, reserved: -1, applicationId: app.id, deviceId: dev!.id, reference: app.ref });
-  await tx.query("UPDATE altphones_devices SET status = 'ISSUED', application_id = $2, issued_at = $3 WHERE id = $1", [dev!.id, app.id, ctx.now]);
+  await post(tx, ctx, { locationId: app.supply_location_id, modelId: stockModelOf(app), movement, physical: -1, reserved: -1, applicationId: app.id, deviceId: dev!.id, reference: app.ref });
+  // The issued device is recorded as the colour the customer actually received.
+  await tx.query("UPDATE altphones_devices SET status = 'ISSUED', application_id = $2, issued_at = $3, model_id = $4 WHERE id = $1", [dev!.id, app.id, ctx.now, app.model_id]);
   return { deviceId: dev!.id, imei };
 }
 
@@ -134,7 +159,7 @@ export async function issuableDevices(q: Db, app: AltApp) {
       `SELECT id, imei, status FROM altphones_devices
         WHERE (application_id = $1 AND status = 'RESERVED') OR (location_id = $2 AND model_id = $3 AND status = 'IN_STOCK')
         ORDER BY (status = 'RESERVED') DESC, imei LIMIT 200`,
-      [app.id, app.supply_location_id, app.model_id],
+      [app.id, app.supply_location_id, stockModelOf(app)],
     )
   ).rows;
 }
@@ -293,12 +318,179 @@ export async function supplyOptions(q: Db, modelId: string | null, near?: { stat
   return (
     await q.query<{ id: string; name: string; outlet_type: string; state: string; city: string; available: number; same_city: boolean; same_state: boolean }>(
       `SELECT l.id, l.name, l.outlet_type, l.state, l.city,
-              coalesce((SELECT s.physical - s.reserved FROM altphones_stock s WHERE s.location_id = l.id AND s.model_id = $1), 0)::int AS available,
+              coalesce((SELECT sum(s.physical - s.reserved) FROM altphones_stock s JOIN altphones_models m ON m.id = s.model_id WHERE s.location_id = l.id AND (s.model_id = $1 OR m.stock_pool)), 0)::int AS available,
               (l.state = $2 AND lower(l.city) = lower($3)) AS same_city, (l.state = $2) AS same_state
          FROM locations l
         WHERE l.active AND l.outlet_type IN ('BRANCH','ALTSHOP')
         ORDER BY (l.state = $2 AND lower(l.city) = lower($3)) DESC, (l.state = $2) DESC, l.state, l.city, l.name`,
       [modelId, near?.state ?? "", near?.city ?? ""],
+    )
+  ).rows;
+}
+
+// ------------------------------------------------------------------ physical stock counts (maker-checker)
+
+export interface StockCountInput {
+  locationId: string;
+  countedOn: string;
+  note: string;
+  lines: { modelId: string; counted: string }[];
+}
+
+const COUNTERS = ["SUPER_ADMIN", PM_ROLE];
+
+/**
+ * Record a physical count at a Branch or Shop. Nothing changes until a different Super Admin approves it;
+ * the variance against the ledger at the time of counting is then posted as a COUNT_ADJUSTMENT.
+ */
+export async function submitStockCount(ctx: Ctx, p: StockCountInput) {
+  const actor = ctx.actor;
+  if (!actor) throw forbidden();
+  return withTx(async (tx) => {
+    if (!(await Promise.all(COUNTERS.map((r) => holdsRole(tx, actor.staffId, r)))).some(Boolean)) throw forbidden("Only the Altphones Product Manager or a Super Admin can record a stock count.");
+    const e: Record<string, string> = {};
+    const loc = await locationInfo(tx, p.locationId);
+    if (!loc) e.locationId = "Choose a Branch or Shop.";
+    else if (!holdsStock(loc.outlet_type)) e.locationId = "BOX locations do not hold stock.";
+    const day = /^\d{4}-\d{2}-\d{2}$/.test(p.countedOn ?? "") ? p.countedOn : "";
+    const today = new Date(ctx.now.getTime() + 3600_000).toISOString().slice(0, 10); // Lagos date
+    if (!day) e.countedOn = "Enter the date of the count.";
+    else if (day > today) e.countedOn = "The count date cannot be in the future.";
+    const lines: { modelId: string; counted: number; system: number; reserved: number; name: string }[] = [];
+    for (const l of p.lines ?? []) {
+      if (!isUuid(l.modelId)) continue;
+      const raw = String(l.counted ?? "").trim();
+      if (raw === "") continue;
+      const counted = Number(raw);
+      const m = (await tx.query<{ name: string }>("SELECT name FROM altphones_models WHERE id = $1", [l.modelId])).rows[0];
+      if (!m) continue;
+      if (!Number.isInteger(counted) || counted < 0 || counted > 100000) {
+        e[`count_${l.modelId}`] = `${m.name}: enter a whole number of units.`;
+        continue;
+      }
+      const bal = loc ? (await tx.query<{ physical: number; reserved: number }>("SELECT physical, reserved FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [loc.id, l.modelId])).rows[0] : undefined;
+      const reserved = bal?.reserved ?? 0;
+      if (counted < reserved) e[`count_${l.modelId}`] = `${m.name}: ${reserved} unit${reserved === 1 ? " is" : "s are"} reserved for paid customers, so the count cannot be lower.`;
+      lines.push({ modelId: l.modelId, counted, system: bal?.physical ?? 0, reserved, name: m.name });
+    }
+    if (!lines.length && !Object.keys(e).length) e.lines = "Enter the units counted for at least one phone.";
+    if (Object.keys(e).length) throw invalid("Check the stock count.", e);
+    const open = (await tx.query("SELECT ref FROM altphones_stock_counts WHERE location_id = $1 AND status = 'SUBMITTED'", [loc!.id])).rows[0];
+    if (open) throw conflict(`Count ${open.ref} for ${loc!.name} is still awaiting approval.`);
+    const ref = await nextRef(tx, "altphones_stock_count_seq", "CNT", ctx.now);
+    const row = (
+      await tx.query<{ id: string; ref: string }>(
+        "INSERT INTO altphones_stock_counts (ref, location_id, counted_on, note, submitted_by, submitted_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, ref",
+        [ref, loc!.id, day, (p.note ?? "").trim().slice(0, 500) || null, actor.staffId, ctx.now],
+      )
+    ).rows[0];
+    for (const l of lines) await tx.query("INSERT INTO altphones_stock_count_lines (count_id, model_id, counted, system_at_submit) VALUES ($1,$2,$3,$4)", [row.id, l.modelId, l.counted, l.system]);
+    const variance = lines.reduce((a, l) => a + (l.counted - l.system), 0);
+    await audit(tx, ctx, { action: "ALTPHONES_STOCK_COUNTED", details: { ref, location: loc!.name, lines: lines.map((l) => ({ model: l.name, counted: l.counted, system: l.system })), variance } });
+    const admins = (await roleHolders(tx, ["SUPER_ADMIN"])).filter((a) => a.id !== actor.staffId);
+    if (admins.length) {
+      await enqueueEmail(tx, ctx.now, {
+        kind: "ALTPHONES_STOCK_COUNTED",
+        dedupeKey: `altphones:stock-count:${row.id}`,
+        to: admins.map((a) => a.email),
+        subject: `[${ref}] Altphones stock count awaiting approval — ${loc!.name}`,
+        text: simpleEmail([`${actor.name} recorded a stock count at ${loc!.name} (${variance >= 0 ? "+" : ""}${variance} against the ledger).`, "", `Approve or reject it (sign-in required): ${config.appUrl}/altphones/inventory`]),
+      });
+    }
+    return { ...row, variance };
+  });
+}
+
+/** Approve (post the variance) or reject a stock count. The person who counted cannot decide it. */
+export async function decideStockCount(ctx: Ctx, id: string, p: { decision: "APPROVE" | "REJECT"; comment: string }) {
+  const actor = ctx.actor;
+  if (!actor) throw forbidden();
+  return withTx(async (tx) => {
+    if (!(await holdsRole(tx, actor.staffId, "SUPER_ADMIN"))) throw forbidden("Only a Super Admin can approve a stock count.");
+    if (!isUuid(id)) throw notFound("Stock count not found.");
+    const c = (await tx.query("SELECT c.*, to_char(c.counted_on, 'YYYY-MM-DD') AS counted_day, l.name AS location_name FROM altphones_stock_counts c JOIN locations l ON l.id = c.location_id WHERE c.id = $1 FOR UPDATE OF c", [id])).rows[0];
+    if (!c) throw notFound("Stock count not found.");
+    if (c.status !== "SUBMITTED") throw conflict("This stock count has already been decided.");
+    if (c.submitted_by === actor.staffId) throw forbidden("Separation of duties: you cannot approve your own stock count.");
+    if (p.decision === "REJECT" && (p.comment ?? "").trim().length < 3) throw invalid("Give the reason for rejecting.", { comment: "Enter a reason." });
+    let posted = 0;
+    if (p.decision === "APPROVE") {
+      const lines = (await tx.query<{ model_id: string; counted: number; system_at_submit: number }>("SELECT model_id, counted, system_at_submit FROM altphones_stock_count_lines WHERE count_id = $1", [id])).rows;
+      for (const l of lines) {
+        const variance = l.counted - l.system_at_submit; // movements since the count are kept, not overwritten
+        if (variance === 0) continue;
+        await post(tx, ctx, { locationId: c.location_id, modelId: l.model_id, movement: "COUNT_ADJUSTMENT", physical: variance, reserved: 0, reference: c.ref, note: `Stock count of ${c.counted_day}${c.note ? ` — ${c.note}` : ""}` });
+        posted += variance;
+      }
+    }
+    await tx.query("UPDATE altphones_stock_counts SET status = $2, decided_by = $3, decided_at = $4, decision_note = $5 WHERE id = $1", [id, p.decision === "APPROVE" ? "APPROVED" : "REJECTED", actor.staffId, ctx.now, (p.comment ?? "").trim() || null]);
+    await audit(tx, ctx, { action: p.decision === "APPROVE" ? "ALTPHONES_STOCK_COUNT_APPROVED" : "ALTPHONES_STOCK_COUNT_REJECTED", details: { ref: c.ref, location: c.location_name, adjustment: posted, comment: p.comment?.trim() || null } });
+    return { ref: c.ref, adjustment: posted };
+  });
+}
+
+export interface StockCountRow {
+  id: string;
+  ref: string;
+  location_id: string;
+  location_name: string;
+  status: string;
+  counted_on: string;
+  note: string | null;
+  submitted_by: string;
+  submitted_by_name: string;
+  submitted_at: Date;
+  decided_by_name: string | null;
+  decision_note: string | null;
+  lines: { model: string; counted: number; system: number }[];
+}
+
+export async function listStockCounts(q: Db, opts: { locationId?: string | null; limit?: number } = {}): Promise<StockCountRow[]> {
+  return (
+    await q.query<StockCountRow>(
+      `SELECT c.id, c.ref, c.location_id, l.name AS location_name, c.status, to_char(c.counted_on, 'YYYY-MM-DD') AS counted_on, c.note,
+              c.submitted_by, s.full_name AS submitted_by_name, c.submitted_at, d.full_name AS decided_by_name, c.decision_note,
+              coalesce((SELECT json_agg(json_build_object('model', m.name, 'counted', x.counted, 'system', x.system_at_submit) ORDER BY m.name)
+                          FROM altphones_stock_count_lines x JOIN altphones_models m ON m.id = x.model_id WHERE x.count_id = c.id), '[]') AS lines
+         FROM altphones_stock_counts c JOIN locations l ON l.id = c.location_id JOIN staff s ON s.id = c.submitted_by LEFT JOIN staff d ON d.id = c.decided_by
+        WHERE ($1::uuid IS NULL OR c.location_id = $1)
+        ORDER BY (c.status = 'SUBMITTED') DESC, c.submitted_at DESC LIMIT $2`,
+      [opts.locationId ?? null, opts.limit ?? 50],
+    )
+  ).rows;
+}
+
+export interface LocationStockRow {
+  id: string;
+  name: string;
+  state: string;
+  city: string;
+  outlet_type: string;
+  source_name: string | null;
+  source_state: string | null;
+  source_type: string | null;
+  physical: number;
+  reserved: number;
+  available: number;
+  last_count: string | null;
+}
+
+/** Every stock-holding location (zero-stock ones included) with its totals across all phones. */
+export async function locationStock(q: Db, f: { state?: string; type?: string; stock?: string; q?: string } = {}): Promise<LocationStockRow[]> {
+  return (
+    await q.query<LocationStockRow>(
+      `SELECT l.id, l.name, l.state, l.city, l.outlet_type, l.source_name, l.source_state, l.source_type,
+              coalesce(sum(s.physical), 0)::int AS physical, coalesce(sum(s.reserved), 0)::int AS reserved,
+              coalesce(sum(s.physical - s.reserved), 0)::int AS available,
+              (SELECT to_char(max(c.counted_on), 'YYYY-MM-DD') FROM altphones_stock_counts c WHERE c.location_id = l.id AND c.status = 'APPROVED') AS last_count
+         FROM locations l LEFT JOIN altphones_stock s ON s.location_id = l.id
+        WHERE l.active AND l.outlet_type IN ('BRANCH','ALTSHOP')
+          AND ($1 = '' OR l.state = $1) AND ($2 = '' OR l.outlet_type = $2)
+          AND ($4 = '' OR lower(l.name) LIKE '%' || $4 || '%' OR lower(coalesce(l.source_name, '')) LIKE '%' || $4 || '%' OR lower(l.city) LIKE '%' || $4 || '%')
+        GROUP BY l.id
+       HAVING ($3 = '' OR ($3 = 'zero' AND coalesce(sum(s.physical), 0) = 0) OR ($3 = 'instock' AND coalesce(sum(s.physical), 0) > 0))
+        ORDER BY l.state, l.name`,
+      [f.state ?? "", f.type ?? "", f.stock ?? "", (f.q ?? "").trim().toLowerCase()],
     )
   ).rows;
 }

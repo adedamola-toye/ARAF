@@ -15,7 +15,7 @@ import { conflict, forbidden, invalid, notFound } from "../errors";
 import { sha256Hex } from "../crypto";
 import { holdsRole } from "../domain/access";
 import { readSpreadsheet } from "../domain/directory";
-import { REGIONS } from "../domain/roles";
+import { REGIONS, normaliseNigerianState } from "../domain/roles";
 import { isEmail, isImei, isTenure, normalisePhone } from "@/lib/altphones";
 import { config } from "../config";
 import { currentSettings, isUuid, nextRef } from "./core";
@@ -39,7 +39,7 @@ const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
     active: ["active", "status"],
   },
   OPENING_STOCK: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], quantity: ["quantity", "qty", "units"], imeis: ["imeis", "imei"], note: ["note", "notes", "source"] },
-  LOCATIONS: { state: ["state"], city: ["city", "town", "towncity", "lga"], type: ["type", "locationtype", "outlettype"], name: ["name", "locationname", "outletname", "branch"], address: ["address"] },
+  LOCATIONS: { state: ["state"], city: ["city", "town", "towncity", "lga"], type: ["type", "locationtype", "outlettype"], name: ["name", "locationname", "outletname", "branch", "locations", "location"], address: ["address"], sourceType: ["sourcetype", "originaltype", "listedas"], aliases: ["aliases", "alsoknownas", "registerlabels", "otherlabels"] },
   TRANSACTIONS: {
     reference: ["reference", "ref", "transactionreference", "transactionref"],
     type: ["type", "transactiontype", "saletype"],
@@ -67,7 +67,7 @@ const REQUIRED: Record<ImportKind, string[]> = {
 export const TEMPLATES: Record<ImportKind, string> = {
   OFFICERS: "Email,Full name,Route,State,Home location,Active\r\nfirstname.lastname@altbank.ng,Firstname Lastname,Delight Officer,LAGOS,Ikeja Branch,Yes\r\nother.person@altbank.ng,Other Person,Smile Associate,LAGOS,Yaba Altbox,Yes\r\n",
   OPENING_STOCK: "Location,Phone model,Quantity,IMEIs,Note\r\nIkeja Branch,Altphone L1 Series — Black & Gold,20,,Opening count 2026-11-13\r\nYaba Altshop,Altphone L1 Series — Green,10,356938035643809;490154203237518,Delivery note 001\r\n",
-  LOCATIONS: "State,City,Type,Name,Address\r\nLAGOS,Ikeja,Branch,Ikeja Branch,1 Example Road\r\nLAGOS,Yaba,Shop,Yaba Altshop,\r\nLAGOS,Yaba,BOX,Yaba Altbox,\r\n",
+  LOCATIONS: "State,City,Type,Name,Address,Source type,Aliases\r\nLAGOS,Ikeja,Branch,Ikeja Branch,1 Example Road,,IKEJA\r\nLAGOS,Yaba,Shop,Yaba Altshop,,,\r\nABUJA,Abuja,Shop,Dei Dei,,,DEI DEI ALTSHOP\r\n",
   TRANSACTIONS:
     "Reference,Type,Customer name,Customer email,Customer phone,Phone model,IMEI,Transaction date,Originating officer,Originating location,Supplying location,Tenure\r\nLEG-0001,Outright,Customer Name,customer@example.com,08031234567,Model name,000000000000000,2026-01-15,officer@altbank.ng,Ikeja Branch,Ikeja Branch,\r\n",
   STOCK: "Reference,Location,Phone model,Movement,Quantity,Date,Note\r\nSTK-LEG-0001,Ikeja Branch,Model name,Opening,20,2026-01-01,Opening balance\r\n",
@@ -123,11 +123,19 @@ function parseDate(s: string): string | null {
 
 const TYPE_MAP: Record<string, string> = { branch: "BRANCH", shop: "ALTSHOP", altshop: "ALTSHOP", box: "ALTBOX", altbox: "ALTBOX" };
 
+/** Find a location by its name, its original (source) name, or a recorded alias. */
 async function locationIndex(q: Db) {
-  const all = (await q.query<{ id: string; name: string; outlet_type: string; state: string; city: string }>("SELECT id, name, outlet_type, state, city FROM locations WHERE active")).rows;
-  const byName = new Map<string, typeof all>();
-  for (const l of all) byName.set(l.name.toLowerCase(), [...(byName.get(l.name.toLowerCase()) ?? []), l]);
-  return (name: string) => byName.get(name.trim().toLowerCase()) ?? [];
+  const all = (
+    await q.query<{ id: string; name: string; outlet_type: string; state: string; city: string; labels: string[] }>(
+      `SELECT l.id, l.name, l.outlet_type, l.state, l.city,
+              array_remove(array_cat(ARRAY[lower(l.name), lower(coalesce(l.source_name, ''))], coalesce(array_agg(lower(a.label)) FILTER (WHERE a.label IS NOT NULL), '{}')), '') AS labels
+         FROM locations l LEFT JOIN altphones_location_aliases a ON a.location_id = l.id
+        WHERE l.active GROUP BY l.id`,
+    )
+  ).rows;
+  const byLabel = new Map<string, (typeof all)[number][]>();
+  for (const l of all) for (const k of new Set(l.labels)) byLabel.set(k, [...(byLabel.get(k) ?? []), l]);
+  return (name: string) => byLabel.get(name.replace(/\s+/g, " ").trim().toLowerCase()) ?? [];
 }
 async function modelIndex(q: Db) {
   const all = (await q.query<{ id: string; name: string }>("SELECT id, name FROM altphones_models")).rows;
@@ -143,9 +151,9 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
   if (kind === "LOCATIONS") {
     const seen = new Set<string>();
     for (const r of rows) {
-      const state = r.state.toUpperCase();
+      const state = normaliseNigerianState(r.state);
       const type = TYPE_MAP[norm(r.type)];
-      if (!(REGIONS as readonly string[]).includes(state)) { err(r, `"${r.state}" is not a Nigerian state (use e.g. LAGOS, FCT (ABUJA)).`); continue; }
+      if (!state) { err(r, `"${r.state}" is not a Nigerian state (use e.g. LAGOS, FCT (ABUJA)).`); continue; }
       if (!type) { err(r, `Type "${r.type}" must be Branch, Shop or BOX.`); continue; }
       if (r.city.length < 2 || r.name.length < 2) { err(r, "City and name are required."); continue; }
       const key = `${state}|${r.city.toLowerCase()}|${type}|${r.name.toLowerCase()}`;
@@ -155,7 +163,10 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       if (exists) { skipped.push({ row: Number(r._row), message: `${r.name} already exists — skipped.` }); continue; }
       const sameName = (await q.query("SELECT state, city FROM locations WHERE lower(name) = lower($1)", [r.name])).rows[0];
       if (sameName) { err(r, `A location named "${r.name}" already exists in ${sameName.city}, ${sameName.state}. Use a distinct name.`); continue; }
-      ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, address: r.address || null });
+      const aliases = [...new Set((r.aliases ?? "").split(/[;|]/).map((a) => a.replace(/\s+/g, " ").trim().toUpperCase()).filter((a) => a.length >= 2 && a !== r.name.toUpperCase()))];
+      const taken = aliases.length ? (await q.query<{ label: string }>("SELECT label FROM altphones_location_aliases WHERE label = ANY($1)", [aliases])).rows.map((x) => x.label) : [];
+      if (taken.length) { err(r, `${r.name}: alias already used by another location: ${taken.join(", ")}.`); continue; }
+      ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, address: r.address || null, sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
     }
   } else if (kind === "OFFICERS") {
     const loc = await locationIndex(q);
@@ -385,7 +396,14 @@ export async function commitImport(ctx: Ctx, id: string) {
     let applied = 0;
     for (const o of v.ok) {
       if (kind === "LOCATIONS") {
-        await tx.query("INSERT INTO locations (state, city, outlet_type, name, address, active, updated_at) VALUES ($1,$2,$3,$4,$5,true,$6)", [o.state, o.city, o.type, o.name, o.address, ctx.now]);
+        // The original labels are kept exactly as supplied alongside the normalised state and type.
+        const lid = (
+          await tx.query<{ id: string }>(
+            "INSERT INTO locations (state, city, outlet_type, name, address, active, updated_at, source_name, source_state, source_type, created_by) VALUES ($1,$2,$3,$4,$5,true,$6,$4,$7,$8,$9) RETURNING id",
+            [o.state, o.city, o.type, o.name, o.address, ctx.now, o.sourceState, o.sourceType, ctx.actor!.staffId],
+          )
+        ).rows[0].id;
+        for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);
       } else if (kind === "OFFICERS") {
         await applyOfficer(tx, ctx, o);
       } else if (kind === "OPENING_STOCK") {
