@@ -9,7 +9,9 @@ import { REGIONS } from "@/server/domain/roles";
 import { BPM_ROLE } from "@/server/altphones/core";
 import {
   addressRequests,
+  bpmRequests,
   bpmStates,
+  unroutedLocations,
   type ImportSummary,
   importSources,
   listImports,
@@ -27,7 +29,8 @@ import {
   previewProfilingAction,
   proposeLocationAction,
   requestAddressAction,
-  setBpmStateAction,
+  decideBpmAction,
+  requestBpmAction,
 } from "../actions";
 
 export const metadata = { title: "Altphones locations" };
@@ -50,11 +53,11 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
   if (!access.view) redirect("/altphones");
   const tabs: { key: Tab; label: string }[] = [
     { key: "locations", label: "Location master" },
-    ...(access.manage ? [{ key: "import" as Tab, label: "Import profiling workbook" }, { key: "bpm" as Tab, label: "BPM by state" }] : []),
-    { key: "requests", label: "Address approvals" },
+    ...(access.manage ? [{ key: "import" as Tab, label: "Import profiling workbook" }, { key: "bpm" as Tab, label: "BPM mapping" }] : []),
+    { key: "requests", label: "Approvals" },
   ];
   const tab: Tab = tabs.some((t) => t.key === sp.tab) ? (sp.tab as Tab) : access.manage ? "locations" : "requests";
-  const pending = await addressRequests(db, "PENDING");
+  const pending = [...(await addressRequests(db, "PENDING")), ...(await bpmRequests(db, "PENDING"))];
   const unrouted = await unroutedStates(db);
 
   return (
@@ -68,7 +71,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
         <div className="alert alert-warn" role="status" style={{ marginBottom: "var(--space-4)" }}>
           <div>
             <strong>Smile Associate sales cannot be submitted in {unrouted.length === 1 ? "one state" : `${unrouted.length} states`}</strong> because no active Business Performance Manager is mapped:{" "}
-            {unrouted.map((u) => `${u.state} (${u.locations})`).join(", ")}.{access.manage && <> Map one under <Link href="?tab=bpm">BPM by state</Link>.</>}
+            {unrouted.map((u) => `${u.state} (${u.locations})`).join(", ")}.{access.manage && <> Request a mapping under <Link href="?tab=bpm">BPM mapping</Link>; it takes effect when the Unit Head approves it.</>}
           </div>
         </div>
       )}
@@ -235,7 +238,7 @@ async function Master({ sp, canManage }: { sp: Record<string, string | undefined
                   <td className="small" style={{ maxWidth: 360 }}>
                     {l.address ?? <span className="muted">—</span>}
                   </td>
-                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ?? (l.bpm_email ? <span className="text-danger">{l.bpm_email} (not set up)</span> : <span className="text-danger">None mapped</span>))}</td>
+                  <td className="small">{l.outlet_type === "BRANCH" ? <span className="muted">DO route: PM → Unit Head</span> : (l.bpm_name ? <>{l.bpm_name}{l.bpm_for_location && <div className="muted">for this location</div>}</> : (l.bpm_email ? <span className="text-danger">{l.bpm_email} (not set up)</span> : <span className="text-danger">None mapped</span>))}</td>
                   <td>
                     <span className={`badge ${ADDRESS_BADGE[l.address_status][0]}`}>{ADDRESS_BADGE[l.address_status][1]}</span>
                     {!l.active && <div className="small muted">Inactive</div>}
@@ -528,78 +531,202 @@ async function ImportTab({ sp }: { sp: Record<string, string | undefined> }) {
 }
 
 async function BpmTab() {
-  const map = await bpmStates(db);
+  const [map, pending, uncovered] = await Promise.all([bpmStates(db), bpmRequests(db, "PENDING"), unroutedLocations(db)]);
+  const locMaps = (
+    await db.query(
+      `SELECT l.name, l.state, l.outlet_type, m.bpm_email, s.full_name FROM altphones_bpm_locations m JOIN locations l ON l.id = m.location_id
+         LEFT JOIN staff s ON lower(s.email) = m.bpm_email AND s.status = 'ACTIVE' ORDER BY l.state, l.name`,
+    )
+  ).rows;
+  const saLocations = (await db.query<{ id: string; name: string; state: string; outlet_type: string }>("SELECT id, name, state, outlet_type FROM locations WHERE active AND outlet_type IN ('ALTSHOP','ALTBOX') ORDER BY state, name")).rows;
   const bpms = (await db.query<{ email: string; full_name: string }>("SELECT DISTINCT s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE s.status = 'ACTIVE' ORDER BY s.full_name", [BPM_ROLE])).rows;
+  const uncoveredIds = new Set(uncovered.map((u) => u.id));
   return (
-    <section className="card" aria-labelledby="h-bpm">
-      <h2 id="h-bpm">Business Performance Manager by state</h2>
-      <p className="small muted" style={{ marginTop: 0 }}>
-        Smile Associate sales are reviewed by the BPM mapped to the state of the Altshop or Altbox they are sold from, then the Product Manager and the Unit Head. Delight Officer sales go to the Product Manager, then the Unit Head.
-      </p>
-      <div className="table-wrap">
-        <table className="data">
-          <thead>
-            <tr>
-              <th scope="col">State</th>
-              <th scope="col">BPM</th>
-              <th scope="col" className="num">
-                Altshops and Altboxes
-              </th>
-              <th scope="col">Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {map.map((m) => (
-              <tr key={m.state}>
-                <td>{m.state}</td>
-                <td className="small">
-                  {m.full_name && m.has_role ? m.full_name : <span className="text-danger">{m.full_name ? `${m.full_name} has no BPM role` : `${m.bpm_email} is not set up in ARAF`}</span>}
-                  <div className="mono muted">{m.bpm_email}</div>
-                </td>
-                <td className="num">{n(m.sa_locations)}</td>
-                <td className="small">{m.source === "MANUAL" ? "Set by hand" : "Profiling workbook"}</td>
+    <>
+      <section className="card action-panel" aria-labelledby="h-bpmreq">
+        <h2 id="h-bpmreq">Request a BPM mapping</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          Smile Associate sales are reviewed by the BPM for the Altshop or Altbox they are sold from, then the Product Manager and the Unit Head. Map a whole state, or one location (a location mapping takes precedence over its state&apos;s). The mapping takes effect when the Unit Head approves it.
+          {uncovered.length > 0 && <> {n(uncovered.length)} active Altshops and Altboxes are not routed to a BPM yet; they are listed first below.</>}
+        </p>
+        <ActionForm action={requestBpmAction} className="stack" resetOnSuccess>
+          <div className="grid-2">
+            <div className="field">
+              <label htmlFor="bq-scope">Map</label>
+              <select id="bq-scope" name="scope" defaultValue="STATE" required>
+                <option value="STATE">A whole state</option>
+                <option value="LOCATION">One location</option>
+              </select>
+              <span className="hint">Choose the state for a state mapping, or the location for a location mapping.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="bq-bpm">Business Performance Manager</label>
+              <select id="bq-bpm" name="email" defaultValue="" required>
+                <option value="">Choose the BPM</option>
+                {bpms.map((b) => (
+                  <option key={b.email} value={b.email}>
+                    {b.full_name} — {b.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="bq-state">State</label>
+              <select id="bq-state" name="state" defaultValue="">
+                <option value="">—</option>
+                {REGIONS.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="bq-loc">Location</label>
+              <select id="bq-loc" name="locationId" defaultValue="">
+                <option value="">—</option>
+                {[...saLocations.filter((l) => uncoveredIds.has(l.id)), ...saLocations.filter((l) => !uncoveredIds.has(l.id))].map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {uncoveredIds.has(l.id) ? "Not routed · " : ""}
+                    {l.name} — {TYPE_LABEL[l.outlet_type as keyof typeof TYPE_LABEL]}, {l.state}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="bq-note">Reason</label>
+            <input id="bq-note" name="note" required placeholder="For example: covers the North Central region from December" />
+          </div>
+          <div className="action-bar">
+            <SubmitButton>Send to the Unit Head</SubmitButton>
+          </div>
+        </ActionForm>
+        {pending.length > 0 && (
+          <>
+            <h3 style={{ marginTop: "var(--space-5)" }}>Awaiting the Unit Head</h3>
+            <ul className="plain-list">
+              {pending.map((r) => (
+                <li key={r.id} className="small">
+                  <span className="mono">{r.ref}</span> · {r.scope === "STATE" ? `all of ${r.state}` : `${r.location_name} (${r.state})`} → {r.bpm_name ?? r.bpm_email ?? "remove mapping"} · {r.requested_by_name}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="card" aria-labelledby="h-bpm">
+        <h2 id="h-bpm">Mapped states</h2>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col">State</th>
+                <th scope="col">BPM</th>
+                <th scope="col" className="num">
+                  Altshops and Altboxes
+                </th>
+                <th scope="col">Source</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <h3 style={{ marginTop: "var(--space-5)" }}>Map or change a state</h3>
-      <ActionForm action={setBpmStateAction} className="filters">
-        <div className="field">
-          <label htmlFor="b-state">State</label>
-          <select id="b-state" name="state" required defaultValue="">
-            <option value="">Choose the state</option>
-            {REGIONS.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
+            </thead>
+            <tbody>
+              {map.map((m) => (
+                <tr key={m.state}>
+                  <td>{m.state}</td>
+                  <td className="small">
+                    {m.full_name && m.has_role ? m.full_name : <span className="text-danger">{m.full_name ? `${m.full_name} has no BPM role` : `${m.bpm_email} is not set up in ARAF`}</span>}
+                    <div className="mono muted">{m.bpm_email}</div>
+                  </td>
+                  <td className="num">{n(m.sa_locations)}</td>
+                  <td className="small">{m.source === "MANUAL" ? "Approved mapping" : "Profiling workbook"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-        <div className="field">
-          <label htmlFor="b-email">Business Performance Manager</label>
-          <select id="b-email" name="email" defaultValue="">
-            <option value="">No BPM (remove the mapping)</option>
-            {bpms.map((b) => (
-              <option key={b.email} value={b.email}>
-                {b.full_name} — {b.email}
-              </option>
-            ))}
-          </select>
-        </div>
-        <SubmitButton>Save mapping</SubmitButton>
-      </ActionForm>
-    </section>
+        {locMaps.length > 0 && (
+          <>
+            <h3 style={{ marginTop: "var(--space-5)" }}>Mapped locations</h3>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Location</th>
+                    <th scope="col">BPM</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locMaps.map((m) => (
+                    <tr key={m.name + m.state}>
+                      <td>
+                        {m.name}
+                        <div className="small muted">
+                          {TYPE_LABEL[m.outlet_type as keyof typeof TYPE_LABEL]} · {m.state}
+                        </div>
+                      </td>
+                      <td className="small">
+                        {m.full_name ?? <span className="text-danger">not set up in ARAF</span>}
+                        <div className="mono muted">{m.bpm_email}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </section>
+    </>
   );
 }
 
 async function Requests({ me, canApprove }: { me: string; canApprove: boolean }) {
-  const [pending, recent] = await Promise.all([addressRequests(db, "PENDING"), addressRequests(db, "ALL")]);
+  const [pending, recent, bpmPending] = await Promise.all([addressRequests(db, "PENDING"), addressRequests(db, "ALL"), bpmRequests(db, "PENDING")]);
   const done = recent.filter((r) => r.status !== "PENDING").slice(0, 30);
   return (
     <>
+      <section className="card action-panel" aria-labelledby="h-bpmpend">
+        <h2 id="h-bpmpend">BPM mappings awaiting the Unit Head</h2>
+        {bpmPending.length === 0 ? (
+          <p className="muted">No BPM mapping requests are waiting.</p>
+        ) : (
+          <div className="stack">
+            {bpmPending.map((r) => (
+              <div key={r.id} className="alt-repl">
+                <div>
+                  <strong>{r.scope === "STATE" ? `All Altshops and Altboxes in ${r.state}` : `${r.location_name} (${TYPE_LABEL[r.outlet_type as keyof typeof TYPE_LABEL]}, ${r.state})`}</strong>
+                  <div>→ {r.bpm_email ? `${r.bpm_name ?? "?"} (${r.bpm_email})` : "remove the mapping"}</div>
+                  <div className="small muted">
+                    <span className="mono">{r.ref}</span> · {r.requested_by_name} · {formatLagos(r.requested_at)}
+                  </div>
+                  {r.note && <div className="small">Reason: {r.note}</div>}
+                </div>
+                {!canApprove ? (
+                  <span className="small muted">Waiting for the Unit Head.</span>
+                ) : r.requested_by === me ? (
+                  <span className="small muted">You requested this — another approver must decide.</span>
+                ) : (
+                  <ActionForm action={decideBpmAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={r.id} />
+                    <input name="note" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <div className="action-bar">
+                      <SubmitButton name="decision" value="APPROVE">
+                        Approve mapping
+                      </SubmitButton>
+                      <SubmitButton name="decision" value="REJECT" className="btn btn-danger">
+                        Reject
+                      </SubmitButton>
+                    </div>
+                  </ActionForm>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
       <section className="card action-panel" aria-labelledby="h-pend">
-        <h2 id="h-pend">Awaiting the Unit Head</h2>
+        <h2 id="h-pend">Addresses awaiting the Unit Head</h2>
         {pending.length === 0 ? (
           <p className="muted">No address requests are waiting.</p>
         ) : (

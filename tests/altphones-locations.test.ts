@@ -6,7 +6,7 @@ import { ctxFor } from "@/server/demo/scenario";
 import { ALT, CapturingMail, setupAltphones, sidOf, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/altphones/integrations";
 import { setMailTransportForTests } from "@/server/notify/transport";
-import { applyProfiling, bpmForLocation, decideAddressRequest, linkSource, parseStatesList, pickerLocations, previewProfiling, proposeLocation, readProfiling, requestAddress, setBpmState } from "@/server/altphones/location-master";
+import { applyProfiling, bpmForLocation, decideAddressRequest, linkSource, parseStatesList, pickerLocations, previewProfiling, proposeLocation, readProfiling, requestAddress, requestBpmMapping, decideBpmRequest, unroutedStates } from "@/server/altphones/location-master";
 import { saveLocations, startSale } from "@/server/altphones/origination";
 import { decide } from "@/server/altphones/approvals";
 import { appAccess } from "@/server/altphones/core";
@@ -177,9 +177,42 @@ describe("origination and routing", () => {
     const area = await locBy("AREA SYNTH"); // FCT: mapped to a BPM who is not set up in ARAF
     expect((await bpmForLocation(db, area.id)).problem).toMatch(/not set up in ARAF/);
     await expect(saveLocations(sa, id, { modelId: models[0], originId: area.id, supplyId: (await locBy("Yaba Altshop")).id })).rejects.toMatchObject({ fields: { originId: expect.stringMatching(/not set up in ARAF/) } });
-    await setBpmState(pm, { state: "FCT (ABUJA)", email: ALT.bpm });
+    // The PM requests a mapping; it takes effect only when the Unit Head approves.
+    const { ref } = await requestBpmMapping(pm, { scope: "STATE", state: "FCT (ABUJA)", email: ALT.bpm, note: "Covers FCT until a BPM is hired" });
+    expect((await bpmForLocation(db, area.id)).id).toBeNull();
+    const req = (await db.query("SELECT id FROM altphones_bpm_requests WHERE ref = $1", [ref])).rows[0];
+    await decideBpmRequest(await ctxFor(ALT.unitHead), req.id, { decision: "APPROVE" });
     expect((await bpmForLocation(db, area.id)).id).toBe(await sidOf(ALT.bpm));
-    await expect(setBpmState(pm, { state: "KANO", email: ALT.pm })).rejects.toMatchObject({ code: "VALIDATION" }); // not a BPM
+    await expect(requestBpmMapping(pm, { scope: "STATE", state: "KANO", email: ALT.pm, note: "Not a BPM at all" })).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
+  it("BPM mappings by hand are requested by the PM and approved by the Unit Head; a location mapping overrides its state", async () => {
+    const pm = await ctxFor(ALT.pm);
+    const uh = await ctxFor(ALT.unitHead);
+    await applyProfiling(pm, (await previewProfiling(pm, { filename: "profiling.xlsx", data: await workbook() })).id);
+    const nowhere = await locBy("NOWHERE YET"); // KWARA: no BPM in the workbook
+    await db.query("UPDATE locations SET address = 'Synthetic registered address', address_status = 'REGISTERED', active = true WHERE id = $1", [nowhere.id]);
+    expect((await unroutedStates(db)).map((u) => u.state)).toContain("KWARA");
+    await expect(requestBpmMapping(pm, { scope: "LOCATION", locationId: nowhere.id, email: ALT.bpm, note: "" })).rejects.toMatchObject({ code: "VALIDATION" }); // reason required
+    await expect(requestBpmMapping(pm, { scope: "LOCATION", locationId: (await locBy("Ikeja Branch")).id, email: ALT.bpm, note: "Branch sales skip BPM" })).rejects.toMatchObject({ code: "VALIDATION" });
+    const { ref } = await requestBpmMapping(pm, { scope: "LOCATION", locationId: nowhere.id, email: ALT.bpm, note: "Nearest BPM covers this box" });
+    await expect(requestBpmMapping(pm, { scope: "LOCATION", locationId: nowhere.id, email: ALT.bpm, note: "Asking twice here" })).rejects.toMatchObject({ code: "CONFLICT" });
+    const id = (await db.query("SELECT id FROM altphones_bpm_requests WHERE ref = $1", [ref])).rows[0].id;
+    await expect(decideBpmRequest(pm, id, { decision: "APPROVE" })).rejects.toMatchObject({ code: "FORBIDDEN" }); // not the Unit Head
+    await expect(decideBpmRequest(await ctxFor(ALT.admin), id, { decision: "APPROVE" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(decideBpmRequest(uh, id, { decision: "REJECT" })).rejects.toMatchObject({ code: "VALIDATION" }); // reason required
+    await decideBpmRequest(uh, id, { decision: "APPROVE" });
+    expect((await bpmForLocation(db, nowhere.id)).id).toBe(await sidOf(ALT.bpm));
+    expect((await unroutedStates(db)).map((u) => u.state)).not.toContain("KWARA");
+    // A location mapping takes precedence over the state's.
+    const other = (await db.query("INSERT INTO staff (email, full_name, region, status) VALUES ('bpm.three@altbank.ng','Third Synthetic BPM','LAGOS','ACTIVE') RETURNING id")).rows[0].id;
+    await db.query("INSERT INTO role_assignments (staff_id, role, active) VALUES ($1,'BUSINESS_PERFORMANCE_MANAGER',true)", [other]);
+    const yaba = await locBy("Yaba Altbox");
+    expect((await bpmForLocation(db, yaba.id)).id).toBe(await sidOf(ALT.bpm)); // Lagos mapping
+    const r2 = await requestBpmMapping(pm, { scope: "LOCATION", locationId: yaba.id, email: "bpm.three@altbank.ng", note: "Yaba moves to the new BPM" });
+    await decideBpmRequest(uh, (await db.query("SELECT id FROM altphones_bpm_requests WHERE ref = $1", [r2.ref])).rows[0].id, { decision: "APPROVE" });
+    expect((await bpmForLocation(db, yaba.id)).id).toBe(other);
+    expect((await db.query("SELECT count(*)::int AS n FROM audit_events WHERE action = 'ALTPHONES_BPM_MAPPING_APPROVED'")).rows[0].n).toBe(2);
   });
 
   it("routes an SA application to the BPM mapped to its location only, then PM and Unit Head", async () => {

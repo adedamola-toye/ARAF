@@ -408,35 +408,129 @@ export async function bpmForLocation(q: Db, locationId: string | null): Promise<
   if (!locationId) return { id: null, name: null, email: null, problem: "No operating location is selected." };
   const l = (await q.query<{ state: string; name: string }>("SELECT state, name FROM locations WHERE id = $1", [locationId])).rows[0];
   if (!l) return { id: null, name: null, email: null, problem: "The location was not found." };
-  const m = (await q.query<{ bpm_email: string }>("SELECT bpm_email FROM altphones_bpm_states WHERE state = $1", [l.state])).rows[0];
-  if (!m) return { id: null, name: null, email: null, problem: `No Business Performance Manager is mapped to ${l.state}. The Altphones Product Manager must map one before ${l.name} sales can be submitted.` };
+  // A mapping for the location itself takes precedence over the state's.
+  const m =
+    (await q.query<{ bpm_email: string }>("SELECT bpm_email FROM altphones_bpm_locations WHERE location_id = $1", [locationId])).rows[0] ??
+    (await q.query<{ bpm_email: string }>("SELECT bpm_email FROM altphones_bpm_states WHERE state = $1", [l.state])).rows[0];
+  if (!m) return { id: null, name: null, email: null, problem: `No Business Performance Manager is mapped to ${l.name} (${l.state}). The Altphones Product Manager must request a mapping and the Unit Head approve it before sales here can be submitted.` };
   const st = (await q.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [m.bpm_email])).rows[0];
   if (!st) return { id: null, name: null, email: m.bpm_email, problem: `The Business Performance Manager mapped to ${l.state} (${m.bpm_email}) is not set up in ARAF.` };
   if (!(await holdsRole(q, st.id, BPM_ROLE))) return { id: null, name: st.full_name, email: m.bpm_email, problem: `${st.full_name}, mapped to ${l.state}, does not hold the Business Performance Manager role.` };
   return { id: st.id, name: st.full_name, email: m.bpm_email, problem: null };
 }
 
-export async function setBpmState(ctx: Ctx, p: { state: string; email: string }) {
+/** Request a BPM mapping for a state or one location (or its removal: email blank). Takes effect when a Unit Head approves. */
+export async function requestBpmMapping(ctx: Ctx, p: { scope: string; state?: string; locationId?: string; email: string; note?: string }) {
   return withTx(async (tx) => {
-    if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can map Business Performance Managers.");
-    const state = normaliseNigerianState(p.state ?? "");
-    if (!state) throw invalid("Choose a state.", { state: "Choose a state." });
+    if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can request a BPM mapping.");
+    const e: Record<string, string> = {};
+    let state: string | null = null;
+    let loc: { id: string; name: string; state: string; outlet_type: string } | null = null;
+    if (p.scope === "STATE") {
+      state = normaliseNigerianState(p.state ?? "");
+      if (!state) e.state = "Choose a state.";
+    } else if (p.scope === "LOCATION") {
+      loc = isUuid(p.locationId ?? "") ? ((await tx.query("SELECT id, name, state, outlet_type FROM locations WHERE id = $1", [p.locationId])).rows[0] ?? null) : null;
+      if (!loc) e.locationId = "Choose a location.";
+      else if (!["ALTSHOP", "ALTBOX"].includes(loc.outlet_type)) e.locationId = "Only Altshops and Altboxes are routed to a BPM; Branch sales go to the Product Manager.";
+    } else e.scope = "Choose a state or a location.";
     const email = (p.email ?? "").trim().toLowerCase();
-    if (!email) {
-      await tx.query("DELETE FROM altphones_bpm_states WHERE state = $1", [state]);
-      await audit(tx, ctx, { action: "ALTPHONES_BPM_UNMAPPED", details: { state } });
-      return { state, email: null };
+    let bpmName: string | null = null;
+    if (email) {
+      const st = (await tx.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [email])).rows[0];
+      if (!st || !(await holdsRole(tx, st.id, BPM_ROLE))) e.email = "Choose an active Business Performance Manager.";
+      else bpmName = st.full_name;
     }
-    const st = (await tx.query<{ id: string }>("SELECT id FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [email])).rows[0];
-    if (!st || !(await holdsRole(tx, st.id, BPM_ROLE))) throw invalid("Choose a staff member who holds the Business Performance Manager role.", { email: "Not an active Business Performance Manager." });
-    await tx.query(
-      `INSERT INTO altphones_bpm_states (state, bpm_email, source, updated_by, updated_at) VALUES ($1,$2,'MANUAL',$3,$4)
-       ON CONFLICT (state) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, source = 'MANUAL', updated_by = EXCLUDED.updated_by, updated_at = EXCLUDED.updated_at`,
-      [state, email, ctx.actor!.staffId, ctx.now],
-    );
-    await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPED", details: { state, email } });
-    return { state, email };
+    const note = (p.note ?? "").trim().slice(0, 500);
+    if (note.length < 5) e.note = "Say why (shown to the Unit Head).";
+    if (Object.keys(e).length) throw invalid("Check the BPM mapping.", e);
+    const open = (
+      await tx.query<{ ref: string }>(
+        loc ? "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'LOCATION' AND location_id = $1" : "SELECT ref FROM altphones_bpm_requests WHERE status = 'PENDING' AND scope = 'STATE' AND state = $1",
+        [loc ? loc.id : state],
+      )
+    ).rows[0];
+    if (open) throw conflict(`Mapping request ${open.ref} for ${loc ? loc.name : state} is still awaiting the Unit Head.`);
+    const ref = await nextRef(tx, "altphones_bpm_request_seq", "BPM", ctx.now);
+    await tx.query("INSERT INTO altphones_bpm_requests (ref, scope, state, location_id, bpm_email, note, requested_by, requested_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
+      ref,
+      p.scope,
+      loc ? loc.state : state,
+      loc?.id ?? null,
+      email || null,
+      note,
+      ctx.actor!.staffId,
+      ctx.now,
+    ]);
+    const what = loc ? `${loc.name} (${loc.state})` : `all Altshops and Altboxes in ${state}`;
+    await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_REQUESTED", details: { ref, scope: p.scope, target: what, bpm: email || null, note } });
+    const uh = (await currentSettings(tx)).unit_head_staff_id;
+    const to = (await roleHolders(tx, ["UNIT_HEAD"])).filter((a) => (!uh || a.id === uh) && a.id !== ctx.actor!.staffId);
+    if (to.length)
+      await enqueueEmail(tx, ctx.now, {
+        kind: "ALTPHONES_BPM_MAPPING_REQUESTED",
+        dedupeKey: `altphones:bpm-map:${ref}`,
+        to: to.map((a) => a.email),
+        subject: `[${ref}] Altphones BPM mapping awaiting your approval`,
+        text: simpleEmail([`${ctx.actor!.name} asked to ${email ? `route ${what} to ${bpmName} (${email})` : `remove the BPM mapping for ${what}`}.`, `Reason: ${note}`, "", `Approve or reject it (sign-in required): ${config.appUrl}/altphones/locations?tab=requests`]),
+      });
+    return { ref };
   });
+}
+
+export async function decideBpmRequest(ctx: Ctx, id: string, p: { decision: string; note?: string }) {
+  if (!isUuid(id)) throw notFound();
+  return withTx(async (tx) => {
+    const actor = ctx.actor!;
+    if (!(await isApprover(tx, actor.staffId))) throw forbidden("Only the Altphones Unit Head can approve a BPM mapping.");
+    const r = (await tx.query("SELECT * FROM altphones_bpm_requests WHERE id = $1 FOR UPDATE", [id])).rows[0];
+    if (!r) throw notFound();
+    if (r.status !== "PENDING") throw conflict(`${r.ref} has already been decided.`);
+    if (r.requested_by === actor.staffId) throw forbidden("You requested this mapping, so another approver must decide it.");
+    const note = (p.note ?? "").trim().slice(0, 500);
+    if (p.decision === "REJECT") {
+      if (note.length < 5) throw invalid("Say why the mapping is rejected.", { note: "Give a reason." });
+      await tx.query("UPDATE altphones_bpm_requests SET status = 'REJECTED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note]);
+      await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_REJECTED", details: { ref: r.ref, note } });
+      return { ref: r.ref, approved: false };
+    }
+    if (p.decision !== "APPROVE") throw invalid("Choose approve or reject.");
+    if (r.bpm_email) {
+      // Re-check the BPM is still an active BPM at approval time.
+      const st = (await tx.query<{ id: string }>("SELECT id FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [r.bpm_email])).rows[0];
+      if (!st || !(await holdsRole(tx, st.id, BPM_ROLE))) throw conflict(`${r.bpm_email} is no longer an active Business Performance Manager. Reject this request.`);
+    }
+    if (r.scope === "STATE") {
+      if (r.bpm_email)
+        await tx.query(
+          `INSERT INTO altphones_bpm_states (state, bpm_email, source, updated_by, approved_by, updated_at) VALUES ($1,$2,'MANUAL',$3,$4,$5)
+           ON CONFLICT (state) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, source = 'MANUAL', updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+          [r.state, r.bpm_email, r.requested_by, actor.staffId, ctx.now],
+        );
+      else await tx.query("DELETE FROM altphones_bpm_states WHERE state = $1", [r.state]);
+    } else if (r.bpm_email)
+      await tx.query(
+        `INSERT INTO altphones_bpm_locations (location_id, bpm_email, updated_by, approved_by, updated_at) VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (location_id) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+        [r.location_id, r.bpm_email, r.requested_by, actor.staffId, ctx.now],
+      );
+    else await tx.query("DELETE FROM altphones_bpm_locations WHERE location_id = $1", [r.location_id]);
+    await tx.query("UPDATE altphones_bpm_requests SET status = 'APPROVED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note || null]);
+    await audit(tx, ctx, { action: "ALTPHONES_BPM_MAPPING_APPROVED", details: { ref: r.ref, scope: r.scope, state: r.state, locationId: r.location_id, bpm: r.bpm_email } });
+    return { ref: r.ref, approved: true };
+  });
+}
+
+export async function bpmRequests(q: Db, status = "PENDING") {
+  return (
+    await q.query(
+      `SELECT r.*, l.name AS location_name, l.outlet_type, s.full_name AS requested_by_name, d.full_name AS decided_by_name, b.full_name AS bpm_name
+         FROM altphones_bpm_requests r LEFT JOIN locations l ON l.id = r.location_id JOIN staff s ON s.id = r.requested_by
+         LEFT JOIN staff d ON d.id = r.decided_by LEFT JOIN staff b ON lower(b.email) = r.bpm_email
+        WHERE ($1 = 'ALL' OR r.status = $1) ORDER BY r.requested_at DESC LIMIT 200`,
+      [status],
+    )
+  ).rows;
 }
 
 // ------------------------------------------------------------------ address registration
@@ -618,9 +712,11 @@ export async function locationMaster(q: Db, f: MasterFilter) {
   if (f.q) where.push(`(l.name ILIKE $${args.push(`%${f.q}%`)} OR l.address ILIKE $${args.length})`);
   return (
     await q.query(
-      `SELECT l.id, l.name, l.state, l.outlet_type, l.active, l.address, l.address_status, l.address_source, l.source_name, b.bpm_email, bs.full_name AS bpm_name,
+      `SELECT l.id, l.name, l.state, l.outlet_type, l.active, l.address, l.address_status, l.address_source, l.source_name,
+              coalesce(bl.bpm_email, b.bpm_email) AS bpm_email, bs.full_name AS bpm_name, (bl.location_id IS NOT NULL) AS bpm_for_location,
               (SELECT r.ref FROM altphones_address_requests r WHERE r.location_id = l.id AND r.status = 'PENDING') AS pending_ref
-         FROM locations l LEFT JOIN altphones_bpm_states b ON b.state = l.state LEFT JOIN staff bs ON lower(bs.email) = b.bpm_email
+         FROM locations l LEFT JOIN altphones_bpm_locations bl ON bl.location_id = l.id LEFT JOIN altphones_bpm_states b ON b.state = l.state
+         LEFT JOIN staff bs ON lower(bs.email) = coalesce(bl.bpm_email, b.bpm_email) AND bs.status = 'ACTIVE'
         WHERE ${where.join(" AND ")} ORDER BY l.state, array_position(ARRAY['BRANCH','ALTSHOP','ALTBOX'], l.outlet_type), l.name LIMIT 600`,
       args,
     )
@@ -647,15 +743,30 @@ export async function bpmStates(q: Db) {
     )
   ).rows;
 }
-/** States with active Altshop/Altbox locations but no usable BPM: SA sales there cannot be submitted. */
+/** Active Altshops/Altboxes with no usable BPM (by location or state), grouped by state: SA sales there cannot be submitted. */
 export async function unroutedStates(q: Db) {
   return (
     await q.query<{ state: string; locations: number }>(
       `SELECT l.state, count(*)::int AS locations FROM locations l
+         LEFT JOIN altphones_bpm_locations bl ON bl.location_id = l.id LEFT JOIN altphones_bpm_states b ON b.state = l.state
         WHERE l.active AND l.outlet_type IN ('ALTSHOP','ALTBOX')
-          AND NOT EXISTS (SELECT 1 FROM altphones_bpm_states b JOIN staff s ON lower(s.email) = b.bpm_email AND s.status = 'ACTIVE'
-                           JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE b.state = l.state)
+          AND NOT EXISTS (SELECT 1 FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active
+                           WHERE lower(s.email) = coalesce(bl.bpm_email, b.bpm_email) AND s.status = 'ACTIVE')
         GROUP BY l.state ORDER BY l.state`,
+      [BPM_ROLE],
+    )
+  ).rows;
+}
+/** The individual locations not routed to a BPM (for requesting a location mapping). */
+export async function unroutedLocations(q: Db) {
+  return (
+    await q.query<{ id: string; name: string; state: string; outlet_type: string }>(
+      `SELECT l.id, l.name, l.state, l.outlet_type FROM locations l
+         LEFT JOIN altphones_bpm_locations bl ON bl.location_id = l.id LEFT JOIN altphones_bpm_states b ON b.state = l.state
+        WHERE l.active AND l.outlet_type IN ('ALTSHOP','ALTBOX')
+          AND NOT EXISTS (SELECT 1 FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active
+                           WHERE lower(s.email) = coalesce(bl.bpm_email, b.bpm_email) AND s.status = 'ACTIVE')
+        ORDER BY l.state, l.name`,
       [BPM_ROLE],
     )
   ).rows;

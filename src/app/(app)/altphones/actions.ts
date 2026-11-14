@@ -25,7 +25,7 @@ import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModel
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
-import { applyProfiling, decideAddressRequest, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, setBpmState } from "@/server/altphones/location-master";
+import { applyProfiling, decideAddressRequest, decideBpmRequest, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -273,5 +273,10 @@ export const decideAddressAction = async (_p: ActionState, fd: FormData) =>
       return x.approved ? `${x.ref} approved: the address is registered${x.activated ? " and the location is active" : ""}.` : `${x.ref} rejected.`;
     },
   );
-export const setBpmStateAction = async (_p: ActionState, fd: FormData) =>
-  run((ctx) => setBpmState(ctx, { state: s(fd, "state"), email: s(fd, "email") }), (r) => ((r as { email: string | null }).email ? "BPM mapping saved." : "BPM mapping removed."));
+export const requestBpmAction = async (_p: ActionState, fd: FormData) =>
+  run(
+    (ctx) => requestBpmMapping(ctx, { scope: s(fd, "scope"), state: s(fd, "state"), locationId: s(fd, "locationId"), email: s(fd, "email"), note: s(fd, "note") }),
+    (r) => `Mapping request ${(r as { ref: string }).ref} sent to the Unit Head. It takes effect once approved.`,
+  );
+export const decideBpmAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => decideBpmRequest(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? `${(r as { ref: string }).ref} approved: the mapping is in effect.` : `${(r as { ref: string }).ref} rejected.`));
