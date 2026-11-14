@@ -20,7 +20,7 @@ import type { Ctx } from "../context";
 import { audit } from "../audit";
 import { conflict, forbidden, gate, invalid, notFound } from "../errors";
 import { holdsRole } from "../domain/access";
-import { isImei } from "@/lib/altphones";
+import { imeiProblem, isImei } from "@/lib/altphones";
 import { type AltApp, isUuid, nextRef, PM_ROLE, roleHolders } from "./core";
 import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail } from "../notify/templates";
@@ -116,7 +116,8 @@ export async function releaseUnit(tx: Tx, ctx: Ctx, app: AltApp, note: string) {
  */
 export async function issueUnit(tx: Tx, ctx: Ctx, app: AltApp, imeiRaw: string, movement: "SALE" | "DISBURSEMENT"): Promise<{ deviceId: string; imei: string }> {
   const imei = imeiRaw.replace(/\s/g, "");
-  if (!isImei(imei)) throw invalid("Enter the 15-digit IMEI.", { imei: "The IMEI must be exactly 15 digits." });
+  const problem = imeiProblem(imei);
+  if (problem) throw invalid(problem, { imei: problem });
   if (app.reservation_status !== "RESERVED") throw conflict("No unit is reserved for this application.");
   let dev = (await tx.query<{ id: string; status: string; location_id: string | null; model_id: string; application_id: string | null }>("SELECT * FROM altphones_devices WHERE imei = $1 FOR UPDATE", [imei])).rows[0];
   if (dev) {
@@ -180,7 +181,8 @@ export function parseImeiList(raw: string): { imeis: string[]; errors: string[] 
   const errors: string[] = [];
   const seen = new Set<string>();
   for (const p of parts) {
-    if (!isImei(p)) errors.push(`"${p}" is not a 15-digit IMEI.`);
+    const problem = imeiProblem(p);
+    if (problem) errors.push(`${p}: ${problem}`);
     else if (seen.has(p)) errors.push(`${p} is listed twice.`);
     seen.add(p);
   }

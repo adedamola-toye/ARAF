@@ -22,6 +22,7 @@ import { config } from "../config";
 import { currentSettings, isUuid, nextRef, PM_ROLE, roleHolders } from "./core";
 import { poolModelId } from "./stock";
 import { readRegister, type Issue, type SheetKind } from "./register";
+import { imeiProblem } from "@/lib/altphones";
 
 export const PREPARER_ROLES = ["SUPER_ADMIN", PM_ROLE] as const;
 export type Classification = "COMPLETED" | "CURRENT" | "IN_ARREARS" | "NOT_STARTED" | "NEEDS_REVIEW" | "CANCELLED";
@@ -583,7 +584,7 @@ export async function decideBatch(ctx: Ctx, batchId: string, p: { decision: stri
           [acc.id, JSON.stringify(marks), ctx.now],
         );
       // Register the IMEI as an issued legacy device so it can never be sold or migrated again. No stock moves.
-      if (pool && r.imei && /^\d{15}$/.test(r.imei))
+      if (pool && r.imei && !imeiProblem(r.imei))
         await tx.query("INSERT INTO altphones_devices (imei, model_id, status, legacy, registered_by, registered_at, issued_at) VALUES ($1,$2,'ISSUED',true,$3,$4,$5) ON CONFLICT (imei) DO NOTHING", [
           r.imei, pool, actor.staffId, ctx.now, r.down_payment_date ?? ctx.now,
         ]);

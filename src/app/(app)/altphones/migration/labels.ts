@@ -24,7 +24,7 @@ export const ISSUE_LABEL: Record<string, string> = {
   DOWN_PAYMENT_UNREADABLE: "Down payment unreadable",
   START_DATE_UNREADABLE: "Start date unreadable",
   IMEI_MISSING: "No IMEI",
-  IMEI_INVALID: "IMEI not 15 digits",
+  IMEI_INVALID: "IMEI format wrong",
   BVN_INVALID: "BVN missing or not 11 digits",
   ACCOUNT_INVALID: "Account number not 10 digits",
   MULTI_UNIT: "More than one phone",

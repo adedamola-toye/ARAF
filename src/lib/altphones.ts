@@ -232,6 +232,23 @@ export function imeiChecksumOk(imei: string): boolean {
   }
   return sum % 10 === 0;
 }
+/**
+ * What is wrong with an IMEI, in words staff can act on, or null when it is a well-formed IMEI
+ * (15 digits, not a placeholder, and the 15th digit is the correct check digit).
+ */
+export function imeiProblem(raw: string | null | undefined): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return "No IMEI entered.";
+  const compact = s.replace(/[\s-]/g, "");
+  if (/[^0-9]/.test(compact)) return "The IMEI must contain digits only.";
+  if (compact.length === 14) return "The IMEI has 14 digits: the last (check) digit is missing. Dial *#06# on the phone or read the box label.";
+  if (compact.length < 15) return `The IMEI has ${compact.length} digits; it must have 15.`;
+  if (compact.length === 16 || compact.length === 17) return `The IMEI has ${compact.length} digits: this looks like an IMEI with extra digits (or the software version). It must have 15.`;
+  if (compact.length > 15) return `The IMEI has ${compact.length} digits; it must have 15.`;
+  if (/^(\d)\1{14}$/.test(compact) || compact === "123456789012345" || /^0{8}/.test(compact)) return "This is not a real IMEI (it looks like a placeholder).";
+  if (!imeiChecksumOk(compact)) return "The IMEI's check digit does not match: one digit is probably mistyped. Check it against *#06# or the box label.";
+  return null;
+}
 export const isEmail = (s: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s);
 /** Nigerian mobile numbers: 0XXXXXXXXXX or +234XXXXXXXXXX. Returns the canonical +234 form or null. */
 export function normalisePhone(raw: string): string | null {

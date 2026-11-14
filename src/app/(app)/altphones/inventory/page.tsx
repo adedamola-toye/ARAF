@@ -495,7 +495,7 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
               </div>
               <div className="field" style={{ gridColumn: "1 / -1" }}>
                 <label htmlFor="imeis">IMEIs (optional)</label>
-                <textarea id="imeis" name="imeis" rows={3} className="mono" placeholder="One 15-digit IMEI per line" />
+                <textarea id="imeis" name="imeis" rows={3} className="mono" placeholder="One 15-digit IMEI per line (each is checked, including its check digit)" />
                 <span className="hint">IMEIs not listed now can be captured at handover.</span>
               </div>
               <div className="field" style={{ gridColumn: "1 / -1" }}>

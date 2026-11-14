@@ -4,6 +4,7 @@
  * repaired or unreadable is reported as an issue on the row.
  */
 import ExcelJS from "exceljs";
+import { imeiProblem } from "@/lib/altphones";
 
 export type SheetKind = "INTERNAL" | "EXTERNAL" | "COMPLETED" | "CANCELLED";
 export type IssueLevel = "BLOCK" | "WARN";
@@ -153,18 +154,18 @@ export function parseId11(v: Raw): { value: string | null; ok: boolean } {
   return { value: d || null, ok: /^\d{11}$/.test(d) };
 }
 /** IMEI: the 15-digit number in the cell ("L1 35…" and spaced numbers are accepted). */
-export function parseImei(v: Raw): { value: string | null; state: "OK" | "MISSING" | "INVALID" } {
+export function parseImei(v: Raw): { value: string | null; state: "OK" | "MISSING" | "INVALID"; problem: string | null } {
   const s = text(v);
-  if (!s || isNil(s)) return { value: null, state: "MISSING" };
-  if (typeof v === "number") {
-    const d = digits(v);
-    return d.length === 15 ? { value: d, state: "OK" } : { value: d, state: "INVALID" };
+  if (!s || isNil(s)) return { value: null, state: "MISSING", problem: null };
+  let value: string;
+  if (typeof v === "number") value = digits(v);
+  else {
+    // A clean 15-digit number first ("L1 35…"); otherwise digits written in groups ("35 0000 …").
+    const run = s.match(/\d+/g)?.find((x) => x.length === 15) ?? s.replace(/(\d)[\s-](?=\d)/g, "$1").match(/\d+/g)?.find((x) => x.length === 15);
+    value = run ?? s.replace(/\D/g, "");
   }
-  // A clean 15-digit number first ("L1 35…"); otherwise digits written in groups ("35 0000 …").
-  const run = s.match(/\d+/g)?.find((x) => x.length === 15) ?? s.replace(/(\d)[\s-](?=\d)/g, "$1").match(/\d+/g)?.find((x) => x.length === 15);
-  if (run) return { value: run, state: "OK" };
-  const d = s.replace(/\D/g, "");
-  return { value: d || null, state: "INVALID" };
+  const problem = value ? imeiProblem(value) : "The IMEI cell has no digits.";
+  return { value: value || null, state: problem ? "INVALID" : "OK", problem };
 }
 
 function monthKey(header: string, prevKey: string | null, defaultYear: number): string | null {
@@ -268,7 +269,7 @@ export async function readRegister(data: Buffer): Promise<{ sheets: RegisterShee
       if (kind !== "CANCELLED" && kind !== "COMPLETED" && tenor.months === null) add("TENOR_UNREADABLE", "BLOCK", "Tenor is missing or unreadable.");
       else if (tenor.months !== null && ![3, 6, 12].includes(tenor.months) && !shifted) add("TENOR_UNUSUAL", "WARN", `Tenor of ${tenor.months} months is not one of the Altphones tenors (3, 6 or 12).`);
       if (imei.state === "MISSING") add("IMEI_MISSING", "WARN", "No IMEI recorded.");
-      else if (imei.state === "INVALID" && !shifted) add("IMEI_INVALID", "WARN", "IMEI is not a 15-digit number.");
+      else if (imei.state === "INVALID" && !shifted) add("IMEI_INVALID", "WARN", `IMEI ${imei.value ?? ""}: ${imei.problem}`);
       if (!bvn.ok) add("BVN_INVALID", "WARN", bvn.value ? "BVN is not 11 digits." : "No BVN recorded.");
       if (!acct.ok) add("ACCOUNT_INVALID", "WARN", acct.value ? "Account number is not 10 digits." : "No account number recorded.");
       const startDate = parseDate(g(c.start));

@@ -13,7 +13,20 @@ import { decryptField } from "@/server/crypto";
 const HEAD = ["CUSTOMER'S NAME", "ACCOUNT NUMBER", "MOBILE NUMBER", "BVN", "NIN", "RESIDENTIAL ADDRESS", "No. OF ALTPHONE", "DOWNPAYMENT AMOUNT", "DOWNPAYMENT DATE", "REPAYMENT AMOUNT", "REPAYMENT START DATE", "REPAYMENT END DATE", "TENOR", "IMEI2 NUMBER", "REFERRED BY:", "LOCATION"];
 const MONTHS = ["OCT. 2025", "NOV. 2025", "DEC. 2025", "JAN. 2026", "FEB. 2026", "MAR. 2026", "APR. 2026", "MAY. 2026", "JUN. 2026", "JUL. 2026", "AUG. 2026", "SEPT. 2026", "OCT. 2026"];
 const bvn = (n: number) => `222000000${String(n).padStart(2, "0")}`;
-const imei = (n: number) => `35000000000${String(n).padStart(4, "0")}`;
+/** A synthetic IMEI with a correct check digit. */
+const imei = (n: number) => {
+  const body = `3500000000${String(n).padStart(4, "0")}`;
+  let sum = 0;
+  for (let i = 0; i < 14; i++) {
+    let d = Number(body[13 - i]);
+    if (i % 2 === 0) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return body + String((10 - (sum % 10)) % 10);
+};
 const excelDate = (serial: number) => new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
 type Row = (string | number | Date | null)[];
 const person = (n: number, o: Partial<Record<"units" | "down" | "inst" | "start" | "tenor" | "imei" | "ref" | "loc" | "bvn" | "nin", unknown>> = {}): Row => [
@@ -48,7 +61,7 @@ async function workbook(extra?: (wb: ExcelJS.Workbook) => void) {
   internal.addRow([...person(2, { inst: excelDate(23000), tenor: 6, start: "12th Febuary 2026" }), ...marks("MAY. 2026", "YYNN")]); // 3: arrears, amount repaired, misspelt month
   internal.addRow([...person(3, { inst: 43000, tenor: "3months" }), ...marks("AUG. 2026", "YYY")]); // 4: completed by its marks
   internal.addRow([...person(4, { start: "1st march 2026" }), ...marks("OCT. 2025", "")]); // 5: no evidence
-  internal.addRow([...person(5, { start: "1st december 2026" }), ...marks("OCT. 2025", "")]); // 6: not started
+  internal.addRow([...person(5, { start: "1st december 2026", imei: "490154203237519" }), ...marks("OCT. 2025", "")]); // 6: not started; IMEI mistyped (check digit)
   internal.addRow([...person(6, { units: "12 Example Street, Ikeja", inst: "9th january 2026" }), ...marks("OCT. 2025", "")]); // 7: shifted columns
   internal.addRow([...person(7, { imei: imei(99) }), ...marks("SEPT. 2026", "Y")]); // 8: IMEI duplicated on EXTERNAL
   const external = wb.addWorksheet("EXTERNAL");
@@ -94,7 +107,7 @@ describe("reading the register", () => {
     expect(parseTenor(excelDate(6))).toEqual({ months: 6, repaired: true });
     expect(parseTenor("12 months").months).toBe(12);
     expect(parseTenor("6months").months).toBe(6);
-    expect(parseImei(`L1 ${imei(1)}`)).toEqual({ value: imei(1), state: "OK" });
+    expect(parseImei(`L1 ${imei(1)}`)).toEqual({ value: imei(1), state: "OK", problem: null });
     expect(parseImei("nil").state).toBe("MISSING");
     expect(parseImei("3500000000001").state).toBe("INVALID");
     expect(parseAccount(123456789)).toEqual({ value: "0123456789", ok: true });
@@ -281,5 +294,31 @@ describe("resolving, submitting and approving", () => {
     expect((await listRecords(db, b.id, { sheet: "EXTERNAL" })).total).toBe(3);
     expect((await listRecords(db, b.id, { q: "Test Customer 1" })).rows.map((r) => r.customer_name)).toContain("Test Customer 1");
     expect((await listRecords(db, b.id, { q: imei(1) })).total).toBe(1);
+  });
+});
+
+describe("IMEI format", () => {
+  it("explains what is wrong with an IMEI", async () => {
+    const { imeiProblem } = await import("@/lib/altphones");
+    const valid = "490154203237518";
+    expect(imeiProblem(valid)).toBeNull();
+    expect(imeiProblem("49015420 323751-8")).toBeNull(); // spaces and dashes are ignored
+    expect(imeiProblem("")).toMatch(/No IMEI/);
+    expect(imeiProblem("49015420323751")).toMatch(/14 digits: the last \(check\) digit is missing/);
+    expect(imeiProblem("4901542032375180")).toMatch(/16 digits/);
+    expect(imeiProblem("4901542032")).toMatch(/10 digits; it must have 15/);
+    expect(imeiProblem("49015420323751A")).toMatch(/digits only/);
+    expect(imeiProblem("000000000000000")).toMatch(/placeholder/);
+    expect(imeiProblem("111111111111111")).toMatch(/placeholder/);
+    expect(imeiProblem("490154203237519")).toMatch(/check digit does not match/); // last digit mistyped
+    expect(imeiProblem("490154203273518")).toMatch(/check digit does not match/); // two digits swapped
+  });
+
+  it("flags wrong IMEIs in the register with the reason", async () => {
+    const { rows } = await readRegister(await workbook());
+    expect(rows.find((x) => x.sheet === "INTERNAL" && x.row === 2)!.issues.map((i) => i.code)).not.toContain("IMEI_INVALID");
+    const r = rows.find((x) => x.sheet === "INTERNAL" && x.row === 6)!;
+    expect(r.issues.find((i) => i.code === "IMEI_INVALID")?.message).toMatch(/490154203237519: .*check digit does not match/);
+    expect(rows.find((x) => x.sheet === "EXTERNAL" && x.row === 4)!.issues.find((i) => i.code === "IMEI_INVALID")?.message).toMatch(/10 digits/);
   });
 });

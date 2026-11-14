@@ -891,7 +891,10 @@ function ImeiField({ devices }: { devices: { id: string; imei: string; status: s
   return (
     <div className="field">
       <label htmlFor="imei">Device IMEI</label>
-      <input id="imei" name="imei" list="imei-list" inputMode="numeric" maxLength={15} pattern="[0-9]{15}" required defaultValue={reserved?.imei ?? ""} className="mono" autoComplete="off" />
+      <input id="imei" name="imei" list="imei-list" inputMode="numeric" maxLength={15} pattern="[0-9]{15}" required defaultValue={reserved?.imei ?? ""} className="mono" autoComplete="off" aria-describedby="imei-hint" />
+      <span id="imei-hint" className="hint">
+        15 digits: dial *#06# on the phone or read the box label. The last digit is a check digit, so a mistyped IMEI is refused.
+      </span>
       <datalist id="imei-list">
         {devices.map((d) => (
           <option key={d.id} value={d.imei}>
