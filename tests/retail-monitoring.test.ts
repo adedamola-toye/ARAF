@@ -75,3 +75,14 @@ describe("repayment monitoring", () => {
     expect(coreBankingAdapter()).toBeNull();
   });
 });
+
+describe("tracker switch", () => {
+  it("is off by default; only a Super Admin can turn it on; changes are audited", async () => {
+    const { isEnabled, setSwitch } = await import("@/server/domain/switches");
+    expect(await isEnabled(db, "REPAYMENT_TRACKER")).toBe(false);
+    await expect(setSwitch(await ctxFor("div.head@altbank.ng"), "REPAYMENT_TRACKER", true)).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await setSwitch(await ctxFor("superadmin@altbank.ng"), "REPAYMENT_TRACKER", true);
+    expect(await isEnabled(db, "REPAYMENT_TRACKER")).toBe(true);
+    expect((await db.query("SELECT details FROM audit_events WHERE action = 'FEATURE_SWITCH_CHANGED'")).rows[0].details).toMatchObject({ key: "REPAYMENT_TRACKER", before: false, after: true });
+  });
+});

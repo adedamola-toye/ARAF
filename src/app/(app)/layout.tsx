@@ -16,6 +16,7 @@ import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
 import { migrationAccess } from "@/server/altphones/migration";
 import { locationAccess } from "@/server/altphones/location-master";
 import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
+import { isEnabled } from "@/server/domain/switches";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
 
@@ -48,6 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const summary = (await summaryDue(db, session.staffId, new Date())) ? await dailySummary(db, session.staffId, new Date()) : null;
   const perfTargets = await targetAccess(db, session.staffId);
   const showPerformance = roles.includes("RM") || roles.includes("TEAM_LEAD") || perfTargets.propose || perfTargets.approve;
+  const showTracker = isAdmin || (retailScope?.kind === "ALL" && (await isEnabled(db, "REPAYMENT_TRACKER")));
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -94,7 +96,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Retail dashboard
             </NavLink>
           )}
-          {retailScope?.kind === "ALL" && !altWs && (
+          {showTracker && !altWs && (
             <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
               Repayment monitoring
             </NavLink>

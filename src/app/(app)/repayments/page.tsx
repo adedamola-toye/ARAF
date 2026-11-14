@@ -8,6 +8,8 @@ import { listProducts } from "@/server/domain/products";
 import { formatKobo } from "@/server/money";
 import { formatLagos } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
+import { isEnabled } from "@/server/domain/switches";
+import { TrackerSwitch } from "./TrackerSwitch";
 
 export const metadata = { title: "Repayment monitoring" };
 
@@ -27,9 +29,19 @@ export default async function Repayments({
 }: {
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
-  const { session } = await requireUser();
+  const { session, roles } = await requireUser();
   const scope = await retailScope(db, session.staffId);
   if (!scope) redirect("/forbidden");
+  const isAdmin = roles.includes("SUPER_ADMIN");
+  const enabled = await isEnabled(db, "REPAYMENT_TRACKER");
+  // Off by default while core banking is not connected; Super Admins can always see it and switch it on.
+  if (!enabled && !isAdmin)
+    return (
+      <>
+        <PageHeader eyebrow="Reporting" title="Repayment monitoring" intro="The repayment and PDO tracker is switched off while core banking is not connected." />
+        <p className="muted">Ask a Super Admin if you need it turned on.</p>
+      </>
+    );
   const sp = await searchParams;
   const products = await listProducts(db, { retailOnly: true });
   const f = {
@@ -51,6 +63,13 @@ export default async function Repayments({
           </>
         }
       />
+      {isAdmin && (
+        <section className="card" aria-labelledby="h-switch">
+          <h2 id="h-switch">Visibility</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>Core banking is not connected, so this tracker shows manual entries only. While it is off, only Super Admins see it.</p>
+          <TrackerSwitch enabled={enabled} />
+        </section>
+      )}
       <div
         className={`alert ${cbs.status === "CONNECTED" ? "alert-info" : "alert-warn"}`}
         role="status"

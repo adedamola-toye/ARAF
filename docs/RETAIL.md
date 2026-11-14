@@ -245,7 +245,7 @@ Rules:
 **Dashboards.** The retail dashboard breaks results down by location, state, product, team or RM, with
 data-freshness stamps. CX Credit Reviewers get the organisation-wide scope.
 
-**Repayment monitoring (`/repayments`, migration 029).**
+**Repayment monitoring (`/repayments`, migrations 029 and 031).** A Super Admin on/off switch controls it; it is **off by default** while core banking is not connected, and only Super Admins see it while off.
 - **What it compares.** The expected schedule against repayments recorded in ARAF, as manual entries with
   evidence. Results are bucketed by days past due and broken down by product and location.
 - **Core banking.** Core banking is **not connected**, and the page says so. `src/server/integrations/cbs.ts`
