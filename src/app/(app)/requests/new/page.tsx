@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireUser } from "../../../_lib/auth";
 import { db } from "@/server/db";
 import { INITIATOR_ROLES, LEGACY_INITIATOR_ROLES, RETAIL_INITIATOR_ROLES, ROLE_LABELS } from "@/server/domain/roles";
-import { BLOCKED_ACTION_LABELS, configGaps, effectiveConfig, listProducts, PROFILE_LABELS, RATE_CONVENTION_LABELS, INSURANCE_LABELS, STRUCTURE_LABELS, type CustomerProfile } from "@/server/domain/products";
+import { BLOCKED_ACTION_LABELS, configGaps, effectiveConfig, listProducts, PROFILE_LABELS, RATE_CONVENTION_LABELS, INSURANCE_LABELS, structureLabel, type CustomerProfile } from "@/server/domain/products";
 import { formatKobo } from "@/server/money";
 import { NewRequestForm } from "./NewRequestForm";
 import { NewRetailForm, type CatalogueProduct } from "./NewRetailForm";
@@ -36,7 +36,7 @@ export default async function NewRequest() {
           limits: [r.maxAmountKobo !== null ? `Up to ${formatKobo(r.maxAmountKobo)}` : "Maximum amount not configured", r.maxTenorMonths !== null ? `up to ${r.maxTenorMonths} months` : "maximum tenor not configured", r.dsr.maxPercent ? `DSR ≤ ${r.dsr.maxPercent}%` : "DSR threshold not configured"].join(" · "),
           structures: r.structures.map((s) => ({
             code: s.code,
-            label: STRUCTURE_LABELS[s.code],
+            label: structureLabel(s.code, s.label),
             rate: s.ratePercent ? `${s.ratePercent}%` : "rate not configured",
             convention: s.rateConvention ? RATE_CONVENTION_LABELS[s.rateConvention] : "rate convention not configured",
             insurance: s.insuranceBearer ? INSURANCE_LABELS[s.insuranceBearer] : "insurance treatment not configured",

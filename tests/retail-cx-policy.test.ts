@@ -73,22 +73,19 @@ describe("RETAIL_CX_V1 approval chain", () => {
     expect(await rules(id)).toEqual([{ rule: "TL_ORIGINATOR_CERTIFICATION", stage: "TEAM_LEAD_REVIEW" }]);
   });
 
-  it("Unit Head-originated: another Unit Head decides if there is one, otherwise the Divisional Head; never the originator", async () => {
+  it("Unit Head-originated: moves forward to CX credit review, then the Divisional Head; never another Unit Head", async () => {
     await cxConfig();
     await addStaff("cx.one@altbank.ng", "Ada CX-Reviewer", "CX_CREDIT_REVIEWER");
-    // Only one Unit Head (the originator): the Unit Head stage is skipped by rule.
+    await addStaff("uh.two@altbank.ng", "Second Unit-Head", "UNIT_HEAD"); // even with another Unit Head available
     const id = await vfCase("UH");
     expect((await openTaskOf(id)).stage).toBe("FIRST_CREDIT_REVIEW");
     await recordFinal(id);
     await act(id, "APPROVE", {});
     expect(await openTaskOf(id)).toMatchObject({ stage: "DIVISIONAL_HEAD_REVIEW", email: "div.head@altbank.ng" });
     expect((await rules(id)).map((r) => r.rule)).toEqual(["UH_ORIGINATOR_CERTIFICATION", "UH_ORIGINATOR_UNIT_HEAD_STAGE"]);
-    // With a second Unit Head, that person takes the stage instead.
-    await addStaff("uh.two@altbank.ng", "Second Unit-Head", "UNIT_HEAD");
-    const id2 = await vfCase("UH");
-    await recordFinal(id2);
-    await act(id2, "APPROVE", {});
-    expect(await openTaskOf(id2)).toMatchObject({ stage: "UNIT_HEAD_REVIEW", email: "uh.two@altbank.ng" });
+    const seen = (await stages(id)).map((s) => s.stage);
+    expect(seen).not.toContain("TEAM_LEAD_REVIEW");
+    expect(seen).not.toContain("UNIT_HEAD_REVIEW");
   });
 
   it("holds the request in the exception queue when no CX Credit Reviewer is eligible; Super Admin rights never approve", async () => {

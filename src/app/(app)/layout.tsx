@@ -192,6 +192,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
               Products and rules
             </NavLink>
+            <NavLink href="/admin/pricing" icon={<Percent {...ic} />}>
+              Pricing and tenor
+            </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Staff financing settings
             </NavLink>

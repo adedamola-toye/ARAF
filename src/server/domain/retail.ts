@@ -594,7 +594,7 @@ const isCx = (app: AppRow) => app.approval_policy === "RETAIL_CX_V1";
 export const ROUTING_RULES = {
   TL_ORIGINATOR_CERTIFICATION: "Originated by a Team Lead: their own analysis is the first-level analysis and they cannot certify it, so the request goes to independent CX credit review.",
   UH_ORIGINATOR_CERTIFICATION: "Originated by a Unit Head: Team Lead certification of a Unit Head's own request is not independent, so the request goes to independent CX credit review.",
-  UH_ORIGINATOR_UNIT_HEAD_STAGE: "Originated by a Unit Head and no other Unit Head is eligible: the Unit Head stage would return to the originator, so the request goes to the Divisional Head.",
+  UH_ORIGINATOR_UNIT_HEAD_STAGE: "Originated by a Unit Head: requests move forward to the next approver above the originator, so after CX credit review the request goes to the Divisional Head (never to another Unit Head).",
 } as const;
 async function applyRoutingRule(tx: Tx, ctx: Ctx, app: AppRow, rule: keyof typeof ROUTING_RULES, skipped: Stage) {
   await audit(tx, ctx, { action: "ROUTING_RULE_APPLIED", applicationId: app.id, stage: skipped, reason: ROUTING_RULES[rule], details: { rule, skippedStage: skipped, policy: app.approval_policy, initiatorRole: app.initiator_role } });
@@ -622,15 +622,15 @@ async function routeFromSubmission(tx: Tx, ctx: Ctx, app: AppRow, note?: string)
     : `Submitted. No eligible reviewer is in scope for ${stageLabel(stage, app.approval_policy).toLowerCase()}; the request is in the assignment exception queue.`;
 }
 
-/** After CX credit review: the Unit Head (another Unit Head when the originator is one), else the Divisional Head. */
+/** After CX credit review: the Unit Head; a Unit Head's own request moves forward to the Divisional Head. */
 async function enterUnitHead(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
-  const chosen = await chooseAssignee(tx, app, "UNIT_HEAD_REVIEW", {});
-  if (!chosen.staffId && app.initiator_role === "UNIT_HEAD") {
+  if (app.initiator_role === "UNIT_HEAD") {
     await applyRoutingRule(tx, ctx, app, "UH_ORIGINATOR_UNIT_HEAD_STAGE", "UNIT_HEAD_REVIEW");
     const dh = await chooseAssignee(tx, app, "DIVISIONAL_HEAD_REVIEW", {});
     await moveTo(tx, ctx, app, "DIVISIONAL_HEAD_REVIEW", dh);
-    return "CX credit review approved. The originator is the Unit Head, so the request goes to the Divisional Head.";
+    return dh.staffId ? "CX credit review approved. The originator is a Unit Head, so the request goes to the Divisional Head." : "CX credit review approved. No eligible Divisional Head is available; the request is in the assignment exception queue.";
   }
+  const chosen = await chooseAssignee(tx, app, "UNIT_HEAD_REVIEW", {});
   await moveTo(tx, ctx, app, "UNIT_HEAD_REVIEW", chosen);
   return chosen.staffId ? "CX credit review approved. Sent to the Unit Head." : "CX credit review approved. No eligible Unit Head is available; the request is in the assignment exception queue.";
 }

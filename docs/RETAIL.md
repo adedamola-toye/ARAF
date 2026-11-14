@@ -252,3 +252,17 @@ data-freshness stamps. CX Credit Reviewers get the organisation-wide scope.
   defines the adapter interface only; no adapter exists.
 - **PDO** is seeded as *awaiting definition* and is not calculated until Credit approves a definition.
 - **WakeelBoost** repayment actuals are not recorded in ARAF, so WakeelBoost is not shown.
+
+**Pricing and tenor (`/admin/pricing`, Super Admin; migration 030).** Mark-ups are set per product, customer
+profile and contract type (for example Alt Drive: Murabaha 34%, Ijarah 39.5%). The repayment period
+(minimum and maximum months) is set per product and profile. Contract types are a catalogue: a Super
+Admin can add new ones (never deleted, only deactivated). New retail products start closed, copying
+another product's rules. Every change is a configuration proposal that a different Product
+Configuration Approver must approve under Products and rules. Requests keep the terms they were
+submitted under.
+
+**Originator routing (CX chain).** A request always moves forward from the originator's position on the
+chain:
+- A Team Lead's own request goes to CX credit review.
+- A Unit Head's own request goes to CX credit review and then to the Divisional Head. It never goes to
+  another Unit Head or back down to a Team Lead.

@@ -2,7 +2,7 @@ import { db } from "@/server/db";
 import { getCase } from "@/server/domain/views";
 import { CATEGORY_LABEL, RETAIL_UPLOADABLE_BY_STAGE, ASSIGNED_RM_UPLOADS, signDocumentLink } from "@/server/domain/documents";
 import { retailReadiness, PROPOSAL_FIELDS, loadRetailState } from "@/server/domain/retail";
-import { INSURANCE_LABELS, RATE_CONVENTION_LABELS, STRUCTURE_LABELS, PROFILE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, roleLabel, type CustomerProfile } from "@/server/domain/products";
+import { INSURANCE_LABELS, RATE_CONVENTION_LABELS, structureLabel, PROFILE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, roleLabel, type CustomerProfile } from "@/server/domain/products";
 import { vendorOptions, searchInstitutions } from "@/server/domain/vendors";
 import { listLocations, rmOriginationLocations, OUTLET_TYPE_LABELS } from "@/server/domain/locations";
 import { maskWithLast4 } from "@/server/mask";
@@ -124,7 +124,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
         lockVersion={app.lock_version}
         savedAt={formatLagos(app.updated_at)}
         structure={app.financing_structure}
-        structures={(rules?.structures ?? []).map((s) => ({ code: s.code, label: STRUCTURE_LABELS[s.code], rate: s.ratePercent ? `${s.ratePercent}%` : "rate not configured", insurance: s.insuranceBearer ? INSURANCE_LABELS[s.insuranceBearer] : "Insurance treatment not configured", convention: s.rateConvention ? RATE_CONVENTION_LABELS[s.rateConvention] : "Rate convention not configured (final calculation blocked)" }))}
+        structures={(rules?.structures ?? []).map((s) => ({ code: s.code, label: structureLabel(s.code, s.label), rate: s.ratePercent ? `${s.ratePercent}%` : "rate not configured", insurance: s.insuranceBearer ? INSURANCE_LABELS[s.insuranceBearer] : "Insurance treatment not configured", convention: s.rateConvention ? RATE_CONVENTION_LABELS[s.rateConvention] : "Rate convention not configured (final calculation blocked)" }))}
         limits={{
           maxAmountKobo: rules?.maxAmountKobo ?? null,
           maxTenorMonths: rules?.maxTenorMonths ?? null,
