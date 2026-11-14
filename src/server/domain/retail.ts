@@ -166,8 +166,17 @@ export async function saveRetailDraft(ctx: Ctx, appId: string, input: RetailDraf
         app.outlet_location_id = loc.id;
         app.location_snapshot = snapshotOf(loc, ctx.now) as unknown as Record<string, unknown>;
         if (app.initiator_role === "DELIGHT_OFFICER" && loc.team) app.team = loc.team;
+        if (app.initiator_role === "DELIGHT_OFFICER") app.origination_location_id = loc.id;
       }
     }
+    // Relationship Manager / Team Lead / Unit Head channel: originating location (reporting by location)
+    if (app.initiator_role !== "DELIGHT_OFFICER") {
+      if (data.originationLocationId) {
+        const loc = (await tx.query<LocationRow>("SELECT * FROM locations WHERE id = $1", [data.originationLocationId])).rows[0];
+        if (!loc || !loc.active || !loc.rm_origination) errors.originationLocationId = "Select an active location from the list.";
+        else if (app.stage === "DRAFT" || app.stage === "INITIATOR_CORRECTION") app.origination_location_id = loc.id;
+      } else if (app.stage === "DRAFT") app.origination_location_id = null;
+    } else data.originationLocationId = null;
     if (data.assignedRmId) {
       if (data.assignedRmId === app.initiator_id) errors.assignedRmId = "Select a Relationship Manager other than yourself.";
       else if (!(await holdsRole(tx, data.assignedRmId, "RM"))) errors.assignedRmId = "Select an active Relationship Manager.";
@@ -380,6 +389,12 @@ export async function retailReadiness(q: Db, appId: string, now: Date): Promise<
     else if (!location?.active) e.outletLocationId = "The selected outlet is no longer active.";
     else if (!location.oss_staff_id) blockers.push("No Outlet Service Supervisor is mapped to the selected outlet. An administrator must map one.");
     if (rules && (rules.rmProposalRequired || rules.businessPhotos.rmPhotoRequired) && !data.assignedRmId) e.assignedRmId = "Assign the Relationship Manager who supplies the RM proposal and business-visit evidence.";
+  }
+  if (app.initiator_role !== "DELIGHT_OFFICER") {
+    const orig = data.originationLocationId ? (await listLocations(q)).find((l) => l.id === data.originationLocationId) : null;
+    if (!data.originationLocationId) {
+      if (app.initiator_role === "RM") e.originationLocationId = "Select the location you are originating this request from.";
+    } else if (!orig?.active || !orig.rm_origination) e.originationLocationId = "The selected location is no longer available. Choose another.";
   }
   if (!app.team && app.initiator_role === "RM") blockers.push("Your Relationship Manager assignment has no team, so no Team Lead can be routed. Ask an administrator to set your team.");
   if (!app.team && app.initiator_role === "DELIGHT_OFFICER" && location && !location.team) blockers.push("The selected outlet is not mapped to a team.");

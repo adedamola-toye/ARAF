@@ -77,6 +77,8 @@ export const retailDataSchema = z.object({
   // Channel
   assignedRmId: z.string().uuid().nullable().default(null),
   outletLocationId: z.string().uuid().nullable().default(null),
+  /** Relationship Manager's originating location (Branch / AltLounge); mandatory for RM-originated requests. */
+  originationLocationId: z.string().uuid().nullable().default(null),
   // Separately configured privacy / data-access permissions
   consents: z.array(z.object({ code: z.string(), granted: z.boolean(), recordedAt: z.string().nullable().default(null) })).max(20).default([]),
 });

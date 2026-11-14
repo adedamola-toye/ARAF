@@ -4,7 +4,7 @@ import { CATEGORY_LABEL, RETAIL_UPLOADABLE_BY_STAGE, ASSIGNED_RM_UPLOADS, signDo
 import { retailReadiness, PROPOSAL_FIELDS, loadRetailState } from "@/server/domain/retail";
 import { INSURANCE_LABELS, RATE_CONVENTION_LABELS, STRUCTURE_LABELS, PROFILE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, roleLabel, type CustomerProfile } from "@/server/domain/products";
 import { vendorOptions, searchInstitutions } from "@/server/domain/vendors";
-import { listLocations } from "@/server/domain/locations";
+import { listLocations, rmOriginationLocations, OUTLET_TYPE_LABELS } from "@/server/domain/locations";
 import { maskWithLast4 } from "@/server/mask";
 import { koboToNairaString } from "@/server/money";
 import { formatLagos } from "@/server/time";
@@ -101,6 +101,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
   }
   const institutions = await searchInstitutions(db, "");
   const locations = await listLocations(db, { activeOnly: true });
+  const rmLocations = await rmOriginationLocations(db);
   const rms = (await db.query(`SELECT s.id, s.full_name, ra.team FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE ra.role = 'RM' AND ra.active AND s.status = 'ACTIVE' AND s.id <> $1 ORDER BY s.full_name`, [staffId])).rows;
   const afsApplies = !!rules?.afs?.thresholdKobo && Number(data.requestedAmountKobo ?? 0) > rules.afs.thresholdKobo;
   const evidence = docs.filter((d) => ["EXCEPTION_EVIDENCE", "AFS", "BUSINESS_OPERATIONS_EVIDENCE", "BANK_STATEMENT"].includes(d.category) && d.scan_status === "CLEAN").map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename}` }));
@@ -162,6 +163,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
             vendorId: data.vendorId ?? "",
             vendorAccountId: data.vendorAccountId ?? "",
             outletLocationId: data.outletLocationId ?? "",
+            originationLocationId: data.originationLocationId ?? "",
             assignedRmId: data.assignedRmId ?? "",
           },
           money: {
@@ -186,6 +188,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
         directors={(c.working ? (await db.query("SELECT id, full_name, bvn_last4 FROM application_directors WHERE version_id = $1 ORDER BY position", [c.working.id])).rows : c.directors).map((d: { id: string; full_name: string; bvn_last4: string }) => ({ id: d.id, fullName: d.full_name, masked: maskWithLast4(d.bvn_last4) }))}
         vendors={[...vendorMap.values()]}
         locations={locations.map((l) => ({ id: l.id, state: l.state, city: l.city, outletType: l.outlet_type, name: l.name, oss: l.oss_name ?? null }))}
+        rmLocations={rmLocations.map((l) => ({ id: l.id, label: `${l.name} · ${OUTLET_TYPE_LABELS[l.outlet_type]} · ${l.city}, ${l.state}` }))}
         rms={rms.map((x: { id: string; full_name: string; team: string | null }) => ({ id: x.id, label: `${x.full_name}${x.team ? ` (${x.team})` : ""}` }))}
         privacyConsents={readiness.config?.config.privacyConsents ?? []}
         readiness={{

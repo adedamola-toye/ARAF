@@ -40,6 +40,8 @@ export interface RetailFormProps {
   vendors: { vendorId: string; vendorName: string; vendorEmail: string | null; accounts: { id: string; label: string; status: string; bank: string; number: string }[] }[];
   locations: { id: string; state: string; city: string; outletType: string; name: string; oss: string | null }[];
   rms: { id: string; label: string }[];
+  /** Locations a Relationship Manager (or Team Lead / Unit Head) can originate from. */
+  rmLocations: { id: string; label: string }[];
   privacyConsents: { code: string; purpose: string }[];
   readiness: {
     ready: boolean;
@@ -59,7 +61,7 @@ const SECTIONS = [
   { id: "facility", label: "Facility", keys: ["requestedAmountKobo", "tenorMonths", "structure", "purpose", "assetDescription", "assetCostKobo", "deliveryAddress", "equityContributionKobo"] },
   { id: "affordability", label: "Obligations and DSR", keys: ["incomeBasisKobo", "annualInflowKobo", "proposedMonthlyObligationKobo", "obligations"] },
   { id: "beneficiary", label: "Vendor and beneficiary", keys: ["vendorId", "vendorAccountId"] },
-  { id: "origination", label: "Origination", keys: ["outletLocationId", "assignedRmId", "consent_"] },
+  { id: "origination", label: "Origination", keys: ["outletLocationId", "originationLocationId", "assignedRmId", "consent_"] },
   { id: "documents", label: "Documents", keys: ["doc_", "photos"] },
   { id: "proposal", label: "Credit proposal", keys: ["proposal"] },
   { id: "review", label: "Review and submit", keys: [] },
@@ -129,6 +131,8 @@ export function RetailDraftForm(props: RetailFormProps) {
   const T = props.applicantType;
   const salaryProfile = props.profile === "SALARY_EARNER";
   const isDo = props.initiatorRole === "DELIGHT_OFFICER";
+  const isRmChannel = !isDo;
+  const locationRequired = props.initiatorRole === "RM";
 
   const snapshot = JSON.stringify({ t, money, tenor, years, structure, obligations, salary, consents, directors: directors.map((d) => [d.fullName, d.bvn]), bvn, tin });
   const [baseline, setBaseline] = useState(snapshot);
@@ -201,6 +205,7 @@ export function RetailDraftForm(props: RetailFormProps) {
       vendorId: t.vendorId || null,
       vendorAccountId: t.vendorAccountId || null,
       outletLocationId: t.outletLocationId || null,
+      originationLocationId: t.originationLocationId || null,
       assignedRmId: t.assignedRmId || null,
       consents: consents.map((c) => ({ ...c, recordedAt: c.granted ? (c.recordedAt ?? new Date().toISOString()) : null })),
     },
@@ -221,7 +226,7 @@ export function RetailDraftForm(props: RetailFormProps) {
     <div className="form-layout">
       <nav className="form-steps" aria-label="Application sections">
         <ol>
-          {SECTIONS.filter((s) => s.id !== "origination" || isDo || props.privacyConsents.length > 0).map((s) => {
+          {SECTIONS.filter((s) => s.id !== "origination" || isDo || isRmChannel || props.privacyConsents.length > 0).map((s) => {
             const n = sectionErrors(errors, s.keys);
             const done = s.id === "review" ? r.ready : n === 0;
             return (
@@ -585,7 +590,7 @@ export function RetailDraftForm(props: RetailFormProps) {
         )}
 
         {/* ------------------------------------------------ origination */}
-        {(isDo || props.privacyConsents.length > 0) && (
+        {(isDo || isRmChannel || props.privacyConsents.length > 0) && (
           <section className="card" id="origination" aria-labelledby="h-orig">
             <h2 id="h-orig">Origination</h2>
             {isDo && (
@@ -607,7 +612,7 @@ export function RetailDraftForm(props: RetailFormProps) {
                   <Field id="loc-type" label="Outlet type" required>
                     <select id="loc-type" value={locType} disabled={!locCity} onChange={(e) => { setLocType(e.target.value); setT({ ...t, outletLocationId: "" }); }}>
                       <option value="">{locCity ? "Choose…" : "Choose a town first"}</option>
-                      {types.map((s) => <option key={s} value={s}>{s === "ALTBOX" ? "Altbox" : s === "ALTSHOP" ? "Altshop" : "Branch"}</option>)}
+                      {types.map((s) => <option key={s} value={s}>{s === "ALTBOX" ? "Altbox" : s === "ALTSHOP" ? "Altshop" : s === "ALTLOUNGE" ? "AltLounge" : "Branch"}</option>)}
                     </select>
                   </Field>
                   <Field id="outletLocationId" label="Outlet" required error={fe("outletLocationId")}>
@@ -621,6 +626,11 @@ export function RetailDraftForm(props: RetailFormProps) {
                   <SearchSelect id="assignedRmId" value={t.assignedRmId ?? ""} onChange={(v) => setT({ ...t, assignedRmId: v })} options={props.rms.map((x) => ({ value: x.id, label: x.label }))} placeholder="Search Relationship Managers" invalid={!!fe("assignedRmId")} />
                 </Field>
               </>
+            )}
+            {isRmChannel && (
+              <Field id="originationLocationId" label="Your location" required={locationRequired} hint="The Branch or AltLounge you are originating this request from. Used for performance and portfolio reporting by location; it does not change the approval route." error={fe("originationLocationId")}>
+                <SearchSelect id="originationLocationId" value={t.originationLocationId ?? ""} onChange={(v) => setT({ ...t, originationLocationId: v })} options={props.rmLocations.map((x) => ({ value: x.id, label: x.label }))} placeholder="Search locations" invalid={!!fe("originationLocationId")} />
+              </Field>
             )}
             {props.privacyConsents.map((c) => (
               <label key={c.code} className="check">
@@ -687,6 +697,7 @@ export function RetailDraftForm(props: RetailFormProps) {
             <div><dt>Facility</dt><dd>{money.requestedAmountKobo ? `₦${groupAmount(money.requestedAmountKobo)}` : "amount missing"} over {tenor || "?"} months{st ? ` · ${st.label} ${st.rate}` : ""} <a href="#facility">Edit</a></dd></div>
             <div><dt>DSR</dt><dd>{r.preliminary?.dsr ? `${r.preliminary.dsr}% (threshold ${r.preliminary.maxPercent ?? "?"}%)` : "not calculated yet"} <a href="#affordability">Edit</a></dd></div>
             {props.beneficiaryRequired && <div><dt>Beneficiary</dt><dd>{account ? `${vendor?.vendorName} · ${account.bank} · ${account.number}` : "not selected"} <a href="#beneficiary">Edit</a></dd></div>}
+            {isRmChannel && <div><dt>Location</dt><dd>{props.rmLocations.find((l) => l.id === t.originationLocationId)?.label ?? "not selected"} <a href="#origination">Edit</a></dd></div>}
             {isDo && <div><dt>Outlet / RM</dt><dd>{props.locations.find((l) => l.id === t.outletLocationId)?.name ?? "outlet not selected"} · {props.rms.find((x) => x.id === t.assignedRmId)?.label ?? "RM not assigned"} <a href="#origination">Edit</a></dd></div>}
             <div><dt>Credit proposal</dt><dd>{r.proposal.required ? (r.proposal.present ? `version ${r.proposal.versionNo}${r.proposal.missing.length ? ` (incomplete: ${r.proposal.missing.join(", ")})` : ""}` : "not written yet") : "not required"} <a href="#proposal">Edit</a></dd></div>
           </dl>

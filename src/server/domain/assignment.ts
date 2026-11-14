@@ -90,6 +90,8 @@ export interface AppRow {
   financing_structure: string | null;
   team: string | null;
   outlet_location_id: string | null;
+  /** Where the request was originated (RM-selected location, or the Delight Officer's outlet); reporting only. */
+  origination_location_id?: string | null;
   location_snapshot: Record<string, unknown> | null;
   assigned_rm_id: string | null;
   oss_reviewer_id: string | null;

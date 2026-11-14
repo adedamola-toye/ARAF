@@ -105,6 +105,7 @@ export async function createRetailCase(o: RetailCaseOpts) {
   const { id } = await createRetailDraft(ctx, { initiatorRole: INITIATOR_ROLE[o.channel], productCode: o.product, profile: o.profile, structure: o.structure ?? null, applicantType: type });
   const v = await vendorAccount(o.product === "ALT_DRIVE" ? "Synthetic Motors Ltd" : o.product === "ALT_POWER" ? "Synthetic Solar Ltd" : "Synthetic Distributors Ltd");
   const outlet = o.channel === "DO" ? (await db.query("SELECT id FROM locations WHERE name = $1", [o.outlet ?? "Yaba Altbox"])).rows[0].id : null;
+  const origination = o.channel === "DO" ? null : (await db.query("SELECT id FROM locations WHERE active AND rm_origination ORDER BY name LIMIT 1")).rows[0]?.id ?? null;
   const rmId = o.channel === "DO" ? await staffId(o.assignedRm ?? "rm.bola@altbank.ng") : null;
   const today = lagosDate(now);
   await saveRetailDraft(ctx, id, {
@@ -133,6 +134,7 @@ export async function createRetailCase(o: RetailCaseOpts) {
       vendorId: v.vendor_id,
       vendorAccountId: v.account_id,
       outletLocationId: outlet,
+      originationLocationId: origination,
       assignedRmId: rmId,
       ...(o.data ?? {}),
     },

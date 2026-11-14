@@ -203,7 +203,7 @@ async function locationIndex(q: Db) {
     if (similar.length === 1) return { loc: similar[0], typeConflict: `Matched by similar name to ${similar[0].name}: check it is the same place.` };
     // The same place under another type is never merged automatically: it is created as new and flagged.
     const other = exact.filter((l) => l.outlet_type !== e.type);
-    if (other.length) return { loc: null, typeConflict: `${other[0].outlet_type === "BRANCH" ? "A" : "An"} ${TYPE_LABEL[other[0].outlet_type]} with this name exists (${other[0].name}). Link it by hand if it is the same place.` };
+    if (other.length) return { loc: null, typeConflict: `${other[0].outlet_type === "BRANCH" ? "A" : "An"} ${TYPE_LABEL[other[0].outlet_type as LocType] ?? other[0].outlet_type} with this name exists (${other[0].name}). Link it by hand if it is the same place.` };
     return { loc: null, typeConflict: null };
   };
 }

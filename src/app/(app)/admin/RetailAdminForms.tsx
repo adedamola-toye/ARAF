@@ -4,7 +4,7 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import { DigitsInput, SearchSelect, type SearchOption } from "@/components/inputs";
 import { accountStatusAction, importInstitutionsAction, registerVendorAction, saveInstitutionAction, saveLocationAction, serviceTargetAction, vendorStatusAction, verifyAccountAction } from "./retail-admin-actions";
 
-export interface LocationFormValue { id?: string; state: string; city: string; outletType: string; name: string; address: string; ossStaffId: string; team: string; active: boolean }
+export interface LocationFormValue { id?: string; state: string; city: string; outletType: string; name: string; address: string; ossStaffId: string; team: string; businessUnit?: string; rmOrigination?: boolean; active: boolean }
 
 export function LocationForm({ value, states, supervisors, label }: { value: LocationFormValue; states: string[]; supervisors: { id: string; label: string }[]; label: string }) {
   return (
@@ -13,12 +13,14 @@ export function LocationForm({ value, states, supervisors, label }: { value: Loc
       <div className="grid-4">
         <div className="field"><label htmlFor={`st-${value.id ?? "new"}`}>State</label><select id={`st-${value.id ?? "new"}`} name="state" defaultValue={value.state} required><option value="">Choose…</option>{states.map((s) => <option key={s}>{s}</option>)}</select></div>
         <div className="field"><label htmlFor={`ci-${value.id ?? "new"}`}>Town or city</label><input id={`ci-${value.id ?? "new"}`} name="city" defaultValue={value.city} required /></div>
-        <div className="field"><label htmlFor={`ty-${value.id ?? "new"}`}>Outlet type</label><select id={`ty-${value.id ?? "new"}`} name="outletType" defaultValue={value.outletType}><option value="BRANCH">Branch</option><option value="ALTBOX">Altbox</option><option value="ALTSHOP">Altshop</option></select></div>
+        <div className="field"><label htmlFor={`ty-${value.id ?? "new"}`}>Outlet type</label><select id={`ty-${value.id ?? "new"}`} name="outletType" defaultValue={value.outletType}><option value="BRANCH">Branch</option><option value="ALTLOUNGE">AltLounge</option><option value="ALTBOX">Altbox</option><option value="ALTSHOP">Altshop</option></select></div>
         <div className="field"><label htmlFor={`nm-${value.id ?? "new"}`}>Outlet name</label><input id={`nm-${value.id ?? "new"}`} name="name" defaultValue={value.name} required /></div>
         <div className="field"><span className="loc-address-label">Registered address</span><p className="loc-address">{value.address || <span className="muted">{value.id ? "Not registered. Register it in Altphones → Locations (Unit Head approval)." : "Registered after the location is created, through Altphones → Locations (Unit Head approval)."}</span>}</p></div>
         <div className="field"><label htmlFor={`os-${value.id ?? "new"}`}>Outlet Service Supervisor</label><select id={`os-${value.id ?? "new"}`} name="ossStaffId" defaultValue={value.ossStaffId}><option value="">None (requests go to the exception queue)</option>{supervisors.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}</select></div>
         <div className="field"><label htmlFor={`tm-${value.id ?? "new"}`}>Team</label><input id={`tm-${value.id ?? "new"}`} name="team" defaultValue={value.team} placeholder="e.g. RETAIL-LAGOS-1" /></div>
-        <label className="check" style={{ alignSelf: "end" }}><input type="checkbox" name="active" defaultChecked={value.active} /> Active</label>
+        <div className="field"><label htmlFor={`bu-${value.id ?? "new"}`}>Business unit</label><input id={`bu-${value.id ?? "new"}`} name="businessUnit" defaultValue={value.businessUnit ?? ""} placeholder="e.g. Retail" /></div>
+        <label className="check" style={{ alignSelf: "end" }}><input type="checkbox" name="rmOrigination" defaultChecked={!!value.rmOrigination} /> Relationship Managers can select it</label>
+        <label className="check" style={{ alignSelf: "end" }}><input type="checkbox" name="active" defaultChecked={value.active} /> Active (inactive locations stay on past requests and reports but cannot be chosen)</label>
       </div>
       <div><SubmitButton className="btn btn-sm btn-dark">{label}</SubmitButton></div>
     </ActionForm>
