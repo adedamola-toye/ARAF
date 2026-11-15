@@ -8,7 +8,7 @@ export function NavLink({ href, children, count, exact = false, icon, alert = fa
   const path = usePathname();
   const active = exact ? path === href : path === href || path.startsWith(href + "/");
   return (
-    <Link href={href} className="nav-link" aria-current={active ? "page" : undefined}>
+    <Link href={href} className="nav-link" aria-current={active ? "page" : undefined} data-tour={`nav:${href}`}>
       {icon}
       <span className="nav-label">{children}</span>
       {count !== undefined && count > 0 && (

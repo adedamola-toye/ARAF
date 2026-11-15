@@ -863,3 +863,18 @@ dialog.modal.modal-verify .modal-body { max-height: min(76vh, 680px); overflow-y
 .verify-meta dd { margin: 2px 0 0; font-weight: 650; }
 .verify-list { border: 0; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
 .verify-list .check { align-items: flex-start; }
+
+/* ------------------------------------------------------------ onboarding */
+dialog.modal.modal-welcome { max-width: 480px; }
+dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
+.tour-panel { position: fixed; z-index: 1000; width: min(340px, calc(100vw - 32px)); background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow-float); padding: var(--space-3) var(--space-4); }
+.tour-panel-centre { left: 50%; bottom: 24px; transform: translateX(-50%); }
+.tour-panel h2 { font-size: 16px; margin: var(--space-2) 0 6px; outline: none; }
+.tour-panel p { margin: 0 0 var(--space-3); font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.tour-progress { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-3, var(--ink-2)); }
+.tour-bar { flex: 1; height: 4px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.tour-bar span { display: block; height: 100%; background: var(--accent); }
+.tour-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-target { outline: 3px solid var(--accent) !important; outline-offset: 3px; border-radius: 8px; position: relative; z-index: 2; }
+@media (max-width: 640px) { .tour-panel:not(.tour-panel-centre) { left: 16px !important; right: 16px; width: auto; } }
+@media (prefers-reduced-motion: reduce) { .tour-target { transition: none; } }
