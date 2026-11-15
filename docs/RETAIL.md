@@ -266,3 +266,28 @@ chain:
 - A Team Lead's own request goes to CX credit review.
 - A Unit Head's own request goes to CX credit review and then to the Divisional Head. It never goes to
   another Unit Head or back down to a Team Lead.
+
+## 12. Vendor Financing — Team Lead business photograph verification
+
+Applies to RM-originated Vendor Financing at Team Lead review while the Super Admin switch **Vendor Financing Business Photograph
+Review** (Administration → Feature controls) is ON. It is **OFF by default**. The setting in force when the request reaches the
+Team Lead is snapshotted, so changing the switch never alters a review in progress.
+
+- The Team Lead sees a KYC summary (customer, BVN and SeedFi result, business address, sector, vendor, RM and request) and
+  chooses either **Upload** an existing photograph from the gallery or files (images only; the camera is never opened; preview;
+  confirm it shows the RM's business) or **Skip** with a mandatory reason (at least 10 characters; whitespace is not accepted).
+- The server refuses the Team Lead's recommend / return / decline until one is recorded. Either choice lets the existing
+  approval continue; skipping is never a rejection. Decisions are immutable and audited.
+- A skip notifies every active Unit Head: the in-app notification centre (bell), a *Business photo not uploaded* badge in their
+  queue, a highlighted panel on the request with the exact reason, an email, and the audit trail. A notified Unit Head can open
+  the request.
+- Turning the switch OFF removes the step for new reviews and keeps every photo and reason already recorded. Changing it needs
+  a reason; the previous value, new value, who and when are recorded.
+- Existing KYC, BVN identity, SeedFi and credit-policy controls are unchanged; a good score never overrides an identity mismatch.
+
+## 13. God's Eye (executive view)
+
+Role **Executive View (God's Eye, read-only)**, also available to Super Admins and the Divisional Head: institution-wide requests,
+approvals, bookings, disbursements, repayments, outstanding facilities, approval queues, staff productivity, BPM and location
+performance, stock utilisation, migration progress and Vendor Financing KYC exceptions, with CSV exports. It grants no
+approval, editing, or case/document access.

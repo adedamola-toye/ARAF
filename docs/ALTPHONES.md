@@ -177,3 +177,28 @@ Import stock *positions* separately from historical transactions so nothing is c
 - `src/app/(app)/altphones/` — home/catalogue, sales, application page, receipt, reviews, inventory, settings.
 - `src/app/api/altphones/` — product images, Paystack webhook, import templates.
 - `tests/altphones.test.ts`, `tests/altphones-ops.test.ts` (opening dataset, pool, stock counts), `tests/altphones-migration.test.ts` (register reading, classification, checks, maker-checker publishing), `tests/altphones-locations.test.ts` (profiling import, address approval, origination and BPM routing); `npm run demo:altphones` seeds synthetic applications at every stage on a development database (test doubles inside the script only).
+
+## 12. Operations controls (Altphones operations v2)
+
+- **Imports:** CSV templates and the approval workflow are described in `docs/CSV_IMPORTS.md`. Every setup import is approved by
+  the Altphones Unit Head before anything is written. The officer (DO/SA) upload is removed.
+- **New locations:** Product Manager → Unit Head → activation. The PM proposes name, type, state, a registered address (an
+  existing one from the master or a new one) and, for an Altshop or Altbox, the responsible BPM. The Unit Head approves, rejects
+  or returns it for correction (the PM corrects and resubmits). Until approved the location is inactive and cannot be chosen.
+  On approval it is activated, the BPM mapping applies, and it starts with zero stock.
+- **Activation and deactivation** of a location are requested by the PM and approved by the Unit Head; requests already
+  submitted keep their location. The Super Admin location form can no longer create or reactivate an Altshop or Altbox.
+- **BPM register** (Locations → BPM mapping): every BPM with verification (active @altbank.ng staff with the role), states,
+  locations and mapping history. Mapping changes need Unit Head approval. **A sale already with a BPM keeps that BPM** when the
+  mapping changes; only sales waiting unassigned or with the Placeholder BPM move to the newly mapped BPM. New sales always use
+  the current mapping, resolved on the server.
+- **Inventory movements:** transfers (paired out/in), returns into stock, damaged write-offs and approved adjustments are
+  requested by the PM or a Super Admin and posted only when the Altphones Unit Head approves. Reserved units can never be moved or
+  written off; IMEIs move with the units; damaged devices are marked.
+- **Historical accounts** carry an application status (Pending, Approved, Issued, Completed, Cancelled, Declined, Unconfirmed)
+  and a separate repayment status (Not started, Active, Overdue, Fully repaid, Exception, Unconfirmed). A record without evidence
+  can be included explicitly as *Unconfirmed*. Repayments are reconciled with the Historical repayments CSV; *Fully repaid* is
+  set only when evidenced repayments (register or reconciled payment references) reach the full obligation, never because a
+  date has passed. Nothing in the migration moves stock, creates obligations, disbursements, mandates or SeedFi checks.
+- **Operations** (Altphones → Operations, PM / Unit Head / Super Admin): originated and pending applications, decisions waiting,
+  turnaround by stage, data exceptions, discrepancies, stock by location, Vendor Financing photo skips.
