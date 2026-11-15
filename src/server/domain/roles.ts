@@ -44,8 +44,10 @@ export type Role = (typeof ROLES)[number];
 
 export const INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER", "DELIGHT_OFFICER"] as const;
 /** Initiators of retail products (Vendor Financing, Alt Drive, Alt Power), in display order. */
-/** Team Leads and Unit Heads may originate retail requests; routing never sends a request back to its originator. */
-export const RETAIL_INITIATOR_ROLES = ["RM", "DELIGHT_OFFICER", "TEAM_LEAD", "UNIT_HEAD"] as const;
+/** Team Leads and Unit Heads may originate retail requests; routing never sends a request back to its originator.
+ *  Delight Officers / Smile Associates sell Altphones only: they no longer start retail requests (requests they
+ *  started earlier keep their Outlet Service Supervisor route). */
+export const RETAIL_INITIATOR_ROLES = ["RM", "TEAM_LEAD", "UNIT_HEAD"] as const;
 export type RetailInitiatorRole = (typeof RETAIL_INITIATOR_ROLES)[number];
 /** WakeelBoost (legacy) initiators. */
 export const LEGACY_INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER"] as const;
@@ -187,6 +189,9 @@ export function isRole(v: unknown): v is Role {
 }
 export function isRetailInitiatorRole(v: unknown): v is RetailInitiatorRole {
   return typeof v === "string" && (RETAIL_INITIATOR_ROLES as readonly string[]).includes(v);
+}
+export function isLegacyInitiatorRole(v: unknown): v is (typeof LEGACY_INITIATOR_ROLES)[number] {
+  return typeof v === "string" && (LEGACY_INITIATOR_ROLES as readonly string[]).includes(v);
 }
 export function isInitiatorRole(v: unknown): v is InitiatorRole {
   return typeof v === "string" && (INITIATOR_ROLES as readonly string[]).includes(v);

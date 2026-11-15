@@ -410,7 +410,7 @@ describe("form validation", () => {
   it("role selection grants nothing: only provisioned roles can initiate", async () => {
     await vf();
     await expect(createRetailDraft(await ctxFor("tl.lagos@altbank.ng"), { initiatorRole: "RM", productCode: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", applicantType: "ENTERPRISE" })).rejects.toThrow(/do not hold/);
-    await expect(createRetailDraft(await ctxFor("rm.bola@altbank.ng"), { initiatorRole: "DELIGHT_OFFICER", productCode: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", applicantType: "ENTERPRISE" })).rejects.toThrow(/do not hold/);
+    await expect(createRetailDraft(await ctxFor("rm.bola@altbank.ng"), { initiatorRole: "DELIGHT_OFFICER", productCode: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", applicantType: "ENTERPRISE" })).rejects.toThrow(/Altphones only/);
   });
 
   it("bank selection alone never approves a beneficiary; verification is maker-checker", async () => {

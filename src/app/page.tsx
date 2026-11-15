@@ -2,20 +2,32 @@
 import s from "./landing.module.css";
 import { AppearanceMenu } from "@/components/Appearance";
 import { appearanceClasses, BankLogo } from "@/components/Brand";
+import { cookies } from "next/headers";
 import { themePreference } from "./_lib/theme";
+import { baseCtx } from "./_lib/auth";
+import { lookupSession, SESSION_COOKIE } from "@/server/auth/session";
 
 export const metadata = { title: { absolute: "Retail Asset Factory" } };
 
 /** Workspace entry points. Each goes through /enter/<workspace>, which reuses the existing OTP sign-in. */
-const WORKSPACES = [
-  { href: "/enter/relationship-manager", num: "01", title: "Relationship Manager", text: "Originate and manage customer financing requests." },
-  { href: "/enter/delight-officer", num: "02", title: "Delight Officer / Smile Associate", text: "Sell Altphones outright or on credit." },
-  { href: "/enter/staff-personal-request", num: "03", title: "Staff Personal Request", text: "Apply for financing and track your request." },
+const WORKSPACES: { href: string; title: string; text: string; roles?: string[] }[] = [
+  { roles: ["RM"], href: "/enter/relationship-manager", title: "Relationship Manager", text: "Originate and manage customer financing requests." },
+  { roles: ["DELIGHT_OFFICER", "SMILE_ASSOCIATE"], href: "/enter/delight-officer", title: "Delight Officer / Smile Associate", text: "Sell Altphones outright or on credit." },
+  { href: "/enter/staff-personal-request", title: "Staff Personal Request", text: "Apply for financing and track your request." },
 ];
 
 /** Approved landing page (V39). Markup mirrors the reference so landing.module.css applies unchanged. */
 export default async function Landing() {
   const pref = await themePreference();
+  // Signed in: offer only the workspaces this person holds (the entry routes enforce the same rule).
+  let held: string[] | null = null;
+  try {
+    const r = await lookupSession((await cookies()).get(SESSION_COOKIE)?.value, await baseCtx(), { touch: false });
+    if (r.status === "ok") held = r.session.roles.map((x) => x.role);
+  } catch {
+    held = null;
+  }
+  const workspaces = WORKSPACES.filter((w) => !held || !w.roles || w.roles.some((r) => held.includes(r)));
   return (
     <div className={s.page}>
       <div className={s.shell}>
@@ -46,10 +58,10 @@ export default async function Landing() {
               Continue to your workspace
             </h2>
             <div className={s.roles}>
-              {WORKSPACES.map((w) => (
+              {workspaces.map((w, i) => (
                 <a key={w.href} className={s.role} href={w.href}>
                   <div className={s["role-top"]}>
-                    <span className={s["role-num"]}>{w.num}</span>
+                    <span className={s["role-num"]}>{String(i + 1).padStart(2, "0")}</span>
                     <span aria-hidden="true" className={s.arrow}>
                       ›
                     </span>

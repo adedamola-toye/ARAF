@@ -102,7 +102,7 @@ export async function createRetailCase(o: RetailCaseOpts) {
   const initiatorEmail = INITIATORS[o.channel];
   const ctx = await ctxFor(initiatorEmail, now);
   const type: ApplicantType = o.type ?? (o.profile === "SALARY_EARNER" ? "INDIVIDUAL" : "ENTERPRISE");
-  const { id } = await createRetailDraft(ctx, { initiatorRole: INITIATOR_ROLE[o.channel], productCode: o.product, profile: o.profile, structure: o.structure ?? null, applicantType: type });
+  const { id } = await createRetailDraft(ctx, { initiatorRole: INITIATOR_ROLE[o.channel], productCode: o.product, profile: o.profile, structure: o.structure ?? null, applicantType: type }, { retiredChannel: o.channel === "DO" });
   const v = await vendorAccount(o.product === "ALT_DRIVE" ? "Synthetic Motors Ltd" : o.product === "ALT_POWER" ? "Synthetic Solar Ltd" : "Synthetic Distributors Ltd");
   const outlet = o.channel === "DO" ? (await db.query("SELECT id FROM locations WHERE name = $1", [o.outlet ?? "Yaba Altbox"])).rows[0].id : null;
   const origination = o.channel === "DO" ? null : (await db.query("SELECT id FROM locations WHERE active AND rm_origination ORDER BY name LIMIT 1")).rows[0]?.id ?? null;

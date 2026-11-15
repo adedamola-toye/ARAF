@@ -1,4 +1,4 @@
-import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight } from "lucide-react";
+import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -77,8 +77,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </NavLink>
           {isInitiatorWs && (
             <>
-              <NavLink href="/requests/new" exact icon={<FilePlus2 {...ic} />}>
-                Initiate New Request
+              <NavLink href="/requests/new" icon={<FilePlus2 {...ic} />}>
+                New Financing Request
               </NavLink>
               <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
                 View Progress
@@ -218,6 +218,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/pricing" icon={<Percent {...ic} />}>
               Pricing and tenor
+            </NavLink>
+            <NavLink href="/admin/workflows" icon={<GitBranch {...ic} />}>
+              Approval workflows
             </NavLink>
             <NavLink href="/admin/feature-controls" icon={<ToggleRight {...ic} />}>
               Feature controls

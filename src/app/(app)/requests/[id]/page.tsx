@@ -10,7 +10,6 @@ import { signDocumentLink, CATEGORY_LABEL, DOC_CATEGORIES, UPLOADABLE_BY_STAGE, 
 import { STAGE_LABELS, stageLabel, ACTION_LABELS, allowedActions, type Stage, type TaskAction } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { APPLICANT_TYPE_LABELS, assetCostKobo, type DraftData } from "@/server/domain/application-data";
-import { getRoute } from "@/server/domain/routing";
 import { activeCalculator, calculatorKey, findCalculator } from "@/server/domain/apr/registry";
 import { REMINDER_MIN_AGE_MS } from "@/server/domain/workflow";
 import { formatKobo, koboToNairaString } from "@/server/money";
@@ -281,7 +280,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
 
 function Overview({ c, data }: { c: Case; data: DraftData | null }) {
   const app = c.app;
-  const route = getRoute(app.route);
+  const route = c.creditRoute;
   const name = (id: string | null) => (id ? c.people[id] ?? "—" : "—");
   return (
     <div className="stack">
@@ -402,6 +401,7 @@ function Overview({ c, data }: { c: Case; data: DraftData | null }) {
             {app.selected_rbe_id && <tr><th>Selected RBE</th><td>{name(app.selected_rbe_id)}</td></tr>}
             <tr><th>Business endorsement</th><td>{name(app.endorser_id)}</td></tr>
             <tr><th>Credit route</th><td>{route ? route.label : "Set after business endorsement"}</td></tr>
+            <tr><th>Approval workflow</th><td>{c.workflowVersion ? `Version ${c.workflowVersion} (recorded at submission)` : app.submitted_at ? "Original routing (submitted before configurable workflows)" : "Recorded when the request is submitted"}</td></tr>
             <tr><th>First credit reviewer</th><td>{name(app.first_reviewer_id)}</td></tr>
             <tr><th>Second credit reviewer</th><td>{name(app.second_reviewer_id)}</td></tr>
             <tr><th>Credit Officer 3 (pack)</th><td>{name(app.pack_co3_id)}</td></tr>

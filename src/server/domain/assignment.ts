@@ -6,7 +6,7 @@ import { enqueueEmail } from "../notify/outbox";
 import { assignmentEmail, simpleEmail } from "../notify/templates";
 import { zoneForRegion, type Role } from "./roles";
 import { REQUIRED_ACTION, STAGE_LABELS, type Stage } from "./stages";
-import { getRoute } from "./routing";
+import { creditBandOfApp } from "./approval-workflows";
 import { latestAssessment, type AssessmentRow } from "./assessment";
 import type { AssessmentSummary } from "../notify/templates";
 import type { PricingResult } from "./pricing";
@@ -101,6 +101,8 @@ export interface AppRow {
   suspended_at: Date | null;
   suspension_reason: string | null;
   business_approved_at?: Date | null;
+  /** Approval workflow version recorded at submission (null: submitted before configurable workflows). */
+  workflow_version_id?: string | null;
 }
 
 export interface EligibleStaff {
@@ -171,14 +173,14 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       const prior = (await priorApprovers(tx, app.id)).filter((x) => x !== app.first_reviewer_id);
       if (app.approval_policy === "RETAIL_CX_V1")
         return { roles: ["CX_CREDIT_REVIEWER"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior], scopeNote: "CX Credit Reviewer (not involved earlier on this request)" };
-      const route = getRoute(app.route);
+      const route = await creditBandOfApp(tx, app);
       if (!route) throw new Error("Route not set");
-      return { roles: route.firstReviewRoles, exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior] };
+      return { roles: route.firstReviewRoles as Role[], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, ...prior] };
     }
     case "SECOND_CREDIT_REVIEW": {
-      const route = getRoute(app.route);
+      const route = await creditBandOfApp(tx, app);
       if (!route) throw new Error("Route not set");
-      return { roles: route.secondReviewRoles, exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id] };
+      return { roles: route.secondReviewRoles as Role[], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id] };
     }
     case "UNIT_HEAD_REVIEW":
       return { roles: ["UNIT_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id] };
@@ -203,7 +205,7 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     const r = await retailSpec(tx, app, stage);
     if (r) return r;
   }
-  const route = getRoute(app.route);
+  const route = ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"].includes(stage) ? await creditBandOfApp(tx, app) : null;
   switch (stage) {
     case "BUSINESS_ENDORSEMENT": {
       if (app.initiator_role === "RM") return { roles: ["RBE"], exclude: [app.initiator_id] };
@@ -221,10 +223,10 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION":
       if (!route) throw new Error("Route not set");
-      return { roles: route.firstReviewRoles, exclude: [app.initiator_id, app.endorser_id] };
+      return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id] };
     case "SECOND_CREDIT_REVIEW":
       if (!route) throw new Error("Route not set");
-      return { roles: route.secondReviewRoles, exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id] };
+      return { roles: route.secondReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id] };
     case "UNIT_HEAD_REVIEW":
       return { roles: ["UNIT_HEAD"], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id] };
     case "DIVISIONAL_HEAD_REVIEW":
