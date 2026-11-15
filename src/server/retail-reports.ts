@@ -21,7 +21,7 @@ export interface RetailScope {
   ownId: string | null;
 }
 
-const ALL_ROLES = ["SUPER_ADMIN", "REPORTING_ADMIN", "HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "CREDIT_OFFICER_1", "CREDIT_OFFICER_2", "CREDIT_OFFICER_3", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "UNIT_HEAD", "DIVISIONAL_HEAD", "DISBURSEMENT_OFFICER_1", "DISBURSEMENT_OFFICER_2", "COLLECTIONS_OFFICER", "CX_CREDIT_REVIEWER"];
+const ALL_ROLES = ["SUPER_ADMIN", "REPORTING_ADMIN", "HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "CREDIT_OFFICER_1", "CREDIT_OFFICER_2", "CREDIT_OFFICER_3", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "UNIT_HEAD", "DIVISIONAL_HEAD", "DISBURSEMENT_OFFICER_1", "DISBURSEMENT_OFFICER_2", "COLLECTIONS_OFFICER", "CX_CREDIT_REVIEWER", "EXECUTIVE_VIEW"];
 
 /** Organisation-wide for leadership, credit, operations and reporting; team, outlet or own cases otherwise. */
 export async function retailScope(q: Db, staffId: string): Promise<RetailScope | null> {

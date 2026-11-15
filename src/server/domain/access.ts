@@ -78,5 +78,8 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
   if (rr?.leadership) capacities.push("RETAIL_LEADERSHIP");
   if (rr?.exception) capacities.push("EXCEPTION_AUTHORITY");
   if (rr?.collections) capacities.push("COLLECTIONS");
+  // A Unit Head notified that a Team Lead skipped the business photograph can open that request (read access).
+  const notified = await q.query("SELECT 1 FROM notifications n WHERE n.recipient_id = $1 AND n.application_id = $2 AND n.kind = 'VF_PHOTO_SKIPPED' AND EXISTS (SELECT 1 FROM role_assignments ra WHERE ra.staff_id = $1 AND ra.role = 'UNIT_HEAD' AND ra.active)", [staffId, appId]);
+  if (notified.rowCount) capacities.push("NOTIFIED_UNIT_HEAD");
   return { canView: capacities.length > 0, capacities };
 }

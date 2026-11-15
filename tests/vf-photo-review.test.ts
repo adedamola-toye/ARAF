@@ -78,3 +78,19 @@ describe("Vendor Financing Team Lead photograph verification", () => {
     if (tlOrig) expect(await currentPhotoReview(db, tlOrig)).toBeNull();
   });
 });
+
+describe("Unit Head access after a skip notification", () => {
+  beforeEach(async () => {
+    await resetDb();
+    await applyConfig("VENDOR_FINANCING", syntheticConfig("VENDOR_FINANCING"));
+  });
+  it("the notified Unit Head can open the request (read access)", async () => {
+    const { caseAccess } = await import("@/server/domain/access");
+    await photo(true);
+    const id = await vf();
+    const uh = (await db.query("SELECT id FROM staff WHERE email = 'unit.head@altbank.ng'")).rows[0].id;
+    expect((await caseAccess(db, uh, id)).canView).toBe(false);
+    await recordPhotoSkip(await ctxFor("tl.lagos@altbank.ng"), id, "Customer declined photographs of the stall");
+    expect((await caseAccess(db, uh, id)).capacities).toContain("NOTIFIED_UNIT_HEAD");
+  });
+});

@@ -18,6 +18,7 @@ import { locationAccess } from "@/server/altphones/location-master";
 import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
 import { isEnabled } from "@/server/domain/switches";
 import { unreadCount } from "@/server/domain/notifications";
+import { executiveAccess } from "@/server/executive";
 import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
@@ -53,6 +54,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const showPerformance = roles.includes("RM") || roles.includes("TEAM_LEAD") || perfTargets.propose || perfTargets.approve;
   const showTracker = isAdmin || (retailScope?.kind === "ALL" && (await isEnabled(db, "REPAYMENT_TRACKER")));
   const unread = await unreadCount(db, session.staffId);
+  const godsEye = await executiveAccess(db, session.staffId);
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -94,6 +96,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
             </NavLink>
           )}
+          {godsEye && (
+            <NavLink href="/executive" icon={<Gauge {...ic} />}>
+              God&apos;s Eye
+            </NavLink>
+          )}
           {retailScope && !altWs && (
             <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
               Retail dashboard
@@ -127,6 +134,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   My sales
                 </NavLink>
               </>
+            )}
+            {(alt.pm || alt.admin || (alt.reviewer && roles.includes("UNIT_HEAD"))) && (
+              <NavLink href="/altphones/operations" icon={<BarChart3 {...ic} />}>
+                Operations
+              </NavLink>
             )}
             {(alt.reviewer || alt.pm || alt.admin) && (
               <NavLink href="/altphones/reviews" count={altReviewCount} icon={<ClipboardCheck {...ic} />}>
