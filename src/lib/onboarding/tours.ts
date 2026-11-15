@@ -129,6 +129,7 @@ const ALT_PM: TourStep[] = [
   { title: "Operations", body: "Pending approvals, turnaround, data exceptions and stock by location.", target: nav("/altphones/operations") },
   { title: "Locations and BPMs", body: "Propose locations, register addresses and request BPM mappings for Unit Head approval.", target: nav("/altphones/locations") },
   { title: "Inventory", body: "Stock by location, counts, transfers, returns and damaged stock.", target: nav("/altphones/inventory") },
+  { title: "Portfolio and collections", body: "Facilities by repayment status and arrears, monthly collections, performance by location, officer and channel, and stock against the opening count. Open a facility to record a repayment.", target: nav("/altphones/portfolio") },
   { title: "Historical migration", body: "Stage and reconcile the register kept before ARAF.", target: nav("/altphones/migration") },
   verify,
   help,
@@ -149,7 +150,7 @@ const STAFF: TourStep[] = [
 const VENDOR: TourStep[] = [{ title: "Vendor register", body: "Register vendors and verify their bank accounts before they can be paid.", target: nav("/vendors"), href: "/vendors" }, queue, help];
 const CONFIG: TourStep[] = [{ title: "Product configuration", body: "Approve or reject proposed product rule, pricing and tenor changes. You cannot approve a change you proposed.", target: nav("/admin/products"), href: "/admin/products" }, help];
 const STAFF_PM: TourStep[] = [{ title: "Staff financing queues", body: "Staff financing requests waiting for your review, with the checks to complete.", target: nav("/staff-financing"), href: "/staff-financing" }, queue, help];
-const COLLECTIONS: TourStep[] = [queue, { title: "Repayment monitoring", body: "Expected schedules against recorded repayments (when the tracker is switched on).", target: nav("/repayments") }, help];
+const COLLECTIONS: TourStep[] = [queue, { title: "Portfolio and collections", body: "Facilities by repayment status and arrears, monthly collections, performance by location, officer and channel, and stock against the opening count. Open a facility to record a repayment.", target: nav("/altphones/portfolio") }, { title: "Repayment monitoring", body: "Expected schedules against recorded repayments (when the tracker is switched on).", target: nav("/repayments") }, help];
 
 /** The walkthrough for a role (every role defined in ARAF has one; unknown roles get the general guide). */
 export function tourFor(role: string): TourStep[] {

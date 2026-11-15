@@ -151,7 +151,7 @@ export async function roleHolders(q: Db, roles: readonly string[]): Promise<{ id
   ).rows;
 }
 
-export type AltAccess = "ORIGINATOR" | "BPM" | "PM" | "UNIT_HEAD" | "ADMIN";
+export type AltAccess = "ORIGINATOR" | "BPM" | "PM" | "UNIT_HEAD" | "ADMIN" | "COLLECTIONS";
 
 /** Who may open an application: its originator, reviewers of its stages, and Super Admins. */
 export async function appAccess(q: Db, staffId: string, app: AltApp): Promise<Set<AltAccess>> {
@@ -163,6 +163,8 @@ export async function appAccess(q: Db, staffId: string, app: AltApp): Promise<Se
   // SA applications go to the BPM mapped to their operating location (earlier applications: any BPM).
   if (roles.has(BPM_ROLE) && app.channel === "SA" && reviewed && ((!app.routed_bpm_id && !app.routed_to_placeholder) || app.routed_bpm_id === staffId || app.bpm_reviewer_id === staffId)) as.add("BPM");
   if (roles.has(PM_ROLE) && (reviewed || app.kind === "OUTRIGHT")) as.add("PM");
+  // Collections Officers service facilities after handover (repayments), not applications in progress.
+  if (roles.has("COLLECTIONS_OFFICER") && app.kind === "CREDIT" && app.status === "DISBURSED" && !app.legacy) as.add("COLLECTIONS");
   if (roles.has("UNIT_HEAD") && reviewed) {
     const uh = (await currentSettings(q)).unit_head_staff_id;
     if (app.unit_head_id === staffId || uh === staffId) as.add("UNIT_HEAD");

@@ -10,6 +10,7 @@
  * amount and currency; webhooks are re-verified through the API before they change anything.
  */
 import { randomUUID } from "node:crypto";
+import { otherFacilities } from "./repayments";
 import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
@@ -206,6 +207,10 @@ export async function runCreditCheck(ctx: Ctx, id: string, p: CreditCheckInput) 
         },
         details: { bvnLast4: bvn.slice(-4), customerId },
       });
+      // Same customer with another facility (ARAF or the verified historical register): warn, never block.
+      const others = await otherFacilities(tx, app.bvn_hash, app.id);
+      await tx.query("UPDATE altphones_applications SET duplicate_warnings = $2 WHERE id = $1", [app.id, others.length ? JSON.stringify(others) : null]);
+      if (others.length) await recordEvent(tx, ctx, app, { action: "DUPLICATE_CUSTOMER_WARNING", role: app.originator_role, details: { facilities: others.map((o) => ({ source: o.source, ref: o.ref, status: o.status })) } });
       return { app, s };
     }),
   );

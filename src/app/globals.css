@@ -932,3 +932,12 @@ dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
 .wf-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--space-2) var(--space-4); margin: var(--space-2) 0 0; }
 .wf-meta dt { font-size: 12px; opacity: 0.8; }
 .wf-meta dd { margin: 0; font-weight: 700; word-break: break-all; }
+
+/* ---------------------------------------------------------------- Altphones repayments */
+.alt-repayments > li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) 0; border-bottom: 1px solid var(--line); }
+.alt-repayments > li:last-child { border-bottom: 0; }
+.alt-reverse { flex-basis: 100%; }
+.alt-reverse > summary { list-style: none; display: inline-flex; }
+.alt-reverse > summary::-webkit-details-marker { display: none; }
+.alt-reverse[open] > summary { margin-bottom: var(--space-2); }
+.alt-repay-form { border-top: 1px solid var(--line); padding-top: var(--space-3); }

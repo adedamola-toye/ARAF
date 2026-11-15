@@ -22,6 +22,7 @@ import {
   submitForApproval,
 } from "@/server/altphones/origination";
 import { confirmDisbursement, decide, type Decision } from "@/server/altphones/approvals";
+import { recordRepayment, reverseRepayment } from "@/server/altphones/repayments";
 import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport, rejectImport, submitImport } from "@/server/altphones/imports";
@@ -111,6 +112,11 @@ export const disburseAction = async (_p: ActionState, fd: FormData) =>
     (ctx) => confirmDisbursement(ctx, s(fd, "id"), { imei: s(fd, "imei"), modelConfirmed: on(fd, "modelConfirmed"), locationConfirmed: on(fd, "locationConfirmed"), handedOver: on(fd, "handedOver"), lockVersion: lock(fd) }),
     "Disbursement confirmed. The customer and the Altphones team have been notified.",
   );
+
+export const recordRepaymentAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => recordRepayment(ctx, s(fd, "id"), { paidOn: s(fd, "paidOn"), amount: s(fd, "amount"), reference: s(fd, "reference"), note: s(fd, "note") }), "Repayment recorded.");
+
+export const reverseRepaymentAction = async (_p: ActionState, fd: FormData) => run((ctx) => reverseRepayment(ctx, s(fd, "repaymentId"), s(fd, "reason")), "Repayment reversed.");
 
 // ------------------------------------------------------------------ catalogue, settings, stock, imports
 

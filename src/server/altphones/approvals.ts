@@ -140,7 +140,7 @@ export async function confirmDisbursement(ctx: Ctx, id: string, p: { imei: strin
         action: "DISBURSED",
         to: "DISBURSED",
         role: app.originator_role,
-        set: { imei: issued.imei, device_id: issued.deviceId, handed_over_at: ctx.now, completed_by: ctx.actor!.staffId, completed_at: ctx.now, reservation_status: "CONSUMED" },
+        set: { imei: issued.imei, device_id: issued.deviceId, handed_over_at: ctx.now, completed_by: ctx.actor!.staffId, completed_at: ctx.now, reservation_status: "CONSUMED", repayment_status: "NOT_STARTED" },
         details: { imei: issued.imei, firstRepayment: sched[0]?.dueDate, finalRepayment: sched[sched.length - 1]?.dueDate },
       });
       const s = await settingsById(tx, app.settings_id);

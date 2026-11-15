@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowRight, CreditCard, ShoppingBag } from "lucide-react";
+import { portfolioAccess } from "@/server/altphones/portfolio";
 import { requireUser } from "../../_lib/auth";
 import { PageHeader } from "@/components/PageHeader";
 import { db } from "@/server/db";
@@ -21,6 +22,7 @@ export default async function AltphonesHome({ searchParams }: { searchParams: Pr
   if (!access.originator) {
     if (access.reviewer) redirect("/altphones/reviews");
     if (access.inventory) redirect("/altphones/inventory");
+    if (await portfolioAccess(db, session.staffId)) redirect("/altphones/portfolio");
     redirect("/forbidden");
   }
   const [models, s, counts] = await Promise.all([listModels(db, { activeOnly: true }), currentSettings(db), myBucketCounts(db, session.staffId)]);

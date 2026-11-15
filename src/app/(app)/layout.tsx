@@ -13,6 +13,7 @@ import { signOutAction, switchWorkspaceAction } from "./shell-actions";
 import { retailScope as retailScopeFor } from "@/server/retail-reports";
 import { viewsFor, staffActionCount } from "@/server/staff/views";
 import { altphonesAccess, reviewQueueCount } from "@/server/altphones/views";
+import { portfolioAccess } from "@/server/altphones/portfolio";
 import { migrationAccess } from "@/server/altphones/migration";
 import { locationAccess } from "@/server/altphones/location-master";
 import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
@@ -37,6 +38,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Team Leads and Unit Heads may also originate retail requests (never reviewing their own).
   const isInitiatorWs = (isInitiatorRole(ws) || ws === "TEAM_LEAD" || ws === "UNIT_HEAD") && !altWs;
   const alt = await altphonesAccess(db, session.staffId);
+  const altPortfolio = await portfolioAccess(db, session.staffId);
   const altMigration = (await migrationAccess(db, session.staffId)).view;
   const altLocations = (await locationAccess(db, session.staffId)).view;
   const altReviewCount = alt.reviewer ? await reviewQueueCount(db, session.staffId) : 0;
@@ -129,7 +131,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
           )}
         </div>
-        {(alt.any || altMigration || altLocations) && (
+        {(alt.any || altMigration || altLocations || altPortfolio) && (
           <div className="nav-section">
             <span className="nav-title">Altphones</span>
             {alt.originator && (altWs || !isInitiatorRole(ws)) && (
@@ -145,6 +147,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {(alt.pm || alt.admin || (alt.reviewer && roles.includes("UNIT_HEAD"))) && (
               <NavLink href="/altphones/operations" icon={<BarChart3 {...ic} />}>
                 Operations
+              </NavLink>
+            )}
+            {altPortfolio && (
+              <NavLink href="/altphones/portfolio" icon={<Wallet {...ic} />}>
+                Portfolio
               </NavLink>
             )}
             {(alt.reviewer || alt.pm || alt.admin) && (
