@@ -119,6 +119,9 @@ export async function issueUnit(tx: Tx, ctx: Ctx, app: AltApp, imeiRaw: string, 
   const problem = imeiProblem(imei);
   if (problem) throw invalid(problem, { imei: problem });
   if (app.reservation_status !== "RESERVED") throw conflict("No unit is reserved for this application.");
+  // A phone already sold before ARAF (verified historical register) cannot be issued again.
+  const hist = (await tx.query<{ ref: string }>("SELECT ref FROM altphones_historical_accounts WHERE imei = $1 LIMIT 1", [imei])).rows[0];
+  if (hist) throw invalid("This IMEI cannot be issued.", { imei: `This IMEI is recorded on historical facility ${hist.ref}: that phone was already sold. Check the IMEI on the box or dial *#06#.` });
   let dev = (await tx.query<{ id: string; status: string; location_id: string | null; model_id: string; application_id: string | null }>("SELECT * FROM altphones_devices WHERE imei = $1 FOR UPDATE", [imei])).rows[0];
   if (dev) {
     const mine = dev.status === "RESERVED" && dev.application_id === app.id;

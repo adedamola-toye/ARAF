@@ -202,3 +202,69 @@ Import stock *positions* separately from historical transactions so nothing is c
   date has passed. Nothing in the migration moves stock, creates obligations, disbursements, mandates or SeedFi checks.
 - **Operations** (Altphones → Operations, PM / Unit Head / Super Admin): originated and pending applications, decisions waiting,
   turnaround by stage, data exceptions, discrepancies, stock by location, Vendor Financing photo skips.
+
+## 13. Repayment lifecycle (Altphones operations, phase 3)
+
+**Facilities.** A credit sale becomes a facility when the phone is handed over (status `DISBURSED`). Its final schedule is fixed at that point. Each instalment's status is worked out from the schedule and the repayments received (`src/lib/altphones-repayments.ts`):
+
+- Repayments are applied to the oldest instalment first.
+- Each instalment shows as Paid, Part paid, Due today, Overdue or Upcoming. An instalment becomes overdue the day after its due date.
+- The facility shows as No repayment yet, Current, In arrears or Fully repaid. It is fully repaid only when the repayments recorded cover the total repayable, never because a date has passed. Paying early is allowed.
+
+**Recording repayments.**
+
+- **One at a time:** open the facility and record the payment date, amount and payment reference, plus an optional note.
+  - Who can: the Altphones Product Manager, Collections Officers and Super Admins.
+  - Collections Officers can open any facility after handover; they can't open applications still in progress.
+- **In bulk:** use the Repayments file under Altphones settings → Imports. It accepts both ARAF facility references (`ALP-…`) and historical account references (`HIS-…`), and is applied only after Unit Head approval.
+- **Checks, both ways:**
+  - a payment reference is required and must be unique on each facility;
+  - the payment date can't be in the future or before the handover;
+  - amounts above the outstanding balance are refused.
+- **The ledger is append-only.** Mistakes are corrected with a reversal entry. A reversal:
+  - can be made by a Unit Head or Super Admin who did not record the original;
+  - needs a reason;
+  - can be made only once per payment.
+
+**On completion,** in the same transaction:
+- the facility is marked Fully repaid;
+- the customer gets a confirmation email (copied to the team mailbox);
+- the Product Manager is notified;
+- the facility history records it.
+
+If a reversal re-opens a completed facility, the history records that too.
+
+**Duplicate customers.** When the credit check runs, ARAF looks for other facilities for the same BVN:
+- ARAF credit sales in progress or not yet fully repaid;
+- verified historical accounts that are neither completed nor cancelled.
+
+Any matches are listed on the application for the originator and the reviewers. This is a warning only; the sale isn't blocked.
+
+**IMEIs.** An IMEI recorded on a verified historical facility is refused at handover, the same way as an IMEI already issued through ARAF.
+
+**Code and data:**
+- Logic: `src/server/altphones/repayments.ts`.
+- Database: migration `043_altphones_repayments.sql` adds:
+  - the `altphones_repayments` table (append-only);
+  - columns on the application: `repayment_status`, `amount_repaid_kobo`, `fully_repaid_at`, `duplicate_warnings`.
+
+## 14. Portfolio and collections reporting (Altphones operations, phase 4)
+
+**Altphones → Portfolio** (`/altphones/portfolio`) is open to the Product Manager, the configured Unit Head, Super Admins, Collections Officers, Reporting Admins and Executive view. It shows:
+
+- **Portfolio by repayment status:** ARAF facilities and historical accounts, broken down by arrears ageing (current; 1, 2, or 3 or more instalments overdue), fully repaid, cancelled and unconfirmed, with outstanding and arrears amounts.
+- **Facilities in arrears:** a collections worklist, oldest arrears first. ARAF facilities link through to the facility page to record a repayment.
+- **Monthly collections:** the last 12 months, instalments due against repayments received, with the collection rate.
+  - ARAF facilities use their schedules and recorded repayments.
+  - Historical accounts use each account's instalment for every month of its term, against reconciled repayments and the months the register marks as paid.
+- **Performance** by channel (Delight Officer, Smile Associate, historical internal and external), by location and by officer: facilities, units, amount financed, outstanding, number in arrears, arrears rate and number fully repaid.
+- **Inventory against the opening count:** opening + received − issued ± adjustments = on hand, per location, including locations with zero stock.
+- **Migration progress:** accounts published, and register records still waiting for review or approval. Unverified records are never counted.
+
+**How figures are worked out:**
+- ARAF facilities are positioned as at today.
+- Historical accounts use the figures held on each account, as at its last reconciliation.
+
+**CSV exports** (`/api/altphones/portfolio/export`) are audited. They carry facility references, locations and officers only: no names, BVN, NIN, phone or account numbers. Customer names appear on screen only, in the arrears worklist for authorised users.
+
+**Code:** `src/server/altphones/portfolio.ts`.

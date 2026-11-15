@@ -1,4 +1,7 @@
 import { checklistFor } from "@/lib/approval-checklists";
+import { isFacility, positionOf, repaymentAccess, repaymentsOf, type DuplicateWarning } from "@/server/altphones/repayments";
+import { FACILITY_STATUS_LABEL, INSTALMENT_STATUS_LABEL } from "@/lib/altphones-repayments";
+import { RecordRepaymentForm, ReverseRepaymentForm } from "../../RepaymentForms";
 import { VerifyButton } from "@/components/VerifyDialog";
 import Link from "next/link";
 import { LocationPicker, type PickerOption } from "@/components/LocationPicker";
@@ -10,7 +13,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
-import { formatLagos } from "@/server/time";
+import { formatLagos, lagosDate } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { creditReadiness, currentSettings, routeUnitHead, settingsById, viewableApp, type AltApp } from "@/server/altphones/core";
 import { paymentGateway } from "@/server/altphones/integrations";
@@ -108,6 +111,12 @@ export default async function AltApplicationPage({ params, searchParams }: { par
     app.contract_id ? db.query("SELECT c.*, a.accepted_at FROM altphones_contracts c LEFT JOIN altphones_contract_acceptances a ON a.contract_id = c.id WHERE c.id = $1", [app.contract_id]).then((r) => r.rows[0]) : null,
     app.model_id ? db.query("SELECT id, name, image_key FROM altphones_models WHERE id = $1", [app.model_id]).then((r) => r.rows[0]) : null,
   ]);
+  const facility = isFacility(app);
+  const todayLagos = lagosDate(new Date());
+  const [position, repayments, repayAccess] = facility
+    ? await Promise.all([positionOf(db, app.id, todayLagos), repaymentsOf(db, app.id), repaymentAccess(db, me)])
+    : [null, [], { record: false, reverse: false }];
+  const duplicates = (app.duplicate_warnings ?? []) as DuplicateWarning[];
   const nm = (x: string | null | undefined) => (x ? (names.get(x) ?? "—") : "—");
   const origin = app.origin_location_id ? locs.get(app.origin_location_id) : null;
   const supply = app.supply_location_id ? locs.get(app.supply_location_id) : null;
@@ -185,6 +194,14 @@ export default async function AltApplicationPage({ params, searchParams }: { par
 
       <div className="alt-layout">
         <div className="alt-main stack">
+          {duplicates.length > 0 && !["CREDIT_DECLINED", "REJECTED", "CANCELLED"].includes(app.status) && (
+            <div className="alert alert-warn" role="status">
+              <span>
+                <strong>This customer already has {duplicates.length === 1 ? "another facility" : `${duplicates.length} other facilities`}</strong> (matched on BVN when the credit check ran):{" "}
+                {duplicates.map((d) => `${d.ref} (${d.source === "HISTORICAL" ? "historical register" : "ARAF"}, ${d.status.replace(/_/g, " ").toLowerCase()}${d.outstandingKobo ? `, ${formatNaira(d.outstandingKobo)} outstanding` : ""})`).join("; ")}. Check the customer can afford another repayment before approving.
+              </span>
+            </div>
+          )}
           {/* ---------------------------------------------------------------- originator: current step */}
           {stopped && (
             <div className={`alert ${app.status === "CANCELLED" ? "alert-warn" : "alert-error"}`} role="status">
@@ -703,11 +720,67 @@ export default async function AltApplicationPage({ params, searchParams }: { par
           )}
 
           {/* ---------------------------------------------------------------- completed sections */}
-          {app.kind === "CREDIT" && app.financed_kobo && (
-            <section className="card" aria-labelledby="s-sched">
-              <h2 id="s-sched">Repayment schedule</h2>
-              <ScheduleTable rows={schedule} />
+          {facility && position ? (
+            <section className="card stack" aria-labelledby="s-repay">
+              <div className="card-head">
+                <h2 id="s-repay">Repayments</h2>
+                <span className={`badge ${position.status === "FULLY_REPAID" ? "badge-green" : position.status === "OVERDUE" ? "badge-red" : "badge-blue"}`}>{FACILITY_STATUS_LABEL[position.status]}</span>
+              </div>
+              <dl className="alt-kv">
+                <div><dt>Total repayable</dt><dd>{formatNaira(position.totalKobo)}</dd></div>
+                <div><dt>Repaid</dt><dd>{formatNaira(position.repaidKobo)}</dd></div>
+                <div><dt>Outstanding</dt><dd>{formatNaira(position.outstandingKobo)}</dd></div>
+                <div><dt>In arrears</dt><dd>{position.arrearsKobo ? `${formatNaira(position.arrearsKobo)} · ${position.overdueInstalments} instalment${position.overdueInstalments === 1 ? "" : "s"}, ${position.daysOverdue} days` : "None"}</dd></div>
+                {app.fully_repaid_at && <div><dt>Fully repaid</dt><dd>{formatLagos(app.fully_repaid_at)}</dd></div>}
+              </dl>
+              <div className="table-wrap">
+                <table className="data">
+                  <caption className="sr-only">Instalments</caption>
+                  <thead><tr><th scope="col">#</th><th scope="col">Due date</th><th scope="col" className="num">Amount</th><th scope="col" className="num">Paid</th><th scope="col">Status</th></tr></thead>
+                  <tbody>
+                    {position.instalments.map((i) => (
+                      <tr key={i.seq}>
+                        <td>{i.seq}</td>
+                        <td>{i.dueDate}</td>
+                        <td className="num">{formatNaira(i.amountKobo)}</td>
+                        <td className="num">{formatNaira(i.paidKobo)}</td>
+                        <td><span className={`badge ${i.status === "PAID" ? "badge-green" : i.status === "OVERDUE" ? "badge-red" : i.status === "DUE" ? "badge-yellow" : ""}`}>{INSTALMENT_STATUS_LABEL[i.status]}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <h3 className="section-title" style={{ margin: 0 }}>Repayments received</h3>
+              {repayments.length ? (
+                <ul className="plain-list small alt-repayments">
+                  {repayments.map((r) => (
+                    <li key={r.id}>
+                      <div>
+                        <strong>{r.paid_on}</strong> · {formatNaira(r.amount_kobo)} · <span className="mono">{r.reference}</span>
+                        {r.kind === "REVERSAL" && <span className="badge badge-red" style={{ marginLeft: 6 }}>Reversal</span>}
+                        {r.reversed && <span className="badge" style={{ marginLeft: 6 }}>Reversed</span>}
+                        <div className="muted">
+                          {r.source === "CSV" ? "Repayments file (Unit Head approved)" : "Recorded"} by {r.recorded_by_name ?? "—"}, {formatLagos(r.recorded_at)}
+                          {r.note ? ` · ${r.note}` : ""}
+                        </div>
+                      </div>
+                      {repayAccess.reverse && r.kind === "PAYMENT" && !r.reversed && r.recorded_by !== me && <ReverseRepaymentForm repaymentId={r.id} />}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="small muted" style={{ margin: 0 }}>No repayment recorded yet.</p>
+              )}
+              {repayAccess.record && position.status !== "FULLY_REPAID" && <RecordRepaymentForm id={app.id} today={todayLagos} suggested={position.nextDue ? ((position.nextDue.amountKobo - position.nextDue.paidKobo) / 100).toFixed(2) : ""} />}
             </section>
+          ) : (
+            app.kind === "CREDIT" &&
+            app.financed_kobo && (
+              <section className="card" aria-labelledby="s-sched">
+                <h2 id="s-sched">Repayment schedule</h2>
+                <ScheduleTable rows={schedule} />
+              </section>
+            )
           )}
 
           <details className="card alt-history">

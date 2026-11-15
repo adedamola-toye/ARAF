@@ -17,7 +17,8 @@ import { holdsRole } from "../domain/access";
 import { readSpreadsheet } from "../domain/directory";
 import { normaliseNigerianState } from "../domain/roles";
 import { imeiProblem, isEmail, isImei, isTenure, normalisePhone } from "@/lib/altphones";
-import { currentSettings, isUuid, nextRef } from "./core";
+import { currentSettings, isUuid, lockApp, nextRef, recordEvent, type AltApp } from "./core";
+import { applyPosition, checkRepayment, positionOf } from "./repayments";
 import { post } from "./stock";
 import { parseNairaToKobo } from "../money";
 
@@ -26,12 +27,12 @@ export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK
 export const IMPORT_LABELS: Record<ImportKind, string> = {
   LOCATIONS: "Branches, Shops and BOX locations",
   OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements",
-  STOCK_COUNT: "Stock reconciliation (physical count)", BPM_STATES: "BPM register (states covered)", BPM_LOCATIONS: "Location-to-BPM mapping", HISTORICAL_REPAYMENTS: "Historical repayments (reconciliation)" };
+  STOCK_COUNT: "Stock reconciliation (physical count)", BPM_STATES: "BPM register (states covered)", BPM_LOCATIONS: "Location-to-BPM mapping", HISTORICAL_REPAYMENTS: "Repayments (ARAF facilities and historical accounts)" };
 export const MAX_IMPORT_ROWS = 20_000;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
-  HISTORICAL_REPAYMENTS: { account: ["historicalreference", "accountreference", "historicalaccount", "reference"], date: ["paymentdate", "datepaid", "date"], amount: ["amount", "amountpaid", "amountnaira"], paymentRef: ["paymentreference", "transactionreference", "bankreference", "evidencereference"], month: ["monthcovered", "month", "instalmentmonth"], note: ["note", "notes", "comment"] },
+  HISTORICAL_REPAYMENTS: { account: ["facilityreference", "historicalreference", "accountreference", "historicalaccount", "applicationreference", "reference"], date: ["paymentdate", "datepaid", "date"], amount: ["amount", "amountpaid", "amountnaira"], paymentRef: ["paymentreference", "transactionreference", "bankreference", "evidencereference"], month: ["monthcovered", "month", "instalmentmonth"], note: ["note", "notes", "comment"] },
   STOCK_COUNT: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], counted: ["countedquantity", "counted", "physicalcount", "quantity"], date: ["countdate", "date"], note: ["note", "notes", "reference"] },
   BPM_STATES: { name: ["name", "bpmname", "fullname"], email: ["email", "officialemail", "bpmemail"], states: ["statescovered", "states", "coverage", "mappedstates"] },
   BPM_LOCATIONS: { location: ["location", "locationname", "altshoporaltbox"], email: ["bpmemail", "email", "bpm"], note: ["note", "notes", "reason"] },
@@ -65,7 +66,7 @@ const REQUIRED: Record<ImportKind, string[]> = {
 };
 
 export const TEMPLATES: Record<ImportKind, string> = {
-  HISTORICAL_REPAYMENTS: "Historical reference,Payment date,Amount,Payment reference,Month covered,Note\r\nHIS-2026-000001,2026-10-28,9725.00,FT26301ABC123,2026-10,Bank statement line 14\r\n",
+  HISTORICAL_REPAYMENTS: "Facility reference,Payment date,Amount,Payment reference,Month covered,Note\r\nHIS-2026-000001,2026-10-28,9725.00,FT26301ABC123,2026-10,Bank statement line 14\r\nALP-2026-000001,2026-10-28,13000.00,FT26301XYZ789,,Bank statement line 15\r\n",
   STOCK_COUNT: "Location,Phone model,Counted quantity,Count date,Note\r\nIkeja Branch,Altphone L1 Series — colour not recorded,18,2026-11-14,Month-end count\r\n",
   BPM_STATES: "Name,Email,States covered\r\nFirstname Lastname,firstname.lastname@altbank.ng,LAGOS; OGUN\r\n",
   BPM_LOCATIONS: "Location,BPM email,Note\r\nYaba Altbox,firstname.lastname@altbank.ng,Nearest BPM\r\n",
@@ -178,11 +179,36 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
     const today = new Date(Date.now() + 3600_000).toISOString().slice(0, 10);
     const seen = new Set<string>();
     const runningPaid = new Map<string, number>();
+    const livePaid = new Map<string, number>();
     for (const r of rows) {
       const problems: string[] = [];
       const ref = (r.account ?? "").trim().toUpperCase();
+      if (ref.startsWith("ALP-")) {
+        // A facility sold through ARAF: same checks as a single entry (handover date, outstanding balance, evidence).
+        const app = (await q.query<AltApp>("SELECT * FROM altphones_applications WHERE upper(ref) = $1", [ref])).rows[0];
+        const day = parseDate(r.date ?? "");
+        const amt = parseNairaToKobo(r.amount ?? "");
+        const pref = (r.paymentRef ?? "").trim();
+        if (!app) problems.push(`facility "${r.account}" was not found`);
+        else {
+          const pos = await positionOf(q, app.id, today);
+          const already = livePaid.get(app.id) ?? 0;
+          const e = checkRepayment(app, { ...pos, outstandingKobo: pos.outstandingKobo - already }, { paidOn: day, amountKobo: amt, reference: pref }, today);
+          problems.push(...Object.values(e).map((m) => m.replace(/\.$/, "").replace(/^./, (c) => c.toLowerCase())));
+          if (pref.length >= 3) {
+            const key = `${app.id}|${pref.toUpperCase()}`;
+            if (seen.has(key)) problems.push("this payment reference appears twice for the facility in the file");
+            else if ((await q.query("SELECT 1 FROM altphones_repayments WHERE application_id = $1 AND upper(reference) = upper($2)", [app.id, pref])).rowCount) problems.push("this payment reference is already recorded for the facility");
+            seen.add(key);
+          }
+          if (!problems.length && amt) livePaid.set(app.id, already + amt);
+        }
+        if (problems.length) { err(r, `${r.account || "Row"}: ${problems.join("; ")}.`); continue; }
+        ok.push({ row: Number(r._row), live: true, appId: app!.id, accountRef: app!.ref, date: day, amountKobo: amt, paymentRef: pref, note: r.note || null });
+        continue;
+      }
       const acc = ref ? (await q.query<{ id: string; ref: string; status: string; total_obligation_kobo: string | null; amount_repaid_kobo: string }>("SELECT id, ref, status, total_obligation_kobo, amount_repaid_kobo FROM altphones_historical_accounts WHERE upper(ref) = $1", [ref])).rows[0] : undefined;
-      if (!acc) problems.push(`historical account "${r.account}" was not found (use the HIS- reference shown in ARAF)`);
+      if (!acc) problems.push(`facility "${r.account}" was not found (use the ALP- or HIS- reference shown in ARAF)`);
       else if (acc.status === "CANCELLED") problems.push("this account was cancelled; no repayment can be recorded");
       const day = parseDate(r.date ?? "");
       if (!day) problems.push("payment date must be YYYY-MM-DD");
@@ -508,6 +534,17 @@ export async function commitImport(ctx: Ctx, id: string) {
           )
         ).rows[0].id;
         for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);
+      } else if (kind === "HISTORICAL_REPAYMENTS" && o.live) {
+        const app = await lockApp(tx, o.appId as string);
+        const rid = (
+          await tx.query<{ id: string }>(
+            `INSERT INTO altphones_repayments (application_id, kind, paid_on, amount_kobo, reference, note, source, import_id, recorded_by, recorded_role, recorded_at)
+             VALUES ($1,'PAYMENT',$2,$3,$4,$5,'CSV',$6,$7,'UNIT_HEAD',$8) RETURNING id`,
+            [app.id, o.date, o.amountKobo, o.paymentRef, o.note, id, actor.staffId, ctx.now],
+          )
+        ).rows[0].id;
+        await recordEvent(tx, ctx, app, { action: "REPAYMENT_RECORDED", role: "UNIT_HEAD", details: { repaymentId: rid, paidOn: o.date, amountKobo: o.amountKobo, reference: o.paymentRef, source: "CSV", importId: id } });
+        await applyPosition(tx, ctx, app);
       } else if (kind === "HISTORICAL_REPAYMENTS") {
         await tx.query(
           "INSERT INTO altphones_historical_repayments (account_id, paid_on, amount_kobo, reference, month_covered, note, import_id, recorded_by, recorded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
