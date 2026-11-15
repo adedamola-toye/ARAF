@@ -358,7 +358,8 @@ export async function submitImport(ctx: Ctx, id: string, p: { partial?: boolean;
 
 async function requireImportApprover(q: Db, ctx: Ctx, imp: { created_by: string; submitted_by: string | null }) {
   if (!ctx.actor) throw forbidden();
-  if (!(await holdsRole(q, ctx.actor.staffId, "UNIT_HEAD"))) throw forbidden("Only a Unit Head can approve an Altphones import.");
+  const { isApprover } = await import("./location-master");
+  if (!(await isApprover(q, ctx.actor.staffId))) throw forbidden("Only the Altphones Unit Head can approve an Altphones import.");
   if (ctx.actor.staffId === imp.created_by || ctx.actor.staffId === imp.submitted_by) throw forbidden("You cannot approve an import you uploaded or submitted.");
   return ctx.actor;
 }

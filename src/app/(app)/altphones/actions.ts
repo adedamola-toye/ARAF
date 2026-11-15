@@ -25,7 +25,7 @@ import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModel
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport, rejectImport, submitImport } from "@/server/altphones/imports";
 import { invalid } from "@/server/errors";
-import { applyProfiling, decideAddressRequest, decideBpmRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
+import { applyProfiling, decideAddressRequest, decideBpmRequest, decideLocationStatus, requestLocationStatus, resubmitAddressRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -268,7 +268,13 @@ export const discardProfilingAction = async (_p: ActionState, fd: FormData) => r
 export const requestAddressAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => requestAddress(ctx, { locationId: s(fd, "locationId"), address: s(fd, "address"), choice: s(fd, "choice"), note: s(fd, "note") }), (r) => `Address request ${(r as { ref: string }).ref} sent to the Unit Head.`);
 export const proposeLocationAction = async (_p: ActionState, fd: FormData) =>
-  run((ctx) => proposeLocation(ctx, { state: s(fd, "state"), type: s(fd, "type"), name: s(fd, "name"), address: s(fd, "address"), note: s(fd, "note") }), (r) => `Location proposed (${(r as { ref: string }).ref}). It stays inactive until the Unit Head approves its address.`);
+  run((ctx) => proposeLocation(ctx, { state: s(fd, "state"), type: s(fd, "type"), name: s(fd, "name"), address: s(fd, "address"), addressFrom: s(fd, "addressFrom"), bpmEmail: s(fd, "bpmEmail"), note: s(fd, "note") }), (r) => `Location proposed (${(r as { ref: string }).ref}). It stays inactive until the Unit Head approves it.`);
+export const resubmitAddressAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => resubmitAddressRequest(ctx, s(fd, "id"), { address: s(fd, "address"), bpmEmail: fd.has("bpmEmail") ? s(fd, "bpmEmail") : undefined, note: s(fd, "note") }), (r) => `${(r as { ref: string }).ref} corrected and sent back to the Unit Head.`);
+export const requestStatusAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => requestLocationStatus(ctx, { locationId: s(fd, "locationId"), action: s(fd, "action"), note: s(fd, "note") }), (r) => `Request ${(r as { ref: string }).ref} sent to the Unit Head.`);
+export const decideStatusAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => decideLocationStatus(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? "Approved." : "Rejected."));
 export const decideAddressAction = async (_p: ActionState, fd: FormData) =>
   run(
     (ctx) => decideAddressRequest(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }),
