@@ -9,6 +9,7 @@ import { REGIONS } from "@/server/domain/roles";
 import { BPM_ROLE } from "@/server/altphones/core";
 import { IMPORT_LABELS, listImports as listSetupImports, type ImportKind } from "@/server/altphones/imports";
 import { bpmRegister, locationStatusRequests } from "@/server/altphones/location-master";
+import { listMovements, MOVEMENT_LABELS, type MovementKind } from "@/server/altphones/movements";
 import { commitImportAction, rejectImportAction } from "../actions";
 import {
   addressRequests,
@@ -33,6 +34,7 @@ import {
   resubmitAddressAction,
   requestStatusAction,
   decideStatusAction,
+  decideMovementAction,
   discardProfilingAction,
   linkSourceAction,
   previewProfilingAction,
@@ -849,6 +851,7 @@ async function Requests({ me, canApprove, canManage }: { me: string; canApprove:
   const done = recent.filter((r) => r.status === "APPROVED" || r.status === "REJECTED").slice(0, 30);
   const returned = recent.filter((r) => r.status === "RETURNED");
   const statusPending = await locationStatusRequests(db, "PENDING");
+  const movesPending = await listMovements(db, { status: "PENDING" });
   const bpmChoices = (await db.query<{ email: string; full_name: string }>("SELECT DISTINCT s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE s.status = 'ACTIVE' ORDER BY s.full_name", [BPM_ROLE])).rows;
   const setup = (await listSetupImports(db, 50)).filter((i) => i.status === "SUBMITTED");
   return (
@@ -880,6 +883,36 @@ async function Requests({ me, canApprove, canManage }: { me: string; canApprove:
                   </ActionForm>
                 ) : (
                   <span className="small muted">Waiting for the Product Manager to correct it.</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {movesPending.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-moves">
+          <h2 id="h-moves">Stock movements awaiting the Unit Head</h2>
+          <div className="stack">
+            {movesPending.map((m) => (
+              <div key={m.id} className="alt-repl">
+                <div>
+                  <strong>{MOVEMENT_LABELS[m.kind as MovementKind]}</strong>: {m.quantity} × {m.model_name} at {m.location_name}{m.to_location_name ? ` → ${m.to_location_name}` : ""}
+                  <div className="small muted"><span className="mono">{m.ref}</span> · {m.requested_by_name} · {formatLagos(m.requested_at)}{m.imeis?.length ? ` · ${m.imeis.length} IMEI${m.imeis.length === 1 ? "" : "s"}` : ""}</div>
+                  <div className="small">Reason: {m.note}</div>
+                </div>
+                {!canApprove ? (
+                  <span className="small muted">Waiting for the Unit Head.</span>
+                ) : m.requested_by === me ? (
+                  <span className="small muted">You requested this — another approver must decide.</span>
+                ) : (
+                  <ActionForm action={decideMovementAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={m.id} />
+                    <input name="note" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <div className="action-bar">
+                      <SubmitButton name="decision" value="APPROVE">Approve and post</SubmitButton>
+                      <SubmitButton name="decision" value="REJECT" className="btn btn-danger">Reject</SubmitButton>
+                    </div>
+                  </ActionForm>
                 )}
               </div>
             ))}

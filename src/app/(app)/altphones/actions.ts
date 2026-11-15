@@ -24,6 +24,7 @@ import { confirmDisbursement, decide, type Decision } from "@/server/altphones/a
 import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
 import { commitImport, discardImport, previewImport, rejectImport, submitImport } from "@/server/altphones/imports";
+import { decideMovement, requestMovement } from "@/server/altphones/movements";
 import { invalid } from "@/server/errors";
 import { applyProfiling, decideAddressRequest, decideBpmRequest, decideLocationStatus, requestLocationStatus, resubmitAddressRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
@@ -179,6 +180,10 @@ export const previewImportAction = async (_p: ActionState, fd: FormData) =>
     if (!(file instanceof File) || file.size === 0) throw invalid("Choose a CSV or Excel file.", { file: "Choose a file." });
     return previewImport(ctx, s(fd, "kind"), file.name, Buffer.from(await file.arrayBuffer()));
   }, "File checked. Review the result below before importing.");
+export const requestMovementAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => requestMovement(ctx, { kind: s(fd, "kind"), locationId: s(fd, "locationId"), toLocationId: s(fd, "toLocationId") || null, modelId: s(fd, "modelId"), quantity: Number(s(fd, "quantity")), imeis: s(fd, "imeis"), note: s(fd, "note") }), (r) => `Movement ${(r as { ref: string }).ref} sent to the Unit Head for approval.`);
+export const decideMovementAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => decideMovement(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? "Approved and posted to the ledger." : "Rejected."));
 export const submitImportAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => submitImport(ctx, s(fd, "importId"), { partial: s(fd, "partial") === "1", note: s(fd, "note") }), "Submitted. A Unit Head must approve it before anything is imported.");
 export const commitImportAction = async (_p: ActionState, fd: FormData) =>

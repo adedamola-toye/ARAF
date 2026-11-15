@@ -446,13 +446,45 @@ async function Imports({ preview }: { preview?: string }) {
                 <input type="hidden" name="kind" value={kind} />
                 <div className="field">
                   <label htmlFor={`file-${kind}`}>File</label>
-                  <input id={`file-${kind}`} name="file" type="file" accept=".csv,.xlsx" required />
+                  <input id={`file-${kind}`} name="file" type="file" accept=".csv,text/csv" required />
                 </div>
                 <SubmitButton>Check file</SubmitButton>
               </ActionForm>
             </li>
           ))}
         </ol>
+      </section>
+      <section className="card" aria-labelledby="h-map-up">
+        <h2 id="h-map-up">BPM mappings and stock reconciliation</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>
+          BPM files only map existing, verified Business Performance Managers (no profile is created). A reconciliation file posts the difference between the counted and recorded stock. Each file is checked, submitted and applied only when the Altphones Unit Head approves it.
+        </p>
+        <ActionForm action={previewImportAction} className="alt-inline-add" encType="multipart/form-data" resetOnSuccess>
+          <div className="field">
+            <label htmlFor="kind-map">What</label>
+            <select id="kind-map" name="kind" required>
+              {(["BPM_STATES", "BPM_LOCATIONS", "STOCK_COUNT"] as ImportKind[]).map((k) => (
+                <option key={k} value={k}>
+                  {IMPORT_LABELS[k]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="file-map">CSV file</label>
+            <input id="file-map" name="file" type="file" accept=".csv,text/csv" required />
+          </div>
+          <SubmitButton>Check file</SubmitButton>
+        </ActionForm>
+        <p className="small">
+          Templates:{" "}
+          {(["BPM_STATES", "BPM_LOCATIONS", "STOCK_COUNT"] as ImportKind[]).map((k, i) => (
+            <span key={k}>
+              {i > 0 && " · "}
+              <a href={`/api/altphones/templates/${k.toLowerCase()}`}>{IMPORT_LABELS[k]}</a>
+            </span>
+          ))}
+        </p>
       </section>
       <section className="card" aria-labelledby="h-hist-up">
         <h2 id="h-hist-up">Historical records</h2>
@@ -472,7 +504,7 @@ async function Imports({ preview }: { preview?: string }) {
           </div>
           <div className="field">
             <label htmlFor="file">File</label>
-            <input id="file" name="file" type="file" accept=".csv,.xlsx" required />
+            <input id="file" name="file" type="file" accept=".csv,text/csv" required />
           </div>
           <SubmitButton>Check file</SubmitButton>
         </ActionForm>

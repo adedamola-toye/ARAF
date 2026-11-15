@@ -21,14 +21,18 @@ import { currentSettings, isUuid, nextRef } from "./core";
 import { post } from "./stock";
 
 /** Officer (Delight Officer / Smile Associate) uploads were removed: officers are never created or assigned from a spreadsheet. */
-export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK";
+export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK" | "STOCK_COUNT" | "BPM_STATES" | "BPM_LOCATIONS";
 export const IMPORT_LABELS: Record<ImportKind, string> = {
   LOCATIONS: "Branches, Shops and BOX locations",
-  OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements" };
+  OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements",
+  STOCK_COUNT: "Stock reconciliation (physical count)", BPM_STATES: "BPM register (states covered)", BPM_LOCATIONS: "Location-to-BPM mapping" };
 export const MAX_IMPORT_ROWS = 20_000;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
+  STOCK_COUNT: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], counted: ["countedquantity", "counted", "physicalcount", "quantity"], date: ["countdate", "date"], note: ["note", "notes", "reference"] },
+  BPM_STATES: { name: ["name", "bpmname", "fullname"], email: ["email", "officialemail", "bpmemail"], states: ["statescovered", "states", "coverage", "mappedstates"] },
+  BPM_LOCATIONS: { location: ["location", "locationname", "altshoporaltbox"], email: ["bpmemail", "email", "bpm"], note: ["note", "notes", "reason"] },
   OPENING_STOCK: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], quantity: ["quantity", "qty", "units"], imeis: ["imeis", "imei"], note: ["note", "notes", "source"] },
   LOCATIONS: { state: ["state"], city: ["city", "town", "towncity", "lga"], type: ["type", "locationtype", "outlettype"], name: ["name", "locationname", "outletname", "branch", "locations", "location"], address: ["address"], sourceName: ["sourcename", "originalname", "listedname"], sourceType: ["sourcetype", "originaltype", "listedas"], aliases: ["aliases", "alsoknownas", "registerlabels", "otherlabels"] },
   TRANSACTIONS: {
@@ -49,12 +53,18 @@ const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
 };
 const REQUIRED: Record<ImportKind, string[]> = {
   OPENING_STOCK: ["location", "model", "quantity"],
+  STOCK_COUNT: ["location", "model", "counted", "date"],
+  BPM_STATES: ["email", "states"],
+  BPM_LOCATIONS: ["location", "email"],
   LOCATIONS: ["state", "city", "type", "name"],
   TRANSACTIONS: ["reference", "type", "customerName", "model", "imei", "date", "origin", "supply"],
   STOCK: ["reference", "location", "model", "movement", "quantity", "date"],
 };
 
 export const TEMPLATES: Record<ImportKind, string> = {
+  STOCK_COUNT: "Location,Phone model,Counted quantity,Count date,Note\r\nIkeja Branch,Altphone L1 Series — colour not recorded,18,2026-11-14,Month-end count\r\n",
+  BPM_STATES: "Name,Email,States covered\r\nFirstname Lastname,firstname.lastname@altbank.ng,LAGOS; OGUN\r\n",
+  BPM_LOCATIONS: "Location,BPM email,Note\r\nYaba Altbox,firstname.lastname@altbank.ng,Nearest BPM\r\n",
   OPENING_STOCK: "Location,Phone model,Quantity,IMEIs,Note\r\nIkeja Branch,Altphone L1 Series — Black & Gold,20,,Opening count 2026-11-13\r\nYaba Altshop,Altphone L1 Series — Green,10,356938035643809;490154203237518,Delivery note 001\r\n",
   LOCATIONS: "State,City,Type,Name,Source name,Source type,Aliases\r\nLAGOS,Ikeja,Branch,Ikeja Branch,,,IKEJA\r\nLAGOS,Yaba,Shop,Yaba Altshop,,,\r\nABUJA,Abuja,Shop,Dei Dei Altshop,DEI DEI,ALTSHOP,\r\n",
   TRANSACTIONS:
@@ -158,6 +168,62 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       const taken = aliases.length ? (await q.query<{ label: string }>("SELECT label FROM altphones_location_aliases WHERE label = ANY($1)", [aliases])).rows.map((x) => x.label) : [];
       if (taken.length) { err(r, `${r.name}: alias already used by another location: ${taken.join(", ")}.`); continue; }
       ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, sourceName: (r.sourceName || r.name).trim(), sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
+    }
+  } else if (kind === "STOCK_COUNT") {
+    const loc = await locationIndex(q);
+    const model = await modelIndex(q);
+    const seenPair = new Set<string>();
+    const today = new Date(Date.now() + 3600_000).toISOString().slice(0, 10);
+    for (const r of rows) {
+      const l = loc(r.location);
+      const m = model(r.model);
+      const counted = Number(r.counted);
+      const day = parseDate(r.date);
+      const problems: string[] = [];
+      if (l.length !== 1) problems.push(l.length ? `location "${r.location}" matches more than one location` : `location "${r.location}" was not found`);
+      else if (!["BRANCH", "ALTSHOP"].includes(l[0].outlet_type)) problems.push("BOX locations do not hold stock");
+      if (!m) problems.push(`phone model "${r.model}" is not in the catalogue`);
+      if (!Number.isInteger(counted) || counted < 0 || counted > 100000) problems.push("counted quantity must be a whole number (0 or more)");
+      if (!day) problems.push("count date must be YYYY-MM-DD");
+      else if (day > today) problems.push("count date cannot be in the future");
+      const pair = l.length === 1 && m ? `${l[0].id}|${m.id}` : null;
+      if (pair && seenPair.has(pair)) problems.push("this location and phone appear more than once");
+      if (pair && Number.isInteger(counted)) {
+        const bal = (await q.query<{ reserved: number }>("SELECT reserved FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [l[0].id, m!.id])).rows[0];
+        if (bal && counted < bal.reserved) problems.push(`${bal.reserved} units are reserved for paid customers, so the count cannot be lower`);
+      }
+      if (problems.length) { err(r, `${r.location || "Row"} / ${r.model || "?"}: ${problems.join("; ")}.`); continue; }
+      seenPair.add(pair!);
+      ok.push({ row: Number(r._row), locationId: l[0].id, locationName: l[0].name, modelId: m!.id, counted, date: day, note: r.note || null });
+    }
+  } else if (kind === "BPM_STATES" || kind === "BPM_LOCATIONS") {
+    // BPMs are matched to existing, verified staff only: no profile is ever created from a file.
+    const loc = await locationIndex(q);
+    const seen = new Set<string>();
+    for (const r of rows) {
+      const email = (r.email ?? "").trim().toLowerCase();
+      const problems: string[] = [];
+      const st = (await q.query<{ id: string }>("SELECT id FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [email])).rows[0];
+      if (!st || !(await holdsRole(q, st.id, "BUSINESS_PERFORMANCE_MANAGER"))) problems.push(`${email || "email"} is not an active, verified Business Performance Manager in ARAF (no profile is created from a file)`);
+      if (kind === "BPM_STATES") {
+        const states = (r.states ?? "").split(/[;,|]/).map((x) => x.trim()).filter(Boolean).map((x) => ({ raw: x, state: normaliseNigerianState(x) }));
+        const bad = states.filter((x) => !x.state).map((x) => x.raw);
+        if (!states.length) problems.push("list at least one state");
+        if (bad.length) problems.push(`not a Nigerian state: ${bad.join(", ")}`);
+        const dup = states.filter((x) => x.state && seen.has(x.state)).map((x) => x.state);
+        if (dup.length) problems.push(`state already given to another BPM in this file: ${dup.join(", ")}`);
+        if (problems.length) { err(r, `${email || "Row"}: ${problems.join("; ")}.`); continue; }
+        states.forEach((x) => seen.add(x.state!));
+        ok.push({ row: Number(r._row), email, states: [...new Set(states.map((x) => x.state!))] });
+      } else {
+        const l = loc(r.location);
+        if (l.length !== 1) problems.push(l.length ? `location "${r.location}" matches more than one location` : `location "${r.location}" was not found`);
+        else if (!["ALTSHOP", "ALTBOX"].includes(l[0].outlet_type)) problems.push("only Altshops and Altboxes are routed to a BPM");
+        else if (seen.has(l[0].id)) problems.push("this location appears more than once");
+        if (problems.length) { err(r, `${r.location || "Row"}: ${problems.join("; ")}.`); continue; }
+        seen.add(l[0].id);
+        ok.push({ row: Number(r._row), email, locationId: l[0].id, locationName: l[0].name });
+      }
     }
   } else if (kind === "OPENING_STOCK") {
     const loc = await locationIndex(q);
@@ -403,6 +469,23 @@ export async function commitImport(ctx: Ctx, id: string) {
           )
         ).rows[0].id;
         for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);
+      } else if (kind === "STOCK_COUNT") {
+        const bal = (await tx.query<{ physical: number }>("SELECT physical FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [o.locationId, o.modelId])).rows[0];
+        const variance = (o.counted as number) - (bal?.physical ?? 0);
+        if (variance !== 0) await post(tx, ctx, { locationId: o.locationId as string, modelId: o.modelId as string, movement: "COUNT_ADJUSTMENT", physical: variance, reserved: 0, importId: id, reference: `CNT-${id.slice(0, 8)}-${o.row}`, note: `Stock reconciliation of ${o.date}${o.note ? ` — ${o.note}` : ""}` });
+      } else if (kind === "BPM_STATES") {
+        for (const st of o.states as string[])
+          await tx.query(
+            `INSERT INTO altphones_bpm_states (state, bpm_email, source, updated_by, approved_by, updated_at) VALUES ($1,$2,'MANUAL',$3,$4,$5)
+             ON CONFLICT (state) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, source = 'MANUAL', updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+            [st, o.email, imp.created_by, actor.staffId, ctx.now],
+          );
+      } else if (kind === "BPM_LOCATIONS") {
+        await tx.query(
+          `INSERT INTO altphones_bpm_locations (location_id, bpm_email, updated_by, approved_by, updated_at) VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (location_id) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+          [o.locationId, o.email, imp.created_by, actor.staffId, ctx.now],
+        );
       } else if (kind === "OPENING_STOCK") {
         const imeis = o.imeis as string[];
         if (imeis.length) {

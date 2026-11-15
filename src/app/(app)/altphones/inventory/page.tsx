@@ -10,7 +10,8 @@ import { listStockCounts, locationStock, poolModelId, stockOverview } from "@/se
 import { REGIONS } from "@/server/domain/roles";
 import { listModels } from "@/server/altphones/catalogue";
 import { isUuid } from "@/server/altphones/core";
-import { decideStockAction, decideStockCountAction, replenishAction, stockCountAction } from "../actions";
+import { decideStockAction, decideStockCountAction, replenishAction, requestMovementAction, stockCountAction } from "../actions";
+import { listMovements, MOVEMENT_KINDS, MOVEMENT_LABELS, type MovementKind } from "@/server/altphones/movements";
 
 export const metadata = { title: "Altphones inventory" };
 
@@ -50,6 +51,7 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
       ).rows
     : [];
   const pending = repl.filter((r) => r.status === "PENDING");
+  const movements = await listMovements(db, { limit: 30 });
   const totals = rows.reduce((a, r) => ({ physical: a.physical + r.physical, reserved: a.reserved + r.reserved, available: a.available + r.available }), { physical: 0, reserved: 0, available: 0 });
   const f = { state: (REGIONS as readonly string[]).includes(sp.state ?? "") ? sp.state! : "", type: ["BRANCH", "ALTSHOP"].includes(sp.type ?? "") ? sp.type! : "", stock: ["zero", "instock"].includes(sp.stock ?? "") ? sp.stock! : "", q: (sp.q ?? "").slice(0, 60) };
   const [locRows, allLocs, counts, pool] = await Promise.all([locId ? Promise.resolve([]) : locationStock(db, f), locationStock(db), listStockCounts(db, { locationId: locId }), poolModelId(db)]);
@@ -450,6 +452,90 @@ export default async function AltInventory({ searchParams }: { searchParams: Pro
             </div>
           </section>
         </div>
+      )}
+
+      {(access.pm || access.admin) && (
+        <section className="card" aria-labelledby="h-mov">
+          <h2 id="h-mov">Transfers, returns and damaged stock</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Posted to the ledger only when the Altphones Unit Head approves. Units reserved for paid customers can never be moved or written off. Give IMEIs when you know them so devices move with the units.
+          </p>
+          <ActionForm action={requestMovementAction} className="stack" resetOnSuccess>
+            <div className="grid-3">
+              <div className="field">
+                <label htmlFor="mv-kind">Movement</label>
+                <select id="mv-kind" name="kind" defaultValue="TRANSFER">
+                  {MOVEMENT_KINDS.map((k) => <option key={k} value={k}>{MOVEMENT_LABELS[k]}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="mv-loc">Location</label>
+                <select id="mv-loc" name="locationId" defaultValue={locId ?? ""}>
+                  <option value="">Choose…</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.state})</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="mv-to">Receiving location (transfers)</label>
+                <select id="mv-to" name="toLocationId" defaultValue="">
+                  <option value="">—</option>
+                  {locations.map((l) => <option key={l.id} value={l.id}>{l.name} ({l.state})</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid-3">
+              <div className="field">
+                <label htmlFor="mv-model">Phone</label>
+                <select id="mv-model" name="modelId" defaultValue="">
+                  <option value="">Choose…</option>
+                  {requestModels.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="mv-qty">Units</label>
+                <input id="mv-qty" name="quantity" inputMode="numeric" placeholder="For an adjustment, negative removes units" />
+              </div>
+              <div className="field">
+                <label htmlFor="mv-imeis">IMEIs (optional)</label>
+                <input id="mv-imeis" name="imeis" placeholder="Separated by spaces or commas" />
+              </div>
+            </div>
+            <div className="field">
+              <label htmlFor="mv-note">Reason or reference</label>
+              <input id="mv-note" name="note" placeholder="Waybill, damage report, return note…" />
+            </div>
+            <div><SubmitButton>Send for Unit Head approval</SubmitButton></div>
+          </ActionForm>
+          {movements.length > 0 && (
+            <div className="table-wrap" style={{ marginTop: "var(--space-3)" }}>
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th scope="col">Reference</th>
+                    <th scope="col">Movement</th>
+                    <th scope="col">Phone</th>
+                    <th scope="col" className="num">Units</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements.map((m) => (
+                    <tr key={m.id}>
+                      <td className="mono small">{m.ref}<div className="muted">{formatLagos(m.requested_at)} · {m.requested_by_name}</div></td>
+                      <td className="small">{MOVEMENT_LABELS[m.kind as MovementKind]}: {m.location_name}{m.to_location_name ? ` → ${m.to_location_name}` : ""}<div className="muted">{m.note}</div></td>
+                      <td className="small">{m.model_name}</td>
+                      <td className="num">{m.quantity}</td>
+                      <td className="small">
+                        <span className={`badge ${m.status === "APPROVED" ? "badge-green" : m.status === "REJECTED" ? "badge-red" : "badge-warn"}`}>{m.status === "PENDING" ? "Awaiting Unit Head" : m.status.toLowerCase()}</span>
+                        {m.decided_by_name && <div className="muted">{m.decided_by_name}{m.decision_note ? `: ${m.decision_note}` : ""}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
       {access.pm && (
