@@ -13,7 +13,7 @@ export const metadata = { title: "Migration batch" };
 
 const n = (v: unknown) => Number(v ?? 0).toLocaleString("en-NG");
 const naira = (kobo: unknown) => (kobo === null || kobo === undefined ? "—" : `₦${(Number(kobo) / 100).toLocaleString("en-NG", { maximumFractionDigits: 2 })}`);
-const STATUSES: Classification[] = ["CURRENT", "IN_ARREARS", "NOT_STARTED", "COMPLETED", "CANCELLED", "NEEDS_REVIEW"];
+const STATUSES: Classification[] = ["CURRENT", "IN_ARREARS", "NOT_STARTED", "COMPLETED", "CANCELLED", "UNCONFIRMED", "NEEDS_REVIEW"];
 type Issue = { code: string; level: "BLOCK" | "WARN"; message: string };
 
 export default async function MigrationBatch({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>> }) {

@@ -8,6 +8,7 @@ import { setMailTransportForTests } from "@/server/notify/transport";
 import { readRegister, parseDate, parseMoney, parseTenor, parseImei, parseAccount, parsePhone } from "@/server/altphones/register";
 import { classify, decideBatch, decideMatching, decideRecord, discardBatch, listRecords, mapLocations, mapReferrers, reconciliation, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 import { decryptField } from "@/server/crypto";
+import { commitImport, previewImport, submitImport } from "@/server/altphones/imports";
 
 // A synthetic register in the shape of the team's workbook. Every person, number and IMEI here is made up.
 const HEAD = ["CUSTOMER'S NAME", "ACCOUNT NUMBER", "MOBILE NUMBER", "BVN", "NIN", "RESIDENTIAL ADDRESS", "No. OF ALTPHONE", "DOWNPAYMENT AMOUNT", "DOWNPAYMENT DATE", "REPAYMENT AMOUNT", "REPAYMENT START DATE", "REPAYMENT END DATE", "TENOR", "IMEI2 NUMBER", "REFERRED BY:", "LOCATION"];
@@ -272,6 +273,42 @@ describe("resolving, submitting and approving", () => {
     expect(codes(await (async () => (await db.query("SELECT issues FROM altphones_migration_records WHERE batch_id = $1 AND sheet = 'INTERNAL' AND row_no = 2", [later.id])).rows[0])())).toEqual(expect.arrayContaining(["IMEI_ALREADY_REGISTERED", "ALREADY_MIGRATED_CUSTOMER"]));
     await discardBatch(pm, later.id, "Duplicate of the published register");
     expect((await db.query("SELECT status FROM altphones_migration_batches WHERE id = $1", [later.id])).rows[0].status).toBe("DISCARDED");
+  });
+
+  it("tracks application and repayment status separately; repayments are reconciled from a CSV with evidence", async () => {
+    const pm = await ctxFor(ALT.pm);
+    const uh = await ctxFor(ALT.unitHead);
+    const admin = await ctxFor(ALT.admin);
+    const b = await stageRegister(pm, { filename: "register.xlsx", data: await workbook(), asAt: "2026-10-31" });
+    await resolveAll(b.id);
+    // One record has no evidence either way: include it explicitly as Unconfirmed instead of guessing.
+    await decideRecord(pm, (await rec("INTERNAL", 5)).id, { decision: "INCLUDE", classification: "UNCONFIRMED", note: "No collection records found yet" });
+    await submitBatch(pm, b.id);
+    await decideBatch(uh, b.id, { decision: "APPROVE" });
+    const acc = async (sheet: string, row: number) => (await db.query("SELECT * FROM altphones_historical_accounts WHERE source_sheet = $1 AND source_row = $2", [sheet, row])).rows[0];
+    expect(await acc("INTERNAL", 3)).toMatchObject({ application_status: "ISSUED", repayment_status: "OVERDUE", repayment_evidence: "REGISTER" });
+    expect(await acc("INTERNAL", 5)).toMatchObject({ application_status: "UNCONFIRMED", repayment_status: "UNCONFIRMED", repayment_evidence: "NONE" });
+    expect(await acc("COMPLETED REPAYMENT", 2)).toMatchObject({ application_status: "COMPLETED", repayment_status: "FULLY_REPAID" });
+    // Reconcile the overdue account's missed months with evidenced payments (Unit Head approves the file).
+    const a = await acc("INTERNAL", 3);
+    const inst = Number(a.instalment_kobo) / 100;
+    const missed = (await db.query("SELECT to_char(month,'YYYY-MM') AS m FROM altphones_historical_instalments WHERE account_id = $1 AND status = 'MISSED' ORDER BY month", [a.id])).rows.map((r) => r.m);
+    const paidMonth = (await db.query("SELECT to_char(month,'YYYY-MM') AS m FROM altphones_historical_instalments WHERE account_id = $1 AND status = 'PAID' LIMIT 1", [a.id])).rows[0].m;
+    const head = "Historical reference,Payment date,Amount,Payment reference,Month covered,Note";
+    const bad = await previewImport(admin, "HISTORICAL_REPAYMENTS", "rep-bad.csv", Buffer.from(`${head}\n${a.ref},2026-11-01,${inst},,${missed[0]},\n${a.ref},2026-11-01,${inst},FT-OLD-1,${paidMonth},already paid month\nHIS-NOPE,2026-11-01,100,FT1,,\n${a.ref},2026-11-01,99999999,FT-BIG,,overpayment\n`));
+    expect(bad.summary).toMatchObject({ valid: 0, errors: 4 });
+    const good = await previewImport(admin, "HISTORICAL_REPAYMENTS", "rep.csv", Buffer.from(`${head}\n${a.ref},2026-11-02,${inst},FT-REC-001,${missed[0]},Statement line 3\n${a.ref},2026-11-03,${inst},FT-REC-002,${missed[1]},Statement line 9\n`));
+    expect(good.summary).toMatchObject({ valid: 2, errors: 0 });
+    await submitImport(admin, good.id);
+    await commitImport(uh, good.id);
+    const after = await acc("INTERNAL", 3);
+    expect(Number(after.amount_repaid_kobo)).toBe(Number(a.amount_repaid_kobo) + 2 * Number(a.instalment_kobo));
+    expect(after.repayment_evidence).toBe("RECONCILED");
+    expect(after.repayment_status).not.toBe("FULLY_REPAID"); // the full obligation is not yet evidenced
+    expect((await db.query("SELECT count(*)::int AS n FROM altphones_historical_instalments WHERE account_id = $1 AND status = 'MISSED'", [a.id])).rows[0].n).toBe(0);
+    await expect(db.query("DELETE FROM altphones_historical_repayments WHERE account_id = $1", [a.id])).rejects.toThrow(/append-only/);
+    // No stock movement, disbursement or application is created by any of this.
+    expect((await db.query("SELECT count(*)::int AS n FROM altphones_stock_ledger WHERE import_id = $1", [good.id])).rows[0].n).toBe(0);
   });
 
   it("decides every undecided record matching a filter in one step", async () => {

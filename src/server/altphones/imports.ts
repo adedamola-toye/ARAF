@@ -19,17 +19,19 @@ import { normaliseNigerianState } from "../domain/roles";
 import { imeiProblem, isEmail, isImei, isTenure, normalisePhone } from "@/lib/altphones";
 import { currentSettings, isUuid, nextRef } from "./core";
 import { post } from "./stock";
+import { parseNairaToKobo } from "../money";
 
 /** Officer (Delight Officer / Smile Associate) uploads were removed: officers are never created or assigned from a spreadsheet. */
-export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK" | "STOCK_COUNT" | "BPM_STATES" | "BPM_LOCATIONS";
+export type ImportKind = "LOCATIONS" | "OPENING_STOCK" | "TRANSACTIONS" | "STOCK" | "STOCK_COUNT" | "BPM_STATES" | "BPM_LOCATIONS" | "HISTORICAL_REPAYMENTS";
 export const IMPORT_LABELS: Record<ImportKind, string> = {
   LOCATIONS: "Branches, Shops and BOX locations",
   OPENING_STOCK: "Opening stock", TRANSACTIONS: "Historical sales and credit facilities", STOCK: "Historical stock movements",
-  STOCK_COUNT: "Stock reconciliation (physical count)", BPM_STATES: "BPM register (states covered)", BPM_LOCATIONS: "Location-to-BPM mapping" };
+  STOCK_COUNT: "Stock reconciliation (physical count)", BPM_STATES: "BPM register (states covered)", BPM_LOCATIONS: "Location-to-BPM mapping", HISTORICAL_REPAYMENTS: "Historical repayments (reconciliation)" };
 export const MAX_IMPORT_ROWS = 20_000;
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
+  HISTORICAL_REPAYMENTS: { account: ["historicalreference", "accountreference", "historicalaccount", "reference"], date: ["paymentdate", "datepaid", "date"], amount: ["amount", "amountpaid", "amountnaira"], paymentRef: ["paymentreference", "transactionreference", "bankreference", "evidencereference"], month: ["monthcovered", "month", "instalmentmonth"], note: ["note", "notes", "comment"] },
   STOCK_COUNT: { location: ["location", "branchorshop"], model: ["phonemodel", "model", "phone"], counted: ["countedquantity", "counted", "physicalcount", "quantity"], date: ["countdate", "date"], note: ["note", "notes", "reference"] },
   BPM_STATES: { name: ["name", "bpmname", "fullname"], email: ["email", "officialemail", "bpmemail"], states: ["statescovered", "states", "coverage", "mappedstates"] },
   BPM_LOCATIONS: { location: ["location", "locationname", "altshoporaltbox"], email: ["bpmemail", "email", "bpm"], note: ["note", "notes", "reason"] },
@@ -54,6 +56,7 @@ const COLUMNS: Record<ImportKind, Record<string, string[]>> = {
 const REQUIRED: Record<ImportKind, string[]> = {
   OPENING_STOCK: ["location", "model", "quantity"],
   STOCK_COUNT: ["location", "model", "counted", "date"],
+  HISTORICAL_REPAYMENTS: ["account", "date", "amount", "paymentRef"],
   BPM_STATES: ["email", "states"],
   BPM_LOCATIONS: ["location", "email"],
   LOCATIONS: ["state", "city", "type", "name"],
@@ -62,6 +65,7 @@ const REQUIRED: Record<ImportKind, string[]> = {
 };
 
 export const TEMPLATES: Record<ImportKind, string> = {
+  HISTORICAL_REPAYMENTS: "Historical reference,Payment date,Amount,Payment reference,Month covered,Note\r\nHIS-2026-000001,2026-10-28,9725.00,FT26301ABC123,2026-10,Bank statement line 14\r\n",
   STOCK_COUNT: "Location,Phone model,Counted quantity,Count date,Note\r\nIkeja Branch,Altphone L1 Series — colour not recorded,18,2026-11-14,Month-end count\r\n",
   BPM_STATES: "Name,Email,States covered\r\nFirstname Lastname,firstname.lastname@altbank.ng,LAGOS; OGUN\r\n",
   BPM_LOCATIONS: "Location,BPM email,Note\r\nYaba Altbox,firstname.lastname@altbank.ng,Nearest BPM\r\n",
@@ -168,6 +172,41 @@ async function validate(q: Db, kind: ImportKind, rows: Row[]): Promise<{ ok: Rec
       const taken = aliases.length ? (await q.query<{ label: string }>("SELECT label FROM altphones_location_aliases WHERE label = ANY($1)", [aliases])).rows.map((x) => x.label) : [];
       if (taken.length) { err(r, `${r.name}: alias already used by another location: ${taken.join(", ")}.`); continue; }
       ok.push({ row: Number(r._row), state, city: r.city, type, name: r.name, sourceName: (r.sourceName || r.name).trim(), sourceState: r.state.trim(), sourceType: (r.sourceType || r.type).trim(), aliases });
+    }
+  } else if (kind === "HISTORICAL_REPAYMENTS") {
+    // Every repayment needs evidence (a payment reference). Overpayments are refused, never absorbed.
+    const today = new Date(Date.now() + 3600_000).toISOString().slice(0, 10);
+    const seen = new Set<string>();
+    const runningPaid = new Map<string, number>();
+    for (const r of rows) {
+      const problems: string[] = [];
+      const ref = (r.account ?? "").trim().toUpperCase();
+      const acc = ref ? (await q.query<{ id: string; ref: string; status: string; total_obligation_kobo: string | null; amount_repaid_kobo: string }>("SELECT id, ref, status, total_obligation_kobo, amount_repaid_kobo FROM altphones_historical_accounts WHERE upper(ref) = $1", [ref])).rows[0] : undefined;
+      if (!acc) problems.push(`historical account "${r.account}" was not found (use the HIS- reference shown in ARAF)`);
+      else if (acc.status === "CANCELLED") problems.push("this account was cancelled; no repayment can be recorded");
+      const day = parseDate(r.date ?? "");
+      if (!day) problems.push("payment date must be YYYY-MM-DD");
+      else if (day > today) problems.push("payment date cannot be in the future");
+      const amt = parseNairaToKobo(r.amount ?? "");
+      if (amt === null || amt <= 0) problems.push("amount must be a positive naira amount (e.g. 9725.00)");
+      const pref = (r.paymentRef ?? "").trim();
+      if (pref.length < 3) problems.push("payment reference (evidence) is required");
+      const month = (r.month ?? "").trim();
+      if (month && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) problems.push("month covered must be YYYY-MM");
+      else if (month && acc && (await q.query("SELECT 1 FROM altphones_historical_instalments WHERE account_id = $1 AND month = $2 AND status = 'PAID'", [acc.id, `${month}-01`])).rowCount) problems.push(`${month} is already recorded as paid for this account`);
+      if (acc && pref) {
+        const key = `${acc.id}|${pref.toUpperCase()}`;
+        if (seen.has(key)) problems.push("this payment reference appears twice for the account in the file");
+        else if ((await q.query("SELECT 1 FROM altphones_historical_repayments WHERE account_id = $1 AND upper(reference) = upper($2)", [acc.id, pref])).rowCount) problems.push("this payment reference is already recorded for the account");
+        seen.add(key);
+      }
+      if (acc && amt && acc.total_obligation_kobo !== null) {
+        const before = runningPaid.get(acc.id) ?? Number(acc.amount_repaid_kobo);
+        if (before + amt > Number(acc.total_obligation_kobo)) problems.push(`amount exceeds the outstanding balance (₦${((Number(acc.total_obligation_kobo) - before) / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}): record overpayments as an exception outside this file`);
+        else runningPaid.set(acc.id, before + amt);
+      }
+      if (problems.length) { err(r, `${r.account || "Row"}: ${problems.join("; ")}.`); continue; }
+      ok.push({ row: Number(r._row), accountId: acc!.id, accountRef: acc!.ref, date: day, amountKobo: amt, paymentRef: pref, month: month || null, note: r.note || null });
     }
   } else if (kind === "STOCK_COUNT") {
     const loc = await locationIndex(q);
@@ -469,6 +508,17 @@ export async function commitImport(ctx: Ctx, id: string) {
           )
         ).rows[0].id;
         for (const a of o.aliases as string[]) await tx.query("INSERT INTO altphones_location_aliases (label, location_id, created_by, created_at) VALUES ($1,$2,$3,$4)", [a, lid, ctx.actor!.staffId, ctx.now]);
+      } else if (kind === "HISTORICAL_REPAYMENTS") {
+        await tx.query(
+          "INSERT INTO altphones_historical_repayments (account_id, paid_on, amount_kobo, reference, month_covered, note, import_id, recorded_by, recorded_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+          [o.accountId, o.date, o.amountKobo, o.paymentRef, o.month ? `${o.month}-01` : null, o.note, id, actor.staffId, ctx.now],
+        );
+        if (o.month)
+          await tx.query(
+            "INSERT INTO altphones_historical_instalments (account_id, month, status, source, recorded_at) VALUES ($1,$2,'PAID','RECONCILIATION',$3) ON CONFLICT (account_id, month) DO UPDATE SET status = 'PAID', source = 'RECONCILIATION', recorded_at = EXCLUDED.recorded_at",
+            [o.accountId, `${o.month}-01`, ctx.now],
+          );
+        await recomputeHistorical(tx, o.accountId as string, ctx.now);
       } else if (kind === "STOCK_COUNT") {
         const bal = (await tx.query<{ physical: number }>("SELECT physical FROM altphones_stock WHERE location_id = $1 AND model_id = $2", [o.locationId, o.modelId])).rows[0];
         const variance = (o.counted as number) - (bal?.physical ?? 0);
@@ -591,4 +641,52 @@ export async function importErrorReport(q: Db, ctx: Ctx, id: string): Promise<{ 
   const { errorReportCsv } = await import("@/lib/csv");
   const rows = imp.errors.map((e) => ({ row: e.row, field: e.field ?? null, message: e.skipped ? `Skipped: ${e.message}` : e.message, suggestion: e.skipped ? "No action needed: the record already exists." : null }));
   return { filename: `${imp.filename.replace(/\.[^.]+$/, "")}-errors.csv`, csv: errorReportCsv(rows) };
+}
+
+/**
+ * Recompute a historical account after reconciled repayments: amount repaid, outstanding, arrears and the two
+ * statuses. Fully repaid only when evidenced repayments reach the total obligation; never because a date passed.
+ */
+export async function recomputeHistorical(tx: Tx, accountId: string, now: Date) {
+  const a = (await tx.query("SELECT * FROM altphones_historical_accounts WHERE id = $1 FOR UPDATE", [accountId])).rows[0];
+  if (!a) return;
+  const reconciled = Number((await tx.query<{ s: string }>("SELECT coalesce(sum(amount_kobo),0)::text AS s FROM altphones_historical_repayments WHERE account_id = $1", [accountId])).rows[0].s);
+  const registerPaid = Number(a.register_repaid_kobo ?? 0);
+  const repaid = registerPaid + reconciled;
+  const total = a.total_obligation_kobo === null ? null : Number(a.total_obligation_kobo);
+  let outstanding = total === null ? Number(a.outstanding_kobo) : Math.max(0, total - repaid);
+  let arrears = 0;
+  let repayment: string = a.repayment_status;
+  let application: string = a.application_status;
+  let status: string = a.status;
+  if (total !== null && a.status !== "CANCELLED") {
+    const inst = Number(a.instalment_kobo ?? 0);
+    const tenor = Number(a.tenor_months ?? 0);
+    let due = 0;
+    if (a.start_date && inst && tenor) {
+      const start = new Date(a.start_date);
+      const months = (now.getUTCFullYear() - start.getUTCFullYear()) * 12 + (now.getUTCMonth() - start.getUTCMonth()) + 1;
+      due = Math.min(Math.max(months, 0), tenor) * inst;
+    }
+    arrears = Math.max(0, due - repaid);
+    if (repaid >= total) {
+      repayment = "FULLY_REPAID";
+      application = "COMPLETED";
+      status = "COMPLETED";
+      outstanding = 0;
+    } else if (arrears > 0) {
+      repayment = "OVERDUE";
+      status = "IN_ARREARS";
+      if (application === "UNCONFIRMED") application = "ISSUED";
+    } else if (repaid > 0) {
+      repayment = "ACTIVE";
+      status = "CURRENT";
+      if (application === "UNCONFIRMED") application = "ISSUED";
+    }
+  }
+  await tx.query(
+    `UPDATE altphones_historical_accounts SET amount_repaid_kobo = $2, outstanding_kobo = $3, arrears_kobo = $4, repayment_status = $5, application_status = $6, status = $7,
+            repayment_evidence = 'RECONCILED', reconciled_at = $8, nin_enc = CASE WHEN $7 = 'COMPLETED' THEN NULL ELSE nin_enc END WHERE id = $1`,
+    [accountId, repaid, outstanding, arrears, repayment, application, status, now],
+  );
 }

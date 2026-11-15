@@ -495,7 +495,7 @@ async function Imports({ preview }: { preview?: string }) {
           <div className="field">
             <label htmlFor="kind">What</label>
             <select id="kind" name="kind" required>
-              {(["TRANSACTIONS", "STOCK"] as ImportKind[]).map((k) => (
+              {(["TRANSACTIONS", "STOCK", "HISTORICAL_REPAYMENTS"] as ImportKind[]).map((k) => (
                 <option key={k} value={k}>
                   {IMPORT_LABELS[k]}
                 </option>
@@ -510,7 +510,7 @@ async function Imports({ preview }: { preview?: string }) {
         </ActionForm>
         <p className="small">
           Templates:{" "}
-          {(["TRANSACTIONS", "STOCK"] as ImportKind[]).map((k, i) => (
+          {(["TRANSACTIONS", "STOCK", "HISTORICAL_REPAYMENTS"] as ImportKind[]).map((k, i) => (
             <span key={k}>
               {i > 0 && " · "}
               <a href={`/api/altphones/templates/${k.toLowerCase()}`}>{IMPORT_LABELS[k]}</a>
