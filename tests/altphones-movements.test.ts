@@ -8,12 +8,10 @@ import { decideMovement, requestMovement } from "@/server/altphones/movements";
 import { commitImport, previewImport, submitImport } from "@/server/altphones/imports";
 import { bpmForLocation } from "@/server/altphones/location-master";
 
-let models: string[] = [];
 beforeEach(async () => {
   await resetDb();
   setMailTransportForTests(new CapturingMail());
   await setupAltphones({ stock: 5 });
-  models = (await db.query("SELECT id FROM altphones_models WHERE NOT stock_pool ORDER BY name")).rows.map((r) => r.id);
 });
 afterEach(() => setMailTransportForTests(null));
 const locId = async (name: string) => (await db.query("SELECT id FROM locations WHERE name = $1", [name])).rows[0].id as string;
