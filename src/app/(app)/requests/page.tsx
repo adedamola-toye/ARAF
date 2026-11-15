@@ -30,7 +30,7 @@ export default async function Progress() {
         actions={
           isInitiator && (
             <Link className="btn btn-primary" href="/requests/new">
-              <FilePlus2 className="icon" aria-hidden="true" /> Initiate New Request
+              <FilePlus2 className="icon" aria-hidden="true" /> New Financing Request
             </Link>
           )
         }

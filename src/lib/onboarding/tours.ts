@@ -30,8 +30,8 @@ const verify: TourStep = {
 };
 
 const RM: TourStep[] = [
-  { title: "Start a financing application", body: "Begin a new request here. You choose the product (Vendor Financing, Alt Drive or Alt Power) and the customer profile.", target: nav("/requests/new"), href: "/requests/new" },
-  { title: "Choose the product", body: "Each product card shows its limits, tenor and DSR threshold, and anything not yet configured. Pick the one that fits the customer.", target: "new-request" },
+  { title: "Start a financing application", body: "Begin a new request here. Choose one of four products: WakeelBoost, Vendor Financing, AltDrive or AltPower.", target: nav("/requests/new"), href: "/requests/new" },
+  { title: "Choose the product", body: "Each card opens that product's own application, with its customer details, documents and checks. A product awaiting configuration says so on its card.", target: "new-request" },
   { title: "Customer, credit check and affordability", body: "In the request you enter the customer and business details, your location, run the SeedFi credit check, and see the live DSR / affordability result as you type.", target: nav("/requests/new") },
   { title: "Documents and submission", body: "Upload the required documents (the checklist shows what is missing), then submit. Submission goes to your Team Lead.", target: nav("/requests/new") },
   { title: "Track progress", body: "See every request you started, its current stage and who holds it.", target: nav("/requests"), href: "/requests" },
@@ -101,6 +101,7 @@ const SUPER_ADMIN: TourStep[] = [
   { title: "Users and role assignments", body: "Add staff from the bank directory and assign or remove roles. Changes are audited.", target: nav("/admin/staff"), href: "/admin/staff" },
   { title: "Locations", body: "Branches, AltLounges, Altshops and Altboxes. Altshops and Altboxes are activated through the Product Manager → Unit Head workflow.", target: nav("/admin/locations") },
   { title: "Products, pricing and tenor", body: "Product rules, mark-ups per contract type and repayment periods. Every change is approved by a second person.", target: nav("/admin/pricing") },
+  { title: "Approval workflows", body: "View, change, simulate and publish each product's approval route. Publishing needs a reason, is recorded, and applies only to requests submitted afterwards.", target: nav("/admin/workflows") },
   { title: "Feature controls", body: "Switch controlled features on or off, with a reason. Every change is recorded.", target: nav("/admin/feature-controls") },
   { title: "Routing exceptions", body: "Requests that could not be assigned to an eligible reviewer.", target: nav("/admin/exceptions") },
   { title: "Audit records", body: "Every action, decision and administrative change, searchable and exportable.", target: nav("/admin/audit") },

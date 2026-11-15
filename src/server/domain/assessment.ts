@@ -6,7 +6,7 @@ import { invalid, forbidden, notFound } from "../errors";
 import { activeCalculator, calculatorKey } from "./apr/registry";
 import { formatKobo, parseNairaToKobo, parsePercentE4 } from "../money";
 import { pricingSettingsAt, SINGLE_OBLIGATION_LIMIT_KOBO, type PricingResult } from "./pricing";
-import { routeForAmount } from "./routing";
+import { creditBandForApp } from "./approval-workflows";
 import type { CalculatorResult } from "./apr/types";
 
 /** Audit summary of a WakeelBoost pricing assessment: both turnover figures, the basis used and the result. */
@@ -121,7 +121,7 @@ export async function recordAssessment(ctx: Ctx, appId: string, inputs: Record<s
       // amount, but only within the same credit route: a different route needs the initiator to amend the request.
       const principal = Number(inputs.principalKobo);
       if (Number.isSafeInteger(principal) && principal > 0 && principal <= SINGLE_OBLIGATION_LIMIT_KOBO && app.route) {
-        const r = routeForAmount(principal).route;
+        const r = (await creditBandForApp(tx, app, principal)).route;
         if (r !== app.route) {
           throw invalid("Check the assessment inputs.", {
             principalKobo: `A principal of ${formatKobo(principal)} falls in credit Route ${r}, but this request is on Route ${app.route} (requested ${formatKobo(Number(app.requested_amount_kobo))}). Return the request to the initiator to amend the amount so it is re-routed.`,

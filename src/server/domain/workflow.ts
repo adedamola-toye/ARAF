@@ -42,8 +42,9 @@ import { holdsRole } from "./access";
 import { approvedAssessment, latestAssessment } from "./assessment";
 import { activeCalculator, calculatorUsableForApproval, findCalculator } from "./apr/registry";
 import { currentCleanDocuments, PACK } from "./documents";
-import { isInitiatorRole, type InitiatorRole } from "./roles";
+import { isInitiatorRole, isLegacyInitiatorRole, type InitiatorRole } from "./roles";
 import { routeForAmount } from "./routing";
+import { creditBandForApp, pinWorkflow } from "./approval-workflows";
 import { pricingSettingsAt } from "./pricing";
 import { BUSINESS_REVIEW_STAGES, COMMENT_REQUIRED_STAGES, CREDIT_APPROVAL_STAGES, REASON_REQUIRED, STAGE_LABELS, allowedActions, type Stage, type TaskAction } from "./stages";
 import { LEGACY_REF_PREFIX, PLATFORM_NAME } from "../brand";
@@ -211,7 +212,7 @@ export interface DraftInput {
 export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applicantType: ApplicantType }) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
-  if (!isInitiatorRole(p.initiatorRole)) throw invalid("Choose RM, ANM or Merchant Officer as the initiating role.");
+  if (!isLegacyInitiatorRole(p.initiatorRole)) throw forbidden("WakeelBoost is initiated by Relationship Managers, Agent Network Managers and Merchant Officers.");
   if (!["INDIVIDUAL", "ENTERPRISE", "LIMITED"].includes(p.applicantType)) throw invalid("Choose Individual, Enterprise or Limited.");
   return withTx(async (tx) => {
     const ra = (
@@ -468,7 +469,8 @@ export async function submitApplication(ctx: Ctx, appId: string, idempotencyKey:
       await recordRequestLedger(tx, app, ctx.now);
       (app as { submitted_at: Date | null }).submitted_at = ctx.now;
       await tx.query("UPDATE applications SET submitted_at = $2 WHERE id = $1", [app.id, ctx.now]);
-      await audit(tx, ctx, { action: "REQUEST_SUBMITTED", actorRole: app.initiator_role, applicationId: app.id, customerId: app.customer_id, stage: "DRAFT", details: { versionId: app.current_version_id } });
+      const wf = await pinWorkflow(tx, app, ctx.now);
+      await audit(tx, ctx, { action: "REQUEST_SUBMITTED", actorRole: app.initiator_role, applicationId: app.id, customerId: app.customer_id, stage: "DRAFT", details: { versionId: app.current_version_id, workflowVersion: wf.version, workflowVersionId: wf.id } });
       const chosen = await chooseAssignee(tx, app, "BUSINESS_ENDORSEMENT", {
         preferred: app.initiator_role === "RM" ? app.selected_rbe_id : null,
         requirePreferred: app.initiator_role === "RM",
@@ -577,7 +579,7 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
   switch (task.stage) {
     case "BUSINESS_ENDORSEMENT": {
       if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
-      const route = routeForAmount(Number(app.requested_amount_kobo));
+      const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       app.endorser_id = ctx.actor!.staffId;
@@ -896,7 +898,7 @@ async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow)
     await invalidateCreditApprovals(tx, ctx, app, "Material underwriting fields changed on resubmission");
     await tx.query("UPDATE credit_assessments SET superseded_at=$2 WHERE application_id=$1 AND superseded_at IS NULL", [app.id, ctx.now]);
     await resolveAllCorrections(tx, ctx, app, "SUPERSEDED_BY_MATERIAL_CHANGE");
-    const route = routeForAmount(Number(app.requested_amount_kobo));
+    const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
     if (route.route !== prevRoute) {
       await audit(tx, ctx, { action: "ROUTE_RECALCULATED", applicationId: app.id, stage: "FIRST_CREDIT_REVIEW", details: { from: prevRoute, to: route.route } });
       app.route = route.route;

@@ -1,4 +1,5 @@
 import type { Db } from "../db";
+import { creditBandOfApp } from "./approval-workflows";
 import { db } from "../db";
 import type { Ctx } from "../context";
 import { auditOutsideTx } from "../audit";
@@ -197,9 +198,13 @@ export async function getCase(ctx: Ctx, appId: string) {
   ).rows;
   const openTask = tasks.find((t: { status: string }) => t.status === "OPEN") ?? null;
   await auditOutsideTx(ctx, { action: "CASE_VIEW", applicationId: appId, stage: app.stage, details: { capacities: access.capacities } });
+  const creditRoute = app.route ? await creditBandOfApp(db, app) : null;
+  const workflowVersion = app.workflow_version_id ? (await db.query<{ version: number }>("SELECT version FROM approval_workflows WHERE id = $1", [app.workflow_version_id])).rows[0]?.version ?? null : null;
   return {
     app,
     access,
+    creditRoute,
+    workflowVersion,
     version,
     working,
     directors,

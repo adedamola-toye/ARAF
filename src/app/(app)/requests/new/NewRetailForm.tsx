@@ -30,6 +30,9 @@ const TYPE_LABELS: Record<string, { t: string; d: string }> = {
 export function NewRetailForm({ products, roles, defaultRole }: { products: CatalogueProduct[]; roles: { value: string; label: string }[]; defaultRole: string }) {
   const [product, setProduct] = useState(products[0]?.code ?? "");
   const p = products.find((x) => x.code === product);
+  // Opened from a product card: the product is already chosen, so its step is not shown.
+  const single = products.length === 1;
+  const off = single ? 1 : 0;
   const [profile, setProfile] = useState(p?.profiles[0]?.code ?? "");
   const prof = p?.profiles.find((x) => x.code === profile) ?? p?.profiles[0];
   const [type, setType] = useState(prof?.eligibleTypes[0] ?? "");
@@ -51,6 +54,9 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
   };
   return (
     <ActionForm action={createRetailDraftAction} refreshOnSuccess={false} className="stack new-request">
+      {single ? (
+        <input type="hidden" name="productCode" value={product} />
+      ) : (
       <fieldset className="step">
         <legend>
           <span className="step-no">1</span> Product
@@ -68,10 +74,11 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
           ))}
         </div>
       </fieldset>
+      )}
       {p && (
         <fieldset className="step">
           <legend>
-            <span className="step-no">2</span> Customer profile
+            <span className="step-no">{2 - off}</span> Customer profile
           </legend>
           <div className="choice-grid">
             {p.profiles.map((x) => (
@@ -90,7 +97,7 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
       {prof && (
         <fieldset className="step">
           <legend>
-            <span className="step-no">3</span> Customer type
+            <span className="step-no">{3 - off}</span> Customer type
           </legend>
           <div className="choice-grid">
             {types.map((t) => (
@@ -108,7 +115,7 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
       {prof && prof.structures.length > 0 && (
         <fieldset className="step">
           <legend>
-            <span className="step-no">4</span> Financing structure
+            <span className="step-no">{4 - off}</span> Financing structure
           </legend>
           <div className="choice-grid">
             {prof.structures.map((s) => (
