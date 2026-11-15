@@ -1,7 +1,7 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { NAIRA } from "@/server/money";
-import { performTaskAction } from "@/server/domain/workflow";
 import { uploadDocument } from "@/server/domain/documents";
 import { caseAccess } from "@/server/domain/access";
 import { processOutbox, retryOutbox } from "@/server/jobs/outbox";
@@ -48,9 +48,9 @@ describe("disbursement booking", () => {
     const ctx = await ctxFor(t.email!);
     const k = key();
     const results = await Promise.allSettled([
-      performTaskAction(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: k, booking: booking("TXA-0001") }),
-      performTaskAction(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: k, booking: booking("TXA-0001") }),
-      performTaskAction(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: key(), booking: booking("TXA-0002") }),
+      actAs(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: k, booking: booking("TXA-0001") }),
+      actAs(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: k, booking: booking("TXA-0001") }),
+      actAs(ctx, { taskId: t.id, action: "DISBURSED", idempotencyKey: key(), booking: booking("TXA-0002") }),
     ]);
     expect(results.filter((r) => r.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
     const d = await db.query("SELECT * FROM disbursements WHERE application_id = $1", [id]);
@@ -84,7 +84,7 @@ describe("closure actions", () => {
     // Initiator cannot confirm vendor payment before CO3 completes the process.
     const rm = await ctxFor("rm.ade@altbank.ng");
     const t = await openTaskOf(id);
-    await expect(performTaskAction(rm, { taskId: t.id, action: "CONFIRM_VENDOR_PAYMENT", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
+    await expect(actAs(rm, { taskId: t.id, action: "CONFIRM_VENDOR_PAYMENT", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
     await act(id, "COMPLETE_PROCESS");
     const closure = await outbox("CLOSURE_PACK");
     expect(closure).toHaveLength(1);

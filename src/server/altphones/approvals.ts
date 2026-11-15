@@ -8,6 +8,8 @@
  * (each decision is only possible in its own status) and one person never acts at two stages.
  */
 import { withTx } from "../db";
+import { checkVerification, recordVerification } from "../domain/verification";
+import type { VerificationInput } from "@/lib/approval-checklists";
 import type { Ctx } from "../context";
 import { DomainError, conflict, forbidden, gate, invalid } from "../errors";
 import { formatNaira, imeiChecksumOk, type AltStatus } from "@/lib/altphones";
@@ -34,13 +36,13 @@ import { issueUnit, releaseUnit } from "./stock";
 
 export type Decision = "APPROVE" | "RETURN" | "REJECT";
 
-const STAGE_OF: Partial<Record<AltStatus, { stage: "BPM" | "PM" | "UNIT_HEAD"; role: string; label: string }>> = {
+export const STAGE_OF: Partial<Record<AltStatus, { stage: "BPM" | "PM" | "UNIT_HEAD"; role: string; label: string }>> = {
   UNDER_BPM_REVIEW: { stage: "BPM", role: BPM_ROLE, label: "Business Performance Manager" },
   UNDER_PM_REVIEW: { stage: "PM", role: PM_ROLE, label: "Product Manager" },
   UNDER_UNIT_HEAD_REVIEW: { stage: "UNIT_HEAD", role: "UNIT_HEAD", label: "Unit Head" },
 };
 
-export async function decide(ctx: Ctx, id: string, p: { action: Decision; comments: string; reviewed: boolean; lockVersion?: number | null }) {
+export async function decide(ctx: Ctx, id: string, p: { action: Decision; comments: string; reviewed?: boolean; lockVersion?: number | null; verification?: VerificationInput | null }) {
   const comments = (p.comments ?? "").trim();
   try {
     return await withTx(async (tx) => {
@@ -58,7 +60,9 @@ export async function decide(ctx: Ctx, id: string, p: { action: Decision; commen
       }
       if (!["APPROVE", "RETURN", "REJECT"].includes(p.action)) throw invalid("Choose a decision.");
       if (p.action !== "APPROVE" && comments.length < 3) throw invalid("Explain the decision for the officer.", { comments: "Comments are required to return or reject." });
-      if (p.action === "APPROVE" && !p.reviewed) throw invalid("Confirm you have reviewed the application.", { reviewed: "Confirm your review." });
+      // The role-specific verification checklist replaces the single "reviewed" confirmation.
+      const subject = { kind: "ALTPHONES" as const, id: app.id, ref: app.ref, lockVersion: app.lock_version, stage: st.stage, action: p.action, role: st.role };
+      const checklist = checkVerification(subject, p.verification);
       const actorCol = st.stage === "BPM" ? "bpm_reviewer_id" : st.stage === "PM" ? "pm_reviewer_id" : "unit_head_id";
       await tx.query("INSERT INTO altphones_reviews (application_id, stage, action, comments, actor_id, submission_no, decided_at) VALUES ($1,$2,$3,$4,$5,$6,$7)", [
         app.id,
@@ -103,6 +107,7 @@ export async function decide(ctx: Ctx, id: string, p: { action: Decision; commen
         await notifyStaffIds(tx, ctx, app, "REJECTED", [app.originator_id], "Altphones application rejected", [`The ${st.label} rejected ${app.ref}: ${comments}`, "The reserved phone has been released. The down payment must be refunded under the approved refund process."]);
         await alertOperations(tx, ctx, app, "REFUND_REQUIRED", "Refund required", [`${app.ref} was rejected after the down payment. Process the refund and record it in the platform.`]);
       }
+      if (checklist) await recordVerification(tx, ctx, subject, checklist, app.status);
       return { lockVersion: app.lock_version, status: app.status };
     });
   } catch (e) {

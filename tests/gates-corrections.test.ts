@@ -1,7 +1,8 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { NAIRA } from "@/server/money";
-import { saveDraft, performTaskAction } from "@/server/domain/workflow";
+import { saveDraft } from "@/server/domain/workflow";
 import { uploadDocument } from "@/server/domain/documents";
 import { recordAssessment } from "@/server/domain/assessment";
 import {
@@ -255,7 +256,7 @@ describe("rejection and correction routing", () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     const t = await openTaskOf(id);
     const admin = await ctxFor("superadmin@altbank.ng");
-    await expect(performTaskAction(admin, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
+    await expect(actAs(admin, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
     const denied = await audits("TASK_ENDORSE");
     expect(denied.at(-1).outcome).toBe("DENIED");
   });

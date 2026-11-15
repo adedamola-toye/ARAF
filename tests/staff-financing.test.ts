@@ -22,7 +22,8 @@ import {
   MemoryLibrary,
   passStaffCreditCheck,
 } from "@/server/demo/staff-scenario";
-import { createStaffDraft, saveStaffDraft, submitStaffRequest, claimPmReview, pmDecision, unitHeadDecision, divisionalHeadDecision, amendApproval } from "@/server/staff/requests";
+import { createStaffDraft, saveStaffDraft, submitStaffRequest, claimPmReview, pmDecision, amendApproval } from "@/server/staff/requests";
+import { headDecisionV } from "@/server/demo/staff-scenario";
 import { uploadStaffDocument, readStaffDocument } from "@/server/staff/documents";
 import { expireStaffOffers, remindStaffOffers, retryBlockedOffers, submitSignedOffer } from "@/server/staff/offer";
 import { startDisbursement, completeDisbursement, reassignDisbursementOfficer } from "@/server/staff/disbursement";
@@ -254,7 +255,7 @@ describe("Scenario C: returned request", () => {
     expect((await events(id)).map((e) => e.action)).toContain("RESUBMITTED");
     // A Unit Head return also goes back to the applicant, and resubmission restarts at the Product Manager.
     await pmForward(id);
-    await unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "RETURN", comments: "Clarify the purpose.", lockVersion: await lv(id) });
+    await headDecisionV("UNIT_HEAD", await ctxFor(STAFF.unitHead), id, { action: "RETURN", comments: "Clarify the purpose.", lockVersion: await lv(id) });
     expect((await reqRow(id)).status).toBe("RETURNED_FOR_CORRECTION");
     await passStaffCreditCheck(me, id);
     await submitStaffRequest(me, id, { lockVersion: await lv(id) });
@@ -439,19 +440,19 @@ describe("Scenario H: unauthorised actions and separation of duties", () => {
   it("only the configured Unit Head decides; one person cannot fill two positions; workflow steps cannot be skipped", async () => {
     const id = await submittedStaffRequest();
     // Unit Head cannot act before the PM has forwarded.
-    await expect(unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true })).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(headDecisionV("UNIT_HEAD", await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true })).rejects.toMatchObject({ code: "CONFLICT" });
     await pmForward(id);
     // A second Unit Head who was not designated is refused.
     const admin = await ctxFor(STAFF.admin);
     await grantRole(admin, { staffId: await sid("hou@altbank.ng"), role: "UNIT_HEAD" });
-    await expect(unitHeadDecision(await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/configured for the staff financing route/);
+    await expect(headDecisionV("UNIT_HEAD", await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/configured for the staff financing route/);
     // The PM cannot also be the Divisional Head on the same request.
     // The Divisional Head position has one holder: move it to the PM, who is then refused (separation of duties).
     await unitHeadApprove(id);
     await expect(grantRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" })).rejects.toThrow(/already has an active holder/);
     await revokeRole(admin, { staffId: await sid(STAFF.divHead), role: "DIVISIONAL_HEAD" });
     await grantRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" });
-    await expect(divisionalHeadDecision(await ctxFor(STAFF.pm), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/Separation of duties/);
+    await expect(headDecisionV("DIVISIONAL_HEAD", await ctxFor(STAFF.pm), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/Separation of duties/);
     await revokeRole(admin, { staffId: await sid(STAFF.pm), role: "DIVISIONAL_HEAD" });
     await grantRole(admin, { staffId: await sid(STAFF.divHead), role: "DIVISIONAL_HEAD" });
     // Disbursement Officers who reviewed are excluded from random assignment.
@@ -533,8 +534,8 @@ describe("route positions: one configured Unit Head, one Divisional Head", () =>
     const admin = await ctxFor(STAFF.admin);
     await grantRole(admin, { staffId: await sid("hou@altbank.ng"), role: "UNIT_HEAD" });
     await configureRouteUnitHead("hou@altbank.ng");
-    await expect(unitHeadDecision(await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await unitHeadDecision(await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) });
+    await expect(headDecisionV("UNIT_HEAD", await ctxFor(STAFF.unitHead), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await headDecisionV("UNIT_HEAD", await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true, lockVersion: await lv(id) });
     const r = await reqRow(id);
     expect([r.status, r.unit_head_id]).toEqual(["UNDER_DIVISIONAL_HEAD_REVIEW", await sid("hou@altbank.ng")]);
     // Every final approval goes to the one Divisional Head.

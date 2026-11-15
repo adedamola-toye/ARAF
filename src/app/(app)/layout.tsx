@@ -18,6 +18,9 @@ import { locationAccess } from "@/server/altphones/location-master";
 import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
 import { isEnabled } from "@/server/domain/switches";
 import { unreadCount } from "@/server/domain/notifications";
+import { onboardingDue } from "@/server/domain/onboarding";
+import { tourFor } from "@/lib/onboarding/tours";
+import { OnboardingRoot } from "@/components/Onboarding";
 import { executiveAccess } from "@/server/executive";
 import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
@@ -49,7 +52,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
   const myOfferCount = staffOk ? Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n) : 0;
   // Once a Lagos day, Relationship Managers and Team Leads see their performance summary first.
-  const summary = (await summaryDue(db, session.staffId, new Date())) ? await dailySummary(db, session.staffId, new Date()) : null;
+  // First time in this role's workspace: the welcome guide takes priority over the daily summary.
+  const tourRole = ws ?? roles[0] ?? null;
+  const welcomeDue = await onboardingDue(db, session.staffId, tourRole);
+  const tours = [...new Set([tourRole, ...roles].filter(Boolean) as string[])].map((r) => ({ role: r, label: ROLE_LABELS[r as Role] ?? r, steps: tourFor(r) }));
+  const summary = !welcomeDue && (await summaryDue(db, session.staffId, new Date())) ? await dailySummary(db, session.staffId, new Date()) : null;
   const perfTargets = await targetAccess(db, session.staffId);
   const showPerformance = roles.includes("RM") || roles.includes("TEAM_LEAD") || perfTargets.propose || perfTargets.approve;
   const showTracker = isAdmin || (retailScope?.kind === "ALL" && (await isEnabled(db, "REPAYMENT_TRACKER")));
@@ -268,11 +275,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
-          <Link href="/notifications" className="bell" aria-label={unread ? `Notifications: ${unread} unread` : "Notifications"}>
+          <Link href="/notifications" className="bell" data-tour="bell" aria-label={unread ? `Notifications: ${unread} unread` : "Notifications"}>
             <Bell className="icon" aria-hidden="true" />
             {unread > 0 && <span className="bell-count">{unread > 99 ? "99+" : unread}</span>}
           </Link>
-          <details className="menu">
+          <details className="menu" data-tour="profile-menu">
             <summary aria-label={`Profile menu for ${session.fullName}`}>
               <span className="avatar" aria-hidden="true">
                 {initials}
@@ -293,6 +300,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 <p className="menu-caption">Appearance</p>
                 <AppearanceOptions initial={theme} />
               </div>
+              <Link href="/help" className="btn btn-block btn-ghost">
+                Help &amp; Guides
+              </Link>
               <div className="small muted">Sessions end after 5 minutes of inactivity.</div>
               <form action={signOutAction}>
                 <button className="btn btn-block">Sign out</button>
@@ -303,6 +313,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       </header>
       <main className="main" id="main">
         {children}
+        <OnboardingRoot role={tourRole} roleLabel={tourRole ? (ROLE_LABELS[tourRole as Role] ?? tourRole) : ""} showWelcome={welcomeDue} tours={tours} />
         {summary && (
           <DailySummaryDialog name={session.fullName}>
             <PerformanceSummary s={summary} />

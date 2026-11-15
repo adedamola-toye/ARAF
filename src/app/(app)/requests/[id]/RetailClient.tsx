@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { AmountInput } from "@/components/inputs";
 import { taskActionAction } from "../actions";
+import { VerifyButton, type VerifyProps } from "@/components/VerifyDialog";
 import {
   closeFacilityAction,
   decideExceptionAction,
@@ -27,7 +28,7 @@ const Hiddens = ({ h }: { h: Hidden }) => (
 );
 
 /** Business review decision with mandatory comments; Team Lead also records visit comments and the RM photo confirmation. */
-export function BusinessDecisionForm({ hidden, action, label, visitRequired, rmPhotoRequired, doneHref, hint }: { hidden: Hidden; action: string; label: string; visitRequired: boolean; rmPhotoRequired: boolean; doneHref: string; hint: string }) {
+export function BusinessDecisionForm({ hidden, action, label, visitRequired, rmPhotoRequired, doneHref, hint, verify }: { hidden: Hidden; action: string; label: string; visitRequired: boolean; rmPhotoRequired: boolean; doneHref: string; hint: string; verify?: VerifyProps }) {
   return (
     <ActionForm action={taskActionAction} doneHref={doneHref}>
       <Hiddens h={{ ...hidden, action }} />
@@ -53,9 +54,7 @@ export function BusinessDecisionForm({ hidden, action, label, visitRequired, rmP
           <span>I have looked at the business photographs and one clearly shows the Relationship Manager with the business. (Your confirmation; the system does not check image content.)</span>
         </label>
       )}
-      <div>
-        <SubmitButton>{label}</SubmitButton>
-      </div>
+      <div>{verify ? <VerifyButton verify={verify} label={label} /> : <SubmitButton>{label}</SubmitButton>}</div>
     </ActionForm>
   );
 }

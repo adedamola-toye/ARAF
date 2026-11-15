@@ -1,3 +1,5 @@
+import { checklistFor } from "@/lib/approval-checklists";
+import { VerifyButton } from "@/components/VerifyDialog";
 import Link from "next/link";
 import { LocationPicker, type PickerOption } from "@/components/LocationPicker";
 import { pickerLocations, PLACEHOLDER_BPM } from "@/server/altphones/location-master";
@@ -662,13 +664,16 @@ export default async function AltApplicationPage({ params, searchParams }: { par
                     <label htmlFor="rcomments">Comments</label>
                     <textarea id="rcomments" name="comments" rows={3} placeholder="Required to return or reject" />
                   </div>
-                  <label className="check">
-                    <input type="checkbox" name="reviewed" /> I have reviewed the items above.
-                  </label>
                   <div className="action-bar">
-                    <SubmitButton name="decision" value="APPROVE">
-                      {reviewStage === "UNIT_HEAD" ? "Approve" : "Approve and forward"}
-                    </SubmitButton>
+                    {(() => {
+                      const checklist = checklistFor({ kind: "ALTPHONES", stage: reviewStage, action: "APPROVE" });
+                      const label = reviewStage === "UNIT_HEAD" ? "Approve" : "Approve and forward";
+                      return checklist ? (
+                        <VerifyButton verify={{ checklist, reference: app.ref, actionLabel: label, viewedVersion: app.lock_version }} label={label} submitFields={{ decision: "APPROVE" }} />
+                      ) : (
+                        <SubmitButton name="decision" value="APPROVE">{label}</SubmitButton>
+                      );
+                    })()}
                     <SubmitButton name="decision" value="RETURN" className="btn">
                       Return for correction
                     </SubmitButton>

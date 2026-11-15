@@ -1,4 +1,5 @@
 "use client";
+import { VerifyButton, type VerifyProps } from "@/components/VerifyDialog";
 import { useRef, useState } from "react";
 import { AlertTriangle, Calculator, CheckCircle2, Eye, FilePlus2, Pencil, ShieldCheck } from "lucide-react";
 import { ActionForm, FormMessages, ReasonAction, SubmitButton, type FormState } from "@/components/forms";
@@ -23,13 +24,17 @@ export function ReminderButton({ applicationId }: { applicationId: string }) {
 }
 
 /** One-click task action (Endorse, Approve, Proceed, Forward, Resubmit, Complete Process …). */
-export function TaskButton({ hidden, action, label, primary = true, confirm, doneHref, disabled }: { hidden: Hidden; action: string; label: string; primary?: boolean; confirm?: string; doneHref: string; disabled?: boolean }) {
+export function TaskButton({ hidden, action, label, primary = true, confirm, doneHref, disabled, verify }: { hidden: Hidden; action: string; label: string; primary?: boolean; confirm?: string; doneHref: string; disabled?: boolean; verify?: VerifyProps }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const form = useRef<HTMLFormElement | null>(null);
   return (
     <ActionForm action={taskActionAction} doneHref={doneHref}>
       <Hiddens h={{ ...hidden, action }} />
-      {confirm ? (
+      {verify ? (
+        <div>
+          <VerifyButton verify={verify} label={label} className={`btn ${primary ? "btn-primary" : ""}`} disabled={disabled} />
+        </div>
+      ) : confirm ? (
         <>
           <button
             type="button"
@@ -85,7 +90,7 @@ export function ReasonButton({ hidden, action, label, danger, doneHref }: { hidd
  * First credit review approval. The server enforces the three-report, assessment and invoice
  * gates; the UI shows the exact "Do not forget to log invoice" dialog with Cancel and Confirm.
  */
-export function FirstReviewApprove({ hidden, ready, doneHref, dsrExceeds = false, dsrEvidence = false, dsrSummary }: { hidden: Hidden; ready: boolean; doneHref: string; dsrExceeds?: boolean; dsrEvidence?: boolean; dsrSummary?: string }) {
+export function FirstReviewApprove({ hidden, ready, doneHref, dsrExceeds = false, dsrEvidence = false, dsrSummary, verify }: { hidden: Hidden; ready: boolean; doneHref: string; dsrExceeds?: boolean; dsrEvidence?: boolean; dsrSummary?: string; verify?: VerifyProps }) {
   const [justification, setJustification] = useState("");
   const exceptionOk = !dsrExceeds || (dsrEvidence && justification.trim().length >= 10);
   const dialog = useRef<HTMLDialogElement>(null);
@@ -112,6 +117,24 @@ export function FirstReviewApprove({ hidden, ready, doneHref, dsrExceeds = false
             Logged invoice on invoice portal
           </label>
           <span className="small muted">Staff attestation. No invoice-portal integration is connected.</span>
+          {verify ? (
+            // One dialog: the invoice reminder and the verification checklist together.
+            <VerifyButton
+              verify={verify}
+              label="Approve"
+              disabled={!ready || !exceptionOk}
+              onOpen={() => {
+                if (confirmed.current) confirmed.current.value = "true";
+              }}
+              extra={
+                <div className={`alert ${invoiceLogged ? "alert-info" : "alert-warn"}`} style={{ marginBottom: "var(--space-3)" }}>
+                  <span>
+                    <strong>Do not forget to log invoice.</strong> {invoiceLogged ? "You have confirmed the invoice is logged on the invoice portal." : 'You have not switched on "Logged invoice on invoice portal". The approval will be refused until you do.'}
+                  </span>
+                </div>
+              }
+            />
+          ) : (
           <button
             type="button"
             className="btn btn-primary"
@@ -125,6 +148,7 @@ export function FirstReviewApprove({ hidden, ready, doneHref, dsrExceeds = false
           >
             Approve
           </button>
+          )}
           {(!ready || !exceptionOk) && (
             <p id="approve-blocked" className="blocked" style={{ margin: 0 }}>
               <AlertTriangle className="icon" aria-hidden="true" />

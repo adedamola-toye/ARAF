@@ -1,10 +1,10 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { act, ctxFor, openTaskOf } from "@/server/demo/scenario";
 import { applyConfig, createRetailCase, recordFinal, syntheticConfig } from "@/server/demo/retail-scenario";
-import { performTaskAction } from "@/server/domain/workflow";
 import { stageLabel } from "@/server/domain/stages";
 
 const N = (n: number) => n * 100;
@@ -95,7 +95,7 @@ describe("RETAIL_CX_V1 approval chain", () => {
     const t = await openTaskOf(id);
     expect(t).toMatchObject({ stage: "FIRST_CREDIT_REVIEW", email: null });
     const admin = await ctxFor("superadmin@altbank.ng");
-    await expect(performTaskAction(admin, { taskId: t.id, action: "APPROVE", idempotencyKey: randomUUID() })).rejects.toBeTruthy();
+    await expect(actAs(admin, { taskId: t.id, action: "APPROVE", idempotencyKey: randomUUID() })).rejects.toBeTruthy();
     expect((await db.query("SELECT 1 FROM audit_events WHERE application_id = $1 AND action = 'TASK_UNASSIGNED_NO_ELIGIBLE_STAFF'", [id])).rowCount).toBe(1);
   });
 

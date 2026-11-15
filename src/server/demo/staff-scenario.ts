@@ -91,10 +91,10 @@ export async function pmForward(id: string, now = new Date()) {
   await pmDecision(ctx, id, { action: "FORWARD", checklist: ALL_CHECKS, recommendation: "Recommend approval; checks completed manually.", confirmed: true, lockVersion: await lv(id) });
 }
 export async function unitHeadApprove(id: string, now = new Date()) {
-  await unitHeadDecision(await ctxFor(STAFF.unitHead, now), id, { action: "APPROVE", comments: "Supported.", confirmed: true, lockVersion: await lv(id) });
+  await headDecisionV("UNIT_HEAD", await ctxFor(STAFF.unitHead, now), id, { action: "APPROVE", comments: "Supported.", confirmed: true, lockVersion: await lv(id) });
 }
 export async function divisionalApprove(id: string, now = new Date()) {
-  await divisionalHeadDecision(await ctxFor(STAFF.divHead, now), id, { action: "APPROVE", comments: "Final approval.", confirmed: true, lockVersion: await lv(id) });
+  await headDecisionV("DIVISIONAL_HEAD", await ctxFor(STAFF.divHead, now), id, { action: "APPROVE", comments: "Final approval.", confirmed: true, lockVersion: await lv(id) });
 }
 
 export async function returnSignedOffer(id: string, now = new Date(), email = STAFF.applicant) {
@@ -143,4 +143,14 @@ export class MemoryLibrary implements DocumentLibrary {
     const f = [...this.files.values()].find((x) => x.id === itemId);
     return !!f && f.data.length === size && createHash("sha256").update(f.data).digest("hex") === sha256;
   }
+}
+
+/** Test scaffolding: Unit Head / Divisional Head decisions with the full verification checklist acknowledged. */
+export async function headDecisionV(who: "UNIT_HEAD" | "DIVISIONAL_HEAD", ctx: import("../context").Ctx, id: string, input: import("../staff/requests").HeadDecisionInput) {
+  const { checklistFor } = await import("@/lib/approval-checklists");
+  const fn = who === "UNIT_HEAD" ? unitHeadDecision : divisionalHeadDecision;
+  if (input.verification !== undefined) return fn(ctx, id, input);
+  const lock = (await db.query<{ lock_version: number }>("SELECT lock_version FROM staff_requests WHERE id = $1", [id])).rows[0]?.lock_version ?? 0;
+  const list = checklistFor({ kind: "STAFF_REQUEST", stage: who, action: input.action });
+  return fn(ctx, id, list ? { ...input, verification: { checklistId: list.id, version: list.version, items: list.items.map((i) => i.code), viewedVersion: lock } } : input);
 }

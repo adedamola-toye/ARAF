@@ -1,10 +1,11 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { NAIRA, formatKobo } from "@/server/money";
 import { calculatePricing, dsrExplanation, pricingSettingsAt, updatePricingSettings, type PricingSettings } from "@/server/domain/pricing";
 import { parseCalculatorForm, recordAssessment, approvedAssessment } from "@/server/domain/assessment";
 import { generateOffer } from "@/server/domain/offer";
-import { createDraft, performTaskAction, saveDraft, submitApplication } from "@/server/domain/workflow";
+import { createDraft, saveDraft, submitApplication } from "@/server/domain/workflow";
 import { uploadDocument } from "@/server/domain/documents";
 import { updateSecondSignatory } from "@/server/domain/signatory";
 import { listDocuments, readDocumentForActor } from "@/server/domain/documents";
@@ -294,7 +295,7 @@ describe("approved principal and booking", () => {
     await act(id, "OKAY", { crmsLogged: true });
     const t = await openTaskOf(id);
     const book = (amount: number) =>
-      performTaskAction(ctxFor_(t.email!), { taskId: t.id, action: "DISBURSED", idempotencyKey: key(), booking: { amountKobo: amount, disbursedOn: "2026-11-01", transactionRef: `TX${amount}`, schedule: [{ dueDate: "2026-12-01", amountKobo: 100 }] } });
+      actAs(ctxFor_(t.email!), { taskId: t.id, action: "DISBURSED", idempotencyKey: key(), booking: { amountKobo: amount, disbursedOn: "2026-11-01", transactionRef: `TX${amount}`, schedule: [{ dueDate: "2026-12-01", amountKobo: 100 }] } });
     const ctxFor_ = (e: string) => ({ ...ctx, actor: { ...ctx.actor!, staffId: t.assignee_id!, email: e } });
     await expect(book(NAIRA(800_000) + 1)).rejects.toMatchObject({ fields: { amount: expect.stringMatching(/₦800,000\.00/) } });
     await book(NAIRA(800_000));

@@ -1,4 +1,5 @@
 "use server";
+import { parseVerification } from "@/lib/approval-checklists";
 import { redirect } from "next/navigation";
 import { DomainError } from "@/server/errors";
 import { requireUser } from "../../_lib/auth";
@@ -108,7 +109,7 @@ export async function pmDecisionAction(_p: ActionState, fd: FormData): Promise<A
 export async function headDecisionAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   const action = s(fd, "decision") as "APPROVE" | "RETURN" | "DECLINE";
   const level = s(fd, "level");
-  const input = { action, comments: s(fd, "comments"), confirmed: on(fd, "confirmed"), lockVersion: lock(fd) };
+  const input = { action, comments: s(fd, "comments"), confirmed: on(fd, "confirmed"), lockVersion: lock(fd), verification: parseVerification(fd.get("verification")) };
   const msg =
     action === "APPROVE" ? (level === "DH" ? "Final approval recorded. The offer letter step has started." : "Approved and forwarded to the Divisional Head.") : action === "RETURN" ? "Returned to the applicant for clarification." : "Request declined.";
   return run((ctx) => (level === "DH" ? divisionalHeadDecision(ctx, s(fd, "id"), input) : unitHeadDecision(ctx, s(fd, "id"), input)), msg);

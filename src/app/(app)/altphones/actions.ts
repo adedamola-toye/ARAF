@@ -1,4 +1,5 @@
 "use server";
+import { parseVerification } from "@/lib/approval-checklists";
 import { redirect } from "next/navigation";
 import { requireUser } from "../../_lib/auth";
 import { toActionError, type ActionState } from "../../_lib/action";
@@ -102,7 +103,7 @@ export const refundAction = async (_p: ActionState, fd: FormData) => run((ctx) =
 export const decideAction = async (_p: ActionState, fd: FormData) => {
   const action = s(fd, "decision") as Decision;
   const msg = { APPROVE: "Approved.", RETURN: "Returned to the officer for correction.", REJECT: "Application rejected." }[action] ?? "Saved.";
-  return run((ctx) => decide(ctx, s(fd, "id"), { action, comments: s(fd, "comments"), reviewed: on(fd, "reviewed"), lockVersion: lock(fd) }), msg);
+  return run((ctx) => decide(ctx, s(fd, "id"), { action, comments: s(fd, "comments"), lockVersion: lock(fd), verification: parseVerification(fd.get("verification")) }), msg);
 };
 
 export const disburseAction = async (_p: ActionState, fd: FormData) =>

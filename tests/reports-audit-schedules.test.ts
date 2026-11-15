@@ -1,3 +1,4 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import ExcelJS from "exceljs";
 import { db } from "@/server/db";
@@ -75,8 +76,7 @@ describe("audit trail", () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     const t = await openTaskOf(id);
     const ctx = await ctxFor(t.email!, new Date(), { ip: "196.46.10.5", correlationId: "corr-123" });
-    const { performTaskAction } = await import("@/server/domain/workflow");
-    await performTaskAction(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() });
+    await actAs(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() });
     const ev = (await db.query("SELECT * FROM audit_events WHERE correlation_id = 'corr-123' AND action = 'TASK_ENDORSE'")).rows[0];
     expect(ev.actor_email).toBe("rbe.lagos@altbank.ng");
     expect(ev.actor_role).toBe("RBE");
