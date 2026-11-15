@@ -1,4 +1,5 @@
 "use server";
+import { parseVerification } from "@/lib/approval-checklists";
 import { redirect } from "next/navigation";
 import { requireUser } from "../../_lib/auth";
 import { toActionError, type ActionState } from "../../_lib/action";
@@ -126,6 +127,7 @@ export async function taskActionAction(_p: ActionState, fd: FormData): Promise<A
       visitComments: str(fd, "visitComments") || null,
       rmPhotoConfirmed: fd.get("rmPhotoConfirmed") === "on" || fd.get("rmPhotoConfirmed") === "true",
       contractStepsConfirmed: fd.get("contractStepsConfirmed") === "on" || fd.get("contractStepsConfirmed") === "true",
+      verification: parseVerification(fd.get("verification")),
       facilityBooking:
         action === "BOOK_FACILITY"
           ? { bookingRef: str(fd, "bookingRef"), principalKobo: parseNairaToKobo(str(fd, "principal")) ?? -1, firstDueDate: str(fd, "firstDueDate") }

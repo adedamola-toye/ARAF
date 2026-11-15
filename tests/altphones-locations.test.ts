@@ -1,3 +1,4 @@
+import { decideV } from "@/server/demo/altphones-scenario";
 import ExcelJS from "exceljs";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
@@ -8,7 +9,7 @@ import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/alt
 import { setMailTransportForTests } from "@/server/notify/transport";
 import { applyProfiling, bpmForLocation, decideAddressRequest, linkSource, parseStatesList, pickerLocations, previewProfiling, proposeLocation, readProfiling, requestAddress, requestBpmMapping, decideBpmRequest, unroutedStates } from "@/server/altphones/location-master";
 import { saveLocations, startSale } from "@/server/altphones/origination";
-import { decide } from "@/server/altphones/approvals";
+
 import { appAccess } from "@/server/altphones/core";
 import { reviewQueues } from "@/server/altphones/views";
 
@@ -225,7 +226,7 @@ describe("origination and routing", () => {
     // No Placeholder BPM set yet: the sale waits unassigned and nobody can decide it.
     const first = await submitCreditSale(gw, mail, "SA", "22222222221");
     expect((await db.query("SELECT routed_to_placeholder, routed_bpm_id FROM altphones_applications WHERE id = $1", [first])).rows[0]).toEqual({ routed_to_placeholder: true, routed_bpm_id: null });
-    await expect(decide(await ctxFor(ALT.bpm), first, { action: "APPROVE", comments: "", reviewed: true })).rejects.toBeTruthy();
+    await expect(decideV(await ctxFor(ALT.bpm), first, { action: "APPROVE", comments: "", reviewed: true })).rejects.toBeTruthy();
     expect((await reviewQueues(db, await sidOf(ALT.pm))).placeholder?.map((x) => x.id)).toContain(first);
 
     // The PM sets the Placeholder BPM (an @altbank.ng BPM); it takes effect on the Unit Head's approval.
@@ -244,7 +245,7 @@ describe("origination and routing", () => {
     const phCtx = await ctxFor("placeholder.bpm@altbank.ng");
     expect((await reviewQueues(db, ph)).bpm?.map((x) => x.id).sort()).toEqual([first, second].sort());
     expect((await reviewQueues(db, await sidOf(ALT.bpm))).bpm ?? []).toHaveLength(0);
-    await decide(phCtx, first, { action: "APPROVE", comments: "", reviewed: true });
+    await decideV(phCtx, first, { action: "APPROVE", comments: "", reviewed: true });
     expect((await db.query("SELECT status FROM altphones_applications WHERE id = $1", [first])).rows[0].status).toBe("UNDER_PM_REVIEW");
 
     // Lagos gets its BPM: the sale still at the BPM stage moves there; the decided one stays decided.
@@ -252,8 +253,8 @@ describe("origination and routing", () => {
     expect(await approve(r2.ref)).toMatchObject({ rerouted: 1 });
     expect((await db.query("SELECT routed_to_placeholder, routed_bpm_id FROM altphones_applications WHERE id = $1", [second])).rows[0]).toEqual({ routed_to_placeholder: false, routed_bpm_id: await sidOf(ALT.bpm) });
     expect((await db.query("SELECT status, bpm_reviewer_id FROM altphones_applications WHERE id = $1", [first])).rows[0]).toEqual({ status: "UNDER_PM_REVIEW", bpm_reviewer_id: ph });
-    await expect(decide(phCtx, second, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await decide(await ctxFor(ALT.bpm), second, { action: "APPROVE", comments: "", reviewed: true });
+    await expect(decideV(phCtx, second, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await decideV(await ctxFor(ALT.bpm), second, { action: "APPROVE", comments: "", reviewed: true });
   });
 
   it("routes an SA application to the BPM mapped to its location only, then PM and Unit Head", async () => {
@@ -268,10 +269,10 @@ describe("origination and routing", () => {
     const demoBpm = await ctxFor(ALT.bpm);
     expect((await appAccess(db, demoBpm.actor!.staffId, app)).has("BPM")).toBe(false);
     expect((await reviewQueues(db, demoBpm.actor!.staffId)).bpm ?? []).toHaveLength(0);
-    await expect(decide(demoBpm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(decideV(demoBpm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
     const two = await ctxFor("bpm.two@altbank.ng");
     expect((await reviewQueues(db, other)).bpm?.map((x) => x.id)).toContain(id);
-    await decide(two, id, { action: "APPROVE", comments: "", reviewed: true });
+    await decideV(two, id, { action: "APPROVE", comments: "", reviewed: true });
     expect((await db.query("SELECT status FROM altphones_applications WHERE id = $1", [id])).rows[0].status).toBe("UNDER_PM_REVIEW");
     expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'ALTPHONES_BPM_QUEUE' AND 'bpm.two@altbank.ng' = ANY(to_addresses)")).rowCount).toBeGreaterThan(0);
   });

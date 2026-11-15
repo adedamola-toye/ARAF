@@ -1,3 +1,4 @@
+import { actAs } from "@/server/demo/scenario";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
@@ -20,7 +21,7 @@ import { passRetailCreditChecks,
 import { configGaps, INITIAL_PRODUCT_CONFIGS, proposeProductConfig, decideProductConfig, effectiveConfig, gapsBlocking, productConfigSchema } from "@/server/domain/products";
 import { computeAffordability, rulesSnapshot } from "@/server/domain/affordability";
 import { createRetailDraft, saveRetailDraft, retailReadiness, requestException, decideException, withdrawApplication } from "@/server/domain/retail";
-import { submitApplication, performTaskAction } from "@/server/domain/workflow";
+import { submitApplication } from "@/server/domain/workflow";
 import { uploadDocument } from "@/server/domain/documents";
 import { caseAccess } from "@/server/domain/access";
 import { recordPaymentEvent, recordRepayment, closeFacility, facilityPosition, recordServicingAction } from "@/server/domain/retail-ops";
@@ -479,12 +480,12 @@ describe("material changes, access and independence", () => {
     const ctx = await ctxFor(t.email!);
     const k = randomUUID();
     const input = { taskId: t.id, action: "RECOMMEND" as const, reason: "Recommend for approval.", visitComments: "Visited and verified the premises.", rmPhotoConfirmed: true, idempotencyKey: k };
-    const a = await performTaskAction(ctx, input);
-    const b = await performTaskAction(ctx, input);
+    const a = await actAs(ctx, input);
+    const b = await actAs(ctx, input);
     expect(b.replayed).toBe(true);
     expect(a.stage).toBe(b.stage);
     const t2 = await openTaskOf(id);
-    await expect(performTaskAction(await ctxFor(t2.email!), { taskId: t2.id, action: "ENDORSE", reason: "Endorsed after review.", idempotencyKey: randomUUID(), expectedLockVersion: 0 })).rejects.toThrow(/changed since/);
+    await expect(actAs(await ctxFor(t2.email!), { taskId: t2.id, action: "ENDORSE", reason: "Endorsed after review.", idempotencyKey: randomUUID(), expectedLockVersion: 0 })).rejects.toThrow(/changed since/);
   });
 });
 

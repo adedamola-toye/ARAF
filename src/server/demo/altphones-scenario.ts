@@ -208,3 +208,17 @@ export async function submitCreditSale(gw: TestGateway, mail: CapturingMail, cha
   await o.submitForApproval(ctx, id, {});
   return id;
 }
+
+/**
+ * Test scaffolding: an Altphones review decision with the full verification checklist acknowledged (as a
+ * reviewer ticking every item). Pass `verification: null` to simulate a missing acknowledgement.
+ */
+export async function decideV(ctx: import("../context").Ctx, id: string, p: Parameters<typeof import("../altphones/approvals").decide>[2]) {
+  const { decide, STAGE_OF } = await import("../altphones/approvals");
+  const { checklistFor } = await import("@/lib/approval-checklists");
+  if (p.verification !== undefined) return decide(ctx, id, p);
+  const app = (await db.query<{ status: string; lock_version: number }>("SELECT status, lock_version FROM altphones_applications WHERE id = $1", [id])).rows[0];
+  const st = app ? STAGE_OF[app.status as keyof typeof STAGE_OF] : undefined;
+  const list = st ? checklistFor({ kind: "ALTPHONES", stage: st.stage, action: p.action }) : null;
+  return decide(ctx, id, list ? { ...p, verification: { checklistId: list.id, version: list.version, items: list.items.map((i) => i.code), viewedVersion: app!.lock_version } } : p);
+}

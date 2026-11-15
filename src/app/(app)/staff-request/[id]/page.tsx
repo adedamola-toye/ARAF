@@ -351,7 +351,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
         <section key="uh" className="card action-panel stack">
           <p className="eyebrow">Your action · Unit Head</p>
           <h2 style={{ margin: 0 }}>Decide on this request</h2>
-          {uhNow.problem ? <p className="small err" style={{ margin: 0 }}>{uhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="UH" netLabel={net} />}
+          {uhNow.problem ? <p className="small err" style={{ margin: 0 }}>{uhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="UH" netLabel={net} reference={req.ref} />}
         </section>,
       );
     }
@@ -362,7 +362,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           <section key="dh" className="card action-panel stack">
             <p className="eyebrow">Your action · Divisional Head (final approval)</p>
             <h2 style={{ margin: 0 }}>Final decision</h2>
-            {dhNow?.problem ? <p className="small err" style={{ margin: 0 }}>{dhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="DH" netLabel={net} />}
+            {dhNow?.problem ? <p className="small err" style={{ margin: 0 }}>{dhNow.problem}</p> : <HeadDecisionForm id={req.id} lockVersion={lockVersion} level="DH" netLabel={net} reference={req.ref} />}
           </section>,
         );
       } else if (["APPROVED", "AWAITING_SIGNED_OFFER", "ASSIGNED_FOR_DISBURSEMENT"].includes(status)) {

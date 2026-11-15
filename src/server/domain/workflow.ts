@@ -12,6 +12,8 @@
  * See docs/WORKFLOW.md for the state map.
  */
 import { enterTeamLeadReview } from "./photo-review";
+import { checkVerification, recordVerification } from "./verification";
+import type { VerificationInput } from "@/lib/approval-checklists";
 import type { Tx } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
@@ -507,6 +509,8 @@ export interface TaskActionInput {
   facilityBooking?: { bookingRef: string; principalKobo: number; firstDueDate: string } | null;
   /** Retail: offer/contract sequence steps confirmed with evidence. */
   contractStepsConfirmed?: boolean;
+  /** Approval verification checklist acknowledgement (required for positive approval decisions). */
+  verification?: VerificationInput | null;
 }
 
 export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promise<ActionResult> {
@@ -537,8 +541,11 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
           throw invalid("Record your recommendation or decision with supporting comments (at least 10 characters).", { reason: "Comments are required." });
         }
         ctx.actor = { ...actor, activeRole: task.assignee_role };
+        const subject = { kind: "APPLICATION" as const, id: app.id, ref: app.ref, lockVersion: app.lock_version, versionId: task.version_id, stage: task.stage, action: input.action, role: task.assignee_role, policy: app.approval_policy ?? null, workflow: app.workflow, taskId: task.id };
+        const checklist = checkVerification(subject, input.verification);
         const message = await dispatch(tx, ctx, app, task, input, reason);
         await persistApp(tx, app, ctx.now);
+        if (checklist) await recordVerification(tx, ctx, subject, checklist, app.stage);
         await audit(tx, ctx, {
           action: `TASK_${input.action}`,
           actorRole: task.assignee_role,

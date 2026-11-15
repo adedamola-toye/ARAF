@@ -1,3 +1,4 @@
+import { decideV } from "@/server/demo/altphones-scenario";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
@@ -23,7 +24,7 @@ import {
   startSale,
   submitForApproval,
 } from "@/server/altphones/origination";
-import { confirmDisbursement, decide } from "@/server/altphones/approvals";
+import { confirmDisbursement } from "@/server/altphones/approvals";
 import { saveModel, savePricing } from "@/server/altphones/catalogue";
 import { decideReplenishment, requestReplenishment, stockOverview } from "@/server/altphones/stock";
 import { commitImport, previewImport, submitImport } from "@/server/altphones/imports";
@@ -272,12 +273,12 @@ describe("credit sale — Delight Officer route (Product Manager → Unit Head)"
     await submitForApproval(ctx, id, {});
     expect((await appRow(id)).status).toBe("UNDER_PM_REVIEW");
     const uh = await ctxFor(ALT.unitHead);
-    await expect(decide(uh, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" }); // cannot skip the PM
+    await expect(decideV(uh, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" }); // cannot skip the PM
     const pm = await ctxFor(ALT.pm);
-    await expect(decide(pm, id, { action: "APPROVE", comments: "", reviewed: false })).rejects.toMatchObject({ code: "VALIDATION" });
-    await decide(pm, id, { action: "APPROVE", comments: "Checked", reviewed: true });
+    await expect(decideV(pm, id, { action: "APPROVE", comments: "", verification: null })).rejects.toMatchObject({ code: "VALIDATION" }); // the verification checklist is required
+    await decideV(pm, id, { action: "APPROVE", comments: "Checked", reviewed: true });
     expect((await appRow(id)).status).toBe("UNDER_UNIT_HEAD_REVIEW");
-    await decide(uh, id, { action: "APPROVE", comments: "", reviewed: true });
+    await decideV(uh, id, { action: "APPROVE", comments: "", reviewed: true });
     r = await appRow(id);
     expect(r.status).toBe("APPROVED");
     expect(r.markup_kobo).toBe("2900000");
@@ -336,20 +337,20 @@ describe("credit sale — Smile Associate route (BPM → Product Manager → Uni
     await submitForApproval(ctx, id, {});
     expect((await appRow(id)).status).toBe("UNDER_BPM_REVIEW");
     const pm = await ctxFor(ALT.pm);
-    await expect(decide(pm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(decideV(pm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
     const bpm = await ctxFor(ALT.bpm);
-    await expect(decide(bpm, id, { action: "RETURN", comments: "", reviewed: false })).rejects.toMatchObject({ code: "VALIDATION" });
-    await decide(bpm, id, { action: "RETURN", comments: "Attach clearer evidence", reviewed: false });
+    await expect(decideV(bpm, id, { action: "RETURN", comments: "", reviewed: false })).rejects.toMatchObject({ code: "VALIDATION" });
+    await decideV(bpm, id, { action: "RETURN", comments: "Attach clearer evidence", reviewed: false });
     expect((await appRow(id)).status).toBe("RETURNED_FOR_CORRECTION");
     await submitForApproval(ctx, id, { comments: "Updated" });
     expect((await appRow(id)).status).toBe("UNDER_BPM_REVIEW");
-    await decide(bpm, id, { action: "APPROVE", comments: "", reviewed: true });
+    await decideV(bpm, id, { action: "APPROVE", comments: "", reviewed: true });
     expect((await appRow(id)).status).toBe("UNDER_PM_REVIEW");
     // The BPM cannot also act as Product Manager on the same application
     await grantRole(await ctxFor(ALT.admin), { staffId: await sidOf(ALT.bpm), role: "ALTPHONES_PRODUCT_MANAGER" });
-    await expect(decide(bpm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await decide(pm, id, { action: "APPROVE", comments: "", reviewed: true });
-    await decide(await ctxFor(ALT.unitHead), id, { action: "APPROVE", comments: "", reviewed: true });
+    await expect(decideV(bpm, id, { action: "APPROVE", comments: "", reviewed: true })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await decideV(pm, id, { action: "APPROVE", comments: "", reviewed: true });
+    await decideV(await ctxFor(ALT.unitHead), id, { action: "APPROVE", comments: "", reviewed: true });
     expect((await appRow(id)).status).toBe("APPROVED");
     const reviews = (await db.query("SELECT stage, action FROM altphones_reviews WHERE application_id = $1 ORDER BY submission_no, CASE stage WHEN 'BPM' THEN 1 WHEN 'PM' THEN 2 ELSE 3 END", [id])).rows;
     expect(reviews).toEqual([
@@ -370,7 +371,7 @@ describe("credit sale — Smile Associate route (BPM → Product Manager → Uni
     const { id, ctx } = await creditReady(ALT.sa);
     await submitForApproval(ctx, id, {});
     const before = await stockOf("Yaba Altshop", models[0]);
-    await decide(await ctxFor(ALT.bpm), id, { action: "REJECT", comments: "Not eligible", reviewed: false });
+    await decideV(await ctxFor(ALT.bpm), id, { action: "REJECT", comments: "Not eligible", reviewed: false });
     const r = await appRow(id);
     expect([r.status, r.reservation_status, r.refund_status]).toEqual(["REJECTED", "RELEASED", "REQUIRED"]);
     expect(await stockOf("Yaba Altshop", models[0])).toEqual({ physical: before.physical, reserved: before.reserved - 1, available: before.available + 1 });

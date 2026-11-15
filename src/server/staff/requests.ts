@@ -6,6 +6,8 @@
  * no payroll, core-banking or identity API is connected. The Product Manager confirms them manually
  * through an explicit three-item checklist, and nothing marks those checks as passed automatically.
  */
+import { checkVerification, recordVerification } from "../domain/verification";
+import type { VerificationInput } from "@/lib/approval-checklists";
 import { createHash } from "node:crypto";
 import { requireStaffFinancing } from "./permission";
 import type { Db, Tx } from "../db";
@@ -402,8 +404,10 @@ async function afterDecisionNotices(tx: Tx, ctx: Ctx, req: StaffRequestRow, acti
 export interface HeadDecisionInput {
   action: "APPROVE" | "RETURN" | "DECLINE";
   comments?: string;
+  /** Superseded by the verification checklist for approvals (kept for compatibility). */
   confirmed?: boolean;
   lockVersion?: number | null;
+  verification?: VerificationInput | null;
 }
 
 export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecisionInput) {
@@ -421,8 +425,9 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       const comments = (input.comments ?? "").trim();
       let to: StaffStatus;
       let set: Record<string, unknown> = {};
+      const subject = { kind: "STAFF_REQUEST" as const, id: req.id, ref: req.ref, lockVersion: req.lock_version, stage: "UNIT_HEAD", action: input.action, role: "UNIT_HEAD" };
+      const checklist = checkVerification(subject, input.verification);
       if (input.action === "APPROVE") {
-        if (!input.confirmed) throw invalid("Confirm that you approve and forward the request to the Divisional Head.", { confirmed: "Confirmation required." });
         to = "UNDER_DIVISIONAL_HEAD_REVIEW";
         set.unit_head_id = ctx.actor!.staffId;
       } else {
@@ -433,6 +438,7 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       await insertReview(tx, ctx, req, "UNIT_HEAD", "UNIT_HEAD", input.action, comments, to);
       const fresh = await transition(tx, ctx, req, { action: `UNIT_HEAD_${input.action}`, to, role: "UNIT_HEAD", outcome: input.action, comments: comments || null, set });
       await afterDecisionNotices(tx, ctx, fresh, input.action, comments);
+      if (checklist) await recordVerification(tx, ctx, subject, checklist, fresh.status);
       if (input.action === "APPROVE") {
         const dh = await routeDivisionalHead(tx, fresh);
         if (dh.problem || !dh.id) {
@@ -492,8 +498,9 @@ export async function divisionalHeadDecision(ctx: Ctx, id: string, input: HeadDe
       const comments = (input.comments ?? "").trim();
       let to: StaffStatus;
       let set: Record<string, unknown> = { divisional_head_id: actor.staffId };
+      const subject = { kind: "STAFF_REQUEST" as const, id: req.id, ref: req.ref, lockVersion: req.lock_version, stage: "DIVISIONAL_HEAD", action: input.action, role: "DIVISIONAL_HEAD" };
+      const checklist = checkVerification(subject, input.verification);
       if (input.action === "APPROVE") {
-        if (!input.confirmed) throw invalid("Confirm the final approval.", { confirmed: "Confirmation required." });
         const f = computeStaffFinancing(Number(req.gross_kobo), req.deduction_rate_bps);
         if (f.netKobo !== Number(req.net_kobo) || f.deductionKobo !== Number(req.deduction_kobo)) throw gate("The stored figures do not reproduce; approval stopped. Contact the system administrator.");
         const { terms, sha256 } = approvedTermsOf(req);
@@ -507,6 +514,7 @@ export async function divisionalHeadDecision(ctx: Ctx, id: string, input: HeadDe
       await insertReview(tx, ctx, req, "DIVISIONAL_HEAD", "DIVISIONAL_HEAD", input.action, comments, to);
       let next = await transition(tx, ctx, req, { action: `DIVISIONAL_HEAD_${input.action}`, to, role: "DIVISIONAL_HEAD", outcome: input.action === "APPROVE" ? "FINAL_APPROVAL" : input.action, comments: comments || null, set });
       await afterDecisionNotices(tx, ctx, next, input.action, comments);
+      if (checklist) await recordVerification(tx, ctx, subject, checklist, next.status);
       if (input.action === "APPROVE") {
         await notifyStaff(tx, ctx, next, "APPROVED", [next.applicant_id], "Staff financing request approved", [`Your staff financing request ${next.ref} has received final approval. Your offer letter will follow.`]);
         next = await issueOffer(tx, ctx, next);

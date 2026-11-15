@@ -1,3 +1,4 @@
+import { checklistFor } from "@/lib/approval-checklists";
 import { currentPhotoReview, MIN_SKIP_REASON, photoSkips } from "@/server/domain/photo-review";
 import { retailCreditStatus } from "@/server/domain/retail-credit";
 import { PhotoVerification } from "./PhotoVerification";
@@ -319,6 +320,11 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
   const b = await retailBits(c);
   const { app, rules } = b;
   const hidden = { taskId: task.id, lockVersion: String(app.lock_version) };
+  // Verification checklist for a positive decision at this stage (null when none applies).
+  const verifyFor = (action: string, label: string) => {
+    const checklist = checklistFor({ kind: "APPLICATION", stage: task.stage, action, policy: app.approval_policy ?? null, workflow: app.workflow });
+    return checklist ? { checklist, reference: app.ref, actionLabel: label, viewedVersion: app.lock_version } : undefined;
+  };
   const docs = c.documents.filter((d) => !d.superseded_at && d.scan_status === "CLEAN");
   const has = (cat: string) => docs.some((d) => d.category === cat);
   const body: React.ReactNode[] = [];
@@ -390,7 +396,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       };
       const [act, label, hint] = actionMap[stage];
       if (photoPending) body.push(<p key="photo-wait" className="small muted">Complete Business Photograph Verification above to recommend, return or decline.</p>);
-      else if (!tlBlocked.length && pre.ok) body.push(<BusinessDecisionForm key="f" hidden={hidden} action={act} label={label} hint={hint} visitRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.visitRequired} rmPhotoRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.businessPhotos.rmPhotoRequired} doneHref={doneHref} />);
+      else if (!tlBlocked.length && pre.ok) body.push(<BusinessDecisionForm key="f" hidden={hidden} action={act} label={label} hint={hint} visitRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.visitRequired} rmPhotoRequired={stage === "TEAM_LEAD_REVIEW" && !!rules?.businessPhotos.rmPhotoRequired} doneHref={doneHref} verify={verifyFor(act, label)} />);
       if (!photoPending) secondary.push(["RETURN", "Return to initiator for correction", false], ["REJECT", "Decline", true]);
       break;
     }
@@ -435,7 +441,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       );
       body.push(<UploadPanel key="up" compact applicationId={app.id} title="Upload credit report or evidence" categories={["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
       if (stage === "FIRST_CREDIT_REVIEW") {
-        body.push(<TaskButton key="ap" hidden={hidden} action="APPROVE" label="Approve credit appraisal" doneHref={doneHref} disabled={!current} />);
+        body.push(<TaskButton key="ap" hidden={hidden} action="APPROVE" label="Approve credit appraisal" doneHref={doneHref} disabled={!current} verify={verifyFor("APPROVE", app.approval_policy === "RETAIL_CX_V1" ? "Approve CX credit review" : "Approve credit appraisal")} />);
         secondary.push(["RETURN", "Return to initiator for correction", false], ["REJECT", "Decline", true]);
       } else {
         body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${stageLabel((openCorrection?.from_stage as Stage) ?? "SECOND_CREDIT_REVIEW", app.approval_policy)}`} doneHref={doneHref} />);
@@ -449,8 +455,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       if (finalOut) body.push(<AssessmentSummary key="a" out={finalOut} title="Approved assessment snapshot" meta={`Configuration v${b.final.rules.configVersion} · ${b.final.assessor_name}`} />);
       else body.push(<Blocked key="a">No final assessment on record.</Blocked>);
       const route = app.route;
-      if (stage === "SECOND_CREDIT_REVIEW" && route !== 1) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed (independent credit review)" doneHref={doneHref} />);
-      else body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve (credit)" doneHref={doneHref} />);
+      if (stage === "SECOND_CREDIT_REVIEW" && route !== 1) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed (independent credit review)" doneHref={doneHref} verify={verifyFor("PROCEED", "Proceed (concur)")} />);
+      else body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve (credit)" doneHref={doneHref} verify={verifyFor("APPROVE", stage === "DIVISIONAL_HEAD_REVIEW" ? "Final approval" : stage === "UNIT_HEAD_REVIEW" ? "Unit Head approval" : "Concur and approve")} />);
       if (stage !== "SECOND_CREDIT_REVIEW" || route === 1) secondary.push(["RETURN", "Return to the first credit reviewer", false]);
       secondary.push(["REJECT", "Decline", true]);
       break;

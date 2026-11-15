@@ -2,6 +2,7 @@
  * Scenario driver used by the automated tests and `npm run demo:routes`.
  * Drives synthetic cases through the real domain functions (no shortcuts around the rules).
  */
+import { checklistFor } from "@/lib/approval-checklists";
 import { randomUUID } from "node:crypto";
 import { db } from "../db";
 import type { Ctx } from "../context";
@@ -101,8 +102,21 @@ export async function act(appId: string, action: TaskActionInput["action"], extr
   const t = await openTaskOf(appId);
   if (!t?.email) throw new Error(`No assignee for open task on ${appId} (${t?.stage})`);
   const ctx = await ctxFor(t.email, now);
-  return performTaskAction(ctx, { taskId: t.id, action, idempotencyKey: randomUUID(), ...extra });
+  return performTaskAction(ctx, await withVerification({ taskId: t.id, action, idempotencyKey: randomUUID(), ...extra }));
 }
+
+/**
+ * Test/demo scaffolding: acknowledge the full verification checklist for the task's stage, as a reviewer
+ * ticking every item in the dialog would. Pass `verification: null` to simulate a missing acknowledgement.
+ */
+export async function withVerification(input: TaskActionInput): Promise<TaskActionInput> {
+  if (input.verification !== undefined) return input;
+  const r = (await db.query<{ stage: string; approval_policy: string | null; workflow: string; lock_version: number }>("SELECT t.stage, a.approval_policy, a.workflow, a.lock_version FROM tasks t JOIN applications a ON a.id = t.application_id WHERE t.id = $1", [input.taskId])).rows[0];
+  if (!r) return input;
+  const list = checklistFor({ kind: "APPLICATION", stage: r.stage, action: input.action, policy: r.approval_policy, workflow: r.workflow });
+  return list ? { ...input, verification: { checklistId: list.id, version: list.version, items: list.items.map((i) => i.code), viewedVersion: r.lock_version } } : input;
+}
+export const actAs = async (ctx: Ctx, input: TaskActionInput) => performTaskAction(ctx, await withVerification(input));
 
 export async function createSubmittedCase(opts: {
   initiator: keyof typeof INITIATOR_EMAIL;

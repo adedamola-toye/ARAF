@@ -1,3 +1,4 @@
+import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
@@ -754,6 +755,11 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
   const app = c.app;
   const stage = task.stage as Stage;
   const hidden = { taskId: task.id, lockVersion: String(app.lock_version) };
+  // Verification checklist for a positive decision at this stage (null when none applies).
+  const verifyFor = (action: string, label: string) => {
+    const checklist = checklistFor({ kind: "APPLICATION", stage: task.stage, action, policy: app.approval_policy ?? null, workflow: app.workflow });
+    return checklist ? { checklist, reference: app.ref, actionLabel: label, viewedVersion: app.lock_version } : undefined;
+  };
   const actions = allowedActions(stage, app.route);
   const docs = c.documents.filter((d) => !d.superseded_at && d.scan_status === "CLEAN");
   const has = (cat: string) => docs.some((d) => d.category === cat);
@@ -782,7 +788,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
       body.push(<p key="t" className="small muted" style={{ margin: 0 }}>Business endorsement must be approved before credit routing. Review the Overview and Documents.</p>);
-      body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} />);
+      body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} verify={verifyFor("ENDORSE", "Endorse")} />);
       break;
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION": {
@@ -859,6 +865,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
             dsrExceeds={pr?.capacity.result === "EXCEEDS_THRESHOLD"}
             dsrEvidence={has("DSR_EXCEPTION_EVIDENCE")}
             dsrSummary={pr ? `Total DSR ${pr.capacity.totalDsrPercent}% exceeds the ${pr.capacity.thresholdPercent}% threshold by ${formatKobo(pr.capacity.excessKobo)} per month.` : undefined}
+            verify={verifyFor("APPROVE", "Approve (first credit review)")}
           />,
         );
       }
@@ -893,8 +900,8 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
           <Blocked key="a">Assessment pending.</Blocked>
         ),
       );
-      if (actions.includes("PROCEED")) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed" doneHref={doneHref} />);
-      if (actions.includes("APPROVE")) body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve" doneHref={doneHref} />);
+      if (actions.includes("PROCEED")) body.push(<TaskButton key="p" hidden={hidden} action="PROCEED" label="Proceed" doneHref={doneHref} verify={verifyFor("PROCEED", "Proceed (concur)")} />);
+      if (actions.includes("APPROVE")) body.push(<TaskButton key="p" hidden={hidden} action="APPROVE" label="Approve" doneHref={doneHref} verify={verifyFor("APPROVE", "Approve")} />);
       if (stage === "DIVISIONAL_HEAD_REVIEW") body.push(<p key="n" className="small muted" style={{ margin: 0 }}>Approval assigns the initiator to prepare the signed offer pack.</p>);
       break;
     case "INITIATOR_CORRECTION":

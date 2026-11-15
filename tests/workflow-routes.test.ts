@@ -1,9 +1,9 @@
+import { actAs } from "@/server/demo/scenario";
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { NAIRA } from "@/server/money";
 import { actionQueue } from "@/server/domain/views";
 import { adminAssignTask, grantRole, revokeRole, eligibleForTask } from "@/server/domain/admin";
-import { performTaskAction } from "@/server/domain/workflow";
 import { act, appRow, approveFirstReview, createSubmittedCase, ctxFor, driveToClosed, driveToOffer, openTaskOf } from "@/server/demo/scenario";
 import { key, resetDb, staffId } from "./helpers";
 
@@ -155,7 +155,7 @@ describe("random assignment eligibility and separation of duties", () => {
     expect(exc[0].to_addresses).toContain("superadmin@altbank.ng");
     // Nobody can act on it, including the Divisional Head trying to skip ahead.
     const dh = await ctxFor("div.head@altbank.ng");
-    await expect(performTaskAction(dh, { taskId: t.id, action: "APPROVE", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
+    await expect(actAs(dh, { taskId: t.id, action: "APPROVE", idempotencyKey: key() })).rejects.toThrow(/not assigned to you/);
     // Prior reviewers on the case are never eligible, even if they are granted the role.
     const first = await db.query("SELECT email FROM staff WHERE id = $1", [(await appRow(id)).first_reviewer_id]);
     await grantRole(admin, { staffId: await staffId(first.rows[0].email), role: "UNIT_HEAD" });
@@ -235,8 +235,8 @@ describe("concurrency and idempotency", () => {
     const ctx = await ctxFor(t.email!);
     const k = key();
     const [r1, r2] = await Promise.all([
-      performTaskAction(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: k }),
-      performTaskAction(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: k }),
+      actAs(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: k }),
+      actAs(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: k }),
     ]);
     expect(r1.stage).toBe("FIRST_CREDIT_REVIEW");
     expect(r2.stage).toBe("FIRST_CREDIT_REVIEW");
@@ -248,8 +248,8 @@ describe("concurrency and idempotency", () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     const t = await openTaskOf(id);
     const ctx = await ctxFor(t.email!);
-    await performTaskAction(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() });
-    await expect(performTaskAction(ctx, { taskId: t.id, action: "REJECT", reason: "late", idempotencyKey: key() })).rejects.toThrow(/already been actioned/);
+    await actAs(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key() });
+    await expect(actAs(ctx, { taskId: t.id, action: "REJECT", reason: "late", idempotencyKey: key() })).rejects.toThrow(/already been actioned/);
   });
   it("stale lock_version is rejected", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
@@ -257,7 +257,7 @@ describe("concurrency and idempotency", () => {
     const ctx = await ctxFor(t.email!);
     const app = await appRow(id);
     await expect(
-      performTaskAction(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key(), expectedLockVersion: app.lock_version - 1 }),
+      actAs(ctx, { taskId: t.id, action: "ENDORSE", idempotencyKey: key(), expectedLockVersion: app.lock_version - 1 }),
     ).rejects.toThrow(/changed since you opened it/);
   });
 });

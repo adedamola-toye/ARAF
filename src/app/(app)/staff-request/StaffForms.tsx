@@ -1,4 +1,6 @@
 "use client";
+import { checklistFor } from "@/lib/approval-checklists";
+import { VerifyButton } from "@/components/VerifyDialog";
 import { IncidentCard } from "@/components/Incident";
 import type { IncidentView } from "@/lib/incident-messages";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -516,7 +518,8 @@ function ConfirmButtonInline({ label, title, body, confirmLabel, disabled, field
 
 // ------------------------------------------------------------------ Unit Head / Divisional Head
 
-export function HeadDecisionForm({ id, lockVersion, level, netLabel }: { id: string; lockVersion: number; level: "UH" | "DH"; netLabel: string }) {
+export function HeadDecisionForm({ id, lockVersion, level, netLabel, reference }: { id: string; lockVersion: number; level: "UH" | "DH"; netLabel: string; reference: string }) {
+  const checklist = checklistFor({ kind: "STAFF_REQUEST", stage: level === "DH" ? "DIVISIONAL_HEAD" : "UNIT_HEAD", action: "APPROVE" })!;
   return (
     <ActionForm action={headDecisionAction} showMessages={false}>
       {(state) => (
@@ -531,17 +534,14 @@ export function HeadDecisionForm({ id, lockVersion, level, netLabel }: { id: str
           </div>
           <FormMessages state={state} />
           <div className="action-bar">
-            <ConfirmButtonInline
-              fields={{ decision: "APPROVE" }}
+            <VerifyButton
+              verify={{ checklist, reference, actionLabel: level === "DH" ? "Final approval" : "Approve and forward to the Divisional Head", viewedVersion: lockVersion }}
               label={level === "DH" ? "Approve" : "Approve and forward to Divisional Head"}
-              title={level === "DH" ? "Give final approval?" : "Approve and forward?"}
-              confirmLabel={level === "DH" ? "Confirm final approval" : "Confirm and forward"}
-              body={
-                level === "DH" ? (
-                  <p>The financing terms ({netLabel} net) will be locked and the offer letter process starts. Changes after this need a controlled amendment and reapproval.</p>
-                ) : (
-                  <p>The request goes to the Divisional Head for final approval.</p>
-                )
+              submitFields={{ decision: "APPROVE" }}
+              extra={
+                <p className="small" style={{ marginTop: 0 }}>
+                  {level === "DH" ? `The financing terms (${netLabel} net) will be locked and the offer letter process starts. Changes after this need a controlled amendment and reapproval.` : "The request goes to the Divisional Head for final approval."}
+                </p>
               }
             />
             <DecisionButton value="RETURN" label="Return for clarification" />
