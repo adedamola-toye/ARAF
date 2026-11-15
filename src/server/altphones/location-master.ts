@@ -15,7 +15,7 @@ import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
 import { audit } from "../audit";
-import { conflict, forbidden, invalid, notFound } from "../errors";
+import { conflict, forbidden, gate, invalid, notFound } from "../errors";
 import { sha256Hex } from "../crypto";
 import { holdsRole } from "../domain/access";
 import { normaliseNigerianState, REGIONS } from "../domain/roles";
@@ -30,7 +30,8 @@ const MANAGERS = ["SUPER_ADMIN", PM_ROLE] as const;
 const MAX_BYTES = 10 * 1024 * 1024;
 
 const isManager = async (q: Db, staffId: string) => (await Promise.all(MANAGERS.map((r) => holdsRole(q, staffId, r)))).some(Boolean);
-async function isApprover(q: Db, staffId: string) {
+/** The Altphones Unit Head (the one configured for the route, or any Unit Head while none is configured). */
+export async function isApprover(q: Db, staffId: string) {
   if (!(await holdsRole(q, staffId, "UNIT_HEAD"))) return false;
   const uh = (await currentSettings(q)).unit_head_staff_id;
   return !uh || uh === staffId;
@@ -663,8 +664,8 @@ export async function requestAddress(ctx: Ctx, p: { locationId: string; address?
     }
     const note = (p.note ?? "").trim().slice(0, 500);
     if ((basis === "CORRECTION" || basis === "CONFLICT_CHOICE") && note.length < 5) throw invalid("Say why this address is the right one.", { note: "Give a reason." });
-    const open = (await tx.query("SELECT ref FROM altphones_address_requests WHERE location_id = $1 AND status = 'PENDING'", [l.id])).rows[0];
-    if (open) throw conflict(`Address request ${open.ref} for ${l.name} is still awaiting the Unit Head.`);
+    const open = (await tx.query("SELECT ref, status FROM altphones_address_requests WHERE location_id = $1 AND status IN ('PENDING','RETURNED')", [l.id])).rows[0];
+    if (open) throw conflict(open.status === "RETURNED" ? `Address request ${open.ref} for ${l.name} was returned for correction: correct and resubmit it.` : `Address request ${open.ref} for ${l.name} is still awaiting the Unit Head.`);
     const ref = await nextRef(tx, "altphones_address_request_seq", "ADR", ctx.now);
     await tx.query("INSERT INTO altphones_address_requests (ref, location_id, address, basis, activate, note, requested_by, requested_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)", [
       ref,
@@ -682,8 +683,17 @@ export async function requestAddress(ctx: Ctx, p: { locationId: string; address?
   });
 }
 
-/** A new location: created inactive, with an address registration request; it is activated when a Unit Head approves. */
-export async function proposeLocation(ctx: Ctx, p: { state: string; type: string; name: string; address: string; note?: string }) {
+async function activeBpm(tx: Tx, email: string): Promise<{ id: string; full_name: string } | null> {
+  const st = (await tx.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE lower(email) = $1 AND status = 'ACTIVE'", [email])).rows[0];
+  return st && (await holdsRole(tx, st.id, BPM_ROLE)) ? st : null;
+}
+
+/**
+ * A new location (PM → Unit Head → activation): created inactive with its registered address (an existing
+ * registered address chosen from the master, or a new one) and, for an Altshop or Altbox, the BPM it should be
+ * routed to. Nothing is usable until a Unit Head approves; stock starts at zero.
+ */
+export async function proposeLocation(ctx: Ctx, p: { state: string; type: string; name: string; address?: string; addressFrom?: string; bpmEmail?: string; note?: string }) {
   return withTx(async (tx) => {
     if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can add a location.");
     const e: Record<string, string> = {};
@@ -692,8 +702,16 @@ export async function proposeLocation(ctx: Ctx, p: { state: string; type: string
     if (!["BRANCH", "ALTSHOP", "ALTBOX"].includes(p.type)) e.type = "Choose the location type.";
     const name = (p.name ?? "").replace(/\s+/g, " ").trim().toUpperCase();
     if (name.length < 3) e.name = "Enter the location name.";
-    const address = (p.address ?? "").replace(/\s+/g, " ").trim();
-    if (address.length < 10) e.address = "Enter the full address to be registered (at least 10 characters).";
+    let address = (p.address ?? "").replace(/\s+/g, " ").trim();
+    if (p.addressFrom) {
+      const from = isUuid(p.addressFrom) ? (await tx.query<{ address: string | null; address_status: string }>("SELECT address, address_status FROM locations WHERE id = $1", [p.addressFrom])).rows[0] : null;
+      if (!from || from.address_status !== "REGISTERED" || !from.address) e.addressFrom = "Choose a location with a registered address.";
+      else address = from.address;
+    }
+    if (address.length < 10) e.address = "Choose an existing registered address or enter the new address (at least 10 characters).";
+    const bpmEmail = (p.bpmEmail ?? "").trim().toLowerCase();
+    if (bpmEmail && p.type === "BRANCH") e.bpmEmail = "Branches are not routed to a BPM (Delight Officer route: Product Manager → Unit Head).";
+    else if (bpmEmail && !(await activeBpm(tx, bpmEmail))) e.bpmEmail = "Choose an active Business Performance Manager.";
     if (Object.keys(e).length) throw invalid("Check the new location.", e);
     const dupe = (await tx.query("SELECT name FROM locations WHERE state = $1 AND upper(name) = $2", [state, name])).rows[0];
     if (dupe) throw conflict(`${dupe.name} already exists in ${state}.`);
@@ -704,10 +722,34 @@ export async function proposeLocation(ctx: Ctx, p: { state: string; type: string
       )
     ).rows[0];
     const ref = await nextRef(tx, "altphones_address_request_seq", "ADR", ctx.now);
-    await tx.query("INSERT INTO altphones_address_requests (ref, location_id, address, basis, activate, note, requested_by, requested_at) VALUES ($1,$2,$3,'NEW_LOCATION',true,$4,$5,$6)", [ref, loc.id, address, (p.note ?? "").trim().slice(0, 500) || null, ctx.actor!.staffId, ctx.now]);
-    await audit(tx, ctx, { action: "ALTPHONES_LOCATION_PROPOSED", details: { ref, state, type: p.type, name } });
-    await notifyApprovers(tx, ctx, ref, [`${ctx.actor!.name} proposed a new ${TYPE_LABEL[p.type as LocType]}: ${name} (${state}).`, `Address: ${address}`, "It stays inactive until you approve the address."]);
+    await tx.query("INSERT INTO altphones_address_requests (ref, location_id, address, basis, activate, note, requested_by, requested_at, bpm_email) VALUES ($1,$2,$3,'NEW_LOCATION',true,$4,$5,$6,$7)", [ref, loc.id, address, (p.note ?? "").trim().slice(0, 500) || null, ctx.actor!.staffId, ctx.now, bpmEmail || null]);
+    await audit(tx, ctx, { action: "ALTPHONES_LOCATION_PROPOSED", details: { ref, state, type: p.type, name, addressFromExisting: !!p.addressFrom, bpm: bpmEmail || null } });
+    await notifyApprovers(tx, ctx, ref, [`${ctx.actor!.name} proposed a new ${TYPE_LABEL[p.type as LocType]}: ${name} (${state}).`, `Address: ${address}`, bpmEmail ? `BPM: ${bpmEmail}` : p.type === "BRANCH" ? "Branch: no BPM (Product Manager → Unit Head)." : "No BPM chosen: sales would go to the Placeholder BPM.", "It stays inactive until you approve it."]);
     return { ref, locationId: loc.id };
+  });
+}
+
+/** The PM corrects a returned request (address and/or BPM) and sends it back to the Unit Head. */
+export async function resubmitAddressRequest(ctx: Ctx, id: string, p: { address?: string; bpmEmail?: string; note: string }) {
+  if (!isUuid(id)) throw notFound();
+  return withTx(async (tx) => {
+    if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can resubmit a location request.");
+    const r = (await tx.query("SELECT r.*, l.outlet_type, l.name FROM altphones_address_requests r JOIN locations l ON l.id = r.location_id WHERE r.id = $1 FOR UPDATE OF r", [id])).rows[0];
+    if (!r) throw notFound();
+    if (r.status !== "RETURNED") throw conflict(`${r.ref} is not waiting for correction.`);
+    const e: Record<string, string> = {};
+    const address = (p.address ?? "").replace(/\s+/g, " ").trim() || r.address;
+    if (address.length < 10) e.address = "Enter the full address (at least 10 characters).";
+    const bpmEmail = p.bpmEmail === undefined ? r.bpm_email : (p.bpmEmail ?? "").trim().toLowerCase() || null;
+    if (bpmEmail && r.outlet_type === "BRANCH") e.bpmEmail = "Branches are not routed to a BPM.";
+    else if (bpmEmail && !(await activeBpm(tx, bpmEmail))) e.bpmEmail = "Choose an active Business Performance Manager.";
+    const note = (p.note ?? "").trim().slice(0, 500);
+    if (note.length < 5) e.note = "Say what you corrected.";
+    if (Object.keys(e).length) throw invalid("Check the corrections.", e);
+    await tx.query("UPDATE altphones_address_requests SET status = 'PENDING', address = $2, bpm_email = $3, note = $4, resubmitted_by = $5, resubmitted_at = $6 WHERE id = $1", [id, address, bpmEmail, note, ctx.actor!.staffId, ctx.now]);
+    await audit(tx, ctx, { action: "ALTPHONES_LOCATION_RESUBMITTED", details: { ref: r.ref, location: r.name, bpm: bpmEmail, note } });
+    await notifyApprovers(tx, ctx, `${r.ref}-${ctx.now.getTime()}`, [`${ctx.actor!.name} corrected ${r.ref} (${r.name}) and sent it back to you: ${note}`]);
+    return { ref: r.ref };
   });
 }
 
@@ -719,8 +761,14 @@ export async function decideAddressRequest(ctx: Ctx, id: string, p: { decision: 
     const r = (await tx.query("SELECT r.*, l.name, l.state FROM altphones_address_requests r JOIN locations l ON l.id = r.location_id WHERE r.id = $1 FOR UPDATE OF r", [id])).rows[0];
     if (!r) throw notFound();
     if (r.status !== "PENDING") throw conflict(`${r.ref} has already been decided.`);
-    if (r.requested_by === actor.staffId) throw forbidden("You requested this address, so another approver must decide it.");
+    if (r.requested_by === actor.staffId || r.resubmitted_by === actor.staffId) throw forbidden("You requested this address, so another approver must decide it.");
     const note = (p.note ?? "").trim().slice(0, 500);
+    if (p.decision === "RETURN") {
+      if (note.length < 5) throw invalid("Say what needs correcting.", { note: "Give a reason." });
+      await tx.query("UPDATE altphones_address_requests SET status = 'RETURNED', decision_note = $2 WHERE id = $1", [id, note]);
+      await audit(tx, ctx, { action: "ALTPHONES_ADDRESS_RETURNED", details: { ref: r.ref, location: r.name, note } });
+      return { ref: r.ref, approved: false, returned: true };
+    }
     if (p.decision === "REJECT") {
       if (note.length < 5) throw invalid("Say why the address is rejected.", { note: "Give a reason." });
       await tx.query("UPDATE altphones_address_requests SET status = 'REJECTED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note]);
@@ -733,8 +781,16 @@ export async function decideAddressRequest(ctx: Ctx, id: string, p: { decision: 
               active = active OR $5, updated_by = $4, updated_at = $3 WHERE id = $1`,
       [r.location_id, r.address, ctx.now, actor.staffId, r.activate],
     );
+    if (r.bpm_email) {
+      if (!(await activeBpm(tx, r.bpm_email))) throw conflict(`${r.bpm_email} is no longer an active Business Performance Manager. Return the request for a different BPM.`);
+      await tx.query(
+        `INSERT INTO altphones_bpm_locations (location_id, bpm_email, updated_by, approved_by, updated_at) VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (location_id) DO UPDATE SET bpm_email = EXCLUDED.bpm_email, updated_by = EXCLUDED.updated_by, approved_by = EXCLUDED.approved_by, updated_at = EXCLUDED.updated_at`,
+        [r.location_id, r.bpm_email, r.resubmitted_by ?? r.requested_by, actor.staffId, ctx.now],
+      );
+    }
     await tx.query("UPDATE altphones_address_requests SET status = 'APPROVED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note || null]);
-    await audit(tx, ctx, { action: "ALTPHONES_ADDRESS_APPROVED", details: { ref: r.ref, location: r.name, state: r.state, basis: r.basis, activated: r.activate } });
+    await audit(tx, ctx, { action: "ALTPHONES_ADDRESS_APPROVED", details: { ref: r.ref, location: r.name, state: r.state, basis: r.basis, activated: r.activate, bpm: r.bpm_email ?? null, openingStock: r.activate ? 0 : undefined } });
     return { ref: r.ref, approved: true, activated: r.activate };
   });
 }
@@ -793,6 +849,9 @@ export interface MasterFilter {
   type?: string;
   address?: string; // REGISTERED | MISSING | REVIEW
   q?: string;
+  /** BPM email, or "NONE" for Altshops/Altboxes with no BPM mapped (Placeholder route). */
+  bpm?: string;
+  status?: string; // ACTIVE | INACTIVE
 }
 export async function locationMaster(q: Db, f: MasterFilter) {
   const where = ["true"];
@@ -801,11 +860,16 @@ export async function locationMaster(q: Db, f: MasterFilter) {
   if (f.type) where.push(`l.outlet_type = $${args.push(f.type)}`);
   if (f.address) where.push(`l.address_status = $${args.push(f.address)}`);
   if (f.q) where.push(`(l.name ILIKE $${args.push(`%${f.q}%`)} OR l.address ILIKE $${args.length})`);
+  if (f.bpm === "NONE") where.push(`l.outlet_type <> 'BRANCH' AND coalesce(bl.bpm_email, b.bpm_email) IS NULL`);
+  else if (f.bpm) where.push(`coalesce(bl.bpm_email, b.bpm_email) = $${args.push(f.bpm.toLowerCase())}`);
+  if (f.status === "ACTIVE") where.push("l.active");
+  if (f.status === "INACTIVE") where.push("NOT l.active");
   return (
     await q.query(
       `SELECT l.id, l.name, l.state, l.outlet_type, l.active, l.address, l.address_status, l.address_source, l.source_name,
               coalesce(bl.bpm_email, b.bpm_email) AS bpm_email, bs.full_name AS bpm_name, (bl.location_id IS NOT NULL) AS bpm_for_location,
-              (SELECT r.ref FROM altphones_address_requests r WHERE r.location_id = l.id AND r.status = 'PENDING') AS pending_ref
+              (SELECT r.ref FROM altphones_address_requests r WHERE r.location_id = l.id AND r.status IN ('PENDING','RETURNED')) AS pending_ref,
+              (SELECT r.ref FROM altphones_location_status_requests r WHERE r.location_id = l.id AND r.status = 'PENDING') AS status_ref
          FROM locations l LEFT JOIN altphones_bpm_locations bl ON bl.location_id = l.id LEFT JOIN altphones_bpm_states b ON b.state = l.state
          LEFT JOIN staff bs ON lower(bs.email) = coalesce(bl.bpm_email, b.bpm_email) AND bs.status = 'ACTIVE'
         WHERE ${where.join(" AND ")} ORDER BY l.state, array_position(ARRAY['BRANCH','ALTSHOP','ALTBOX'], l.outlet_type), l.name LIMIT 600`,
@@ -861,4 +925,92 @@ export async function unroutedLocations(q: Db) {
       [BPM_ROLE],
     )
   ).rows;
+}
+
+// ------------------------------------------------------------------ activation / deactivation (PM → Unit Head)
+
+export async function requestLocationStatus(ctx: Ctx, p: { locationId: string; action: string; note: string }) {
+  if (!isUuid(p.locationId)) throw notFound("Location not found.");
+  return withTx(async (tx) => {
+    if (!(await isManager(tx, ctx.actor!.staffId))) throw forbidden("Only the Altphones Product Manager or a Super Admin can request a status change.");
+    const l = (await tx.query("SELECT id, name, state, active, address_status FROM locations WHERE id = $1 FOR UPDATE", [p.locationId])).rows[0];
+    if (!l) throw notFound("Location not found.");
+    if (!["DEACTIVATE", "REACTIVATE"].includes(p.action)) throw invalid("Choose deactivate or reactivate.");
+    if (p.action === "DEACTIVATE" && !l.active) throw conflict(`${l.name} is already inactive.`);
+    if (p.action === "REACTIVATE" && l.active) throw conflict(`${l.name} is already active.`);
+    if (p.action === "REACTIVATE" && l.address_status !== "REGISTERED") throw gate(`${l.name} has no registered address: register the address first (that request activates it when approved).`);
+    const note = (p.note ?? "").trim().slice(0, 500);
+    if (note.length < 5) throw invalid("Give the reason (shown to the Unit Head).", { note: "Give a reason." });
+    const open = (await tx.query("SELECT ref FROM altphones_location_status_requests WHERE location_id = $1 AND status = 'PENDING'", [l.id])).rows[0];
+    if (open) throw conflict(`Request ${open.ref} for ${l.name} is still awaiting the Unit Head.`);
+    const ref = await nextRef(tx, "altphones_location_status_seq", "LST", ctx.now);
+    await tx.query("INSERT INTO altphones_location_status_requests (ref, location_id, action, note, requested_by, requested_at) VALUES ($1,$2,$3,$4,$5,$6)", [ref, l.id, p.action, note, ctx.actor!.staffId, ctx.now]);
+    await audit(tx, ctx, { action: "ALTPHONES_LOCATION_STATUS_REQUESTED", details: { ref, location: l.name, state: l.state, change: p.action, note } });
+    await notifyApprovers(tx, ctx, ref, [`${ctx.actor!.name} asked to ${p.action === "DEACTIVATE" ? "deactivate" : "reactivate"} ${l.name} (${l.state}).`, `Reason: ${note}`]);
+    return { ref };
+  });
+}
+
+export async function decideLocationStatus(ctx: Ctx, id: string, p: { decision: string; note?: string }) {
+  if (!isUuid(id)) throw notFound();
+  return withTx(async (tx) => {
+    const actor = ctx.actor!;
+    if (!(await isApprover(tx, actor.staffId))) throw forbidden("Only the Altphones Unit Head can approve a location status change.");
+    const r = (await tx.query("SELECT r.*, l.name, l.state, l.active FROM altphones_location_status_requests r JOIN locations l ON l.id = r.location_id WHERE r.id = $1 FOR UPDATE OF r", [id])).rows[0];
+    if (!r) throw notFound();
+    if (r.status !== "PENDING") throw conflict(`${r.ref} has already been decided.`);
+    if (r.requested_by === actor.staffId) throw forbidden("You requested this change, so another approver must decide it.");
+    const note = (p.note ?? "").trim().slice(0, 500);
+    if (p.decision === "REJECT") {
+      if (note.length < 5) throw invalid("Say why the change is rejected.", { note: "Give a reason." });
+      await tx.query("UPDATE altphones_location_status_requests SET status = 'REJECTED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note]);
+      await audit(tx, ctx, { action: "ALTPHONES_LOCATION_STATUS_REJECTED", details: { ref: r.ref, location: r.name, note } });
+      return { ref: r.ref, approved: false };
+    }
+    if (p.decision !== "APPROVE") throw invalid("Choose approve or reject.");
+    const active = r.action === "REACTIVATE";
+    // Existing applications keep their location; deactivation only removes it from new sales.
+    await tx.query("UPDATE locations SET active = $2, updated_by = $3, updated_at = $4 WHERE id = $1", [r.location_id, active, actor.staffId, ctx.now]);
+    await tx.query("UPDATE altphones_location_status_requests SET status = 'APPROVED', decided_by = $2, decided_at = $3, decision_note = $4 WHERE id = $1", [id, actor.staffId, ctx.now, note || null]);
+    await audit(tx, ctx, { action: "ALTPHONES_LOCATION_STATUS_APPROVED", details: { ref: r.ref, location: r.name, state: r.state, active } });
+    return { ref: r.ref, approved: true, active };
+  });
+}
+
+export async function locationStatusRequests(q: Db, status = "PENDING") {
+  return (
+    await q.query(
+      `SELECT r.*, l.name AS location_name, l.state, l.outlet_type, s.full_name AS requested_by_name, d.full_name AS decided_by_name
+         FROM altphones_location_status_requests r JOIN locations l ON l.id = r.location_id JOIN staff s ON s.id = r.requested_by LEFT JOIN staff d ON d.id = r.decided_by
+        WHERE ($1 = 'ALL' OR r.status = $1) ORDER BY r.requested_at DESC LIMIT 200`,
+      [status],
+    )
+  ).rows;
+}
+
+/** The BPM register: every staff member holding the BPM role, with coverage, locations and mapping history. */
+export async function bpmRegister(q: Db) {
+  const ph = await placeholderBpm(q);
+  const people = (
+    await q.query<{ id: string; full_name: string; email: string; status: string; role_active: boolean }>(
+      `SELECT s.id, s.full_name, s.email, s.status, bool_or(ra.active) AS role_active
+         FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE ra.role = $1 GROUP BY s.id ORDER BY s.full_name`,
+      [BPM_ROLE],
+    )
+  ).rows;
+  const states = (await q.query<{ state: string; bpm_email: string }>("SELECT state, bpm_email FROM altphones_bpm_states ORDER BY state")).rows;
+  const locs = (await q.query<{ bpm_email: string; name: string; state: string }>("SELECT b.bpm_email, l.name, l.state FROM altphones_bpm_locations b JOIN locations l ON l.id = b.location_id ORDER BY l.name")).rows;
+  const history = (await q.query<{ bpm_email: string | null; ref: string; scope: string; state: string | null; status: string; decided_at: Date | null; requested_at: Date }>("SELECT bpm_email, ref, scope, state, status, decided_at, requested_at FROM altphones_bpm_requests ORDER BY requested_at DESC")).rows;
+  const emailDomain = config.staffEmailDomain;
+  return people.map((p) => {
+    const e = p.email.toLowerCase();
+    return {
+      ...p,
+      verified: p.status === "ACTIVE" && p.role_active && e.endsWith(`@${emailDomain}`),
+      placeholder: ph.id === p.id,
+      states: states.filter((x) => x.bpm_email === e).map((x) => x.state),
+      locations: locs.filter((x) => x.bpm_email === e).map((x) => `${x.name} (${x.state})`),
+      history: history.filter((h) => h.bpm_email === e).slice(0, 20),
+    };
+  });
 }

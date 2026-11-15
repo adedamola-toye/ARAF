@@ -9,6 +9,7 @@
  * Business review routes are configured independently of credit appraisal. Every transition runs inside the
  * caller's transaction (see workflow.ts) with idempotency, row locks and lock_version.
  */
+import { assertPhotoReviewDone } from "./photo-review";
 import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
@@ -757,6 +758,7 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
     case "TEAM_LEAD_REVIEW":
     case "HRS_REVIEW":
     case "HEAD_OF_UNIT_APPROVAL": {
+      if (task.stage === "TEAM_LEAD_REVIEW") await assertPhotoReviewDone(tx, app.id);
       if (a === "REJECT") return null; // shared decline handling
       if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
       const pre = await preliminaryOk(tx, app);

@@ -329,3 +329,35 @@ export async function retailCreditAction(_p: ActionState, fd: FormData): Promise
     return toActionError(e);
   }
 }
+
+// ------------------------------------------------------------------ Vendor Financing: Team Lead photograph verification
+
+export async function tlPhotoUploadAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const { checkPhotoFile, recordPhotoUpload, TL_PHOTO_CATEGORY } = await import("@/server/domain/photo-review");
+    const { uploadDocument } = await import("@/server/domain/documents");
+    const appId = String(fd.get("applicationId") ?? "");
+    const file = fd.get("photo");
+    if (!(file instanceof File) || file.size === 0) throw invalid("Choose the photograph from your gallery or files.", { photo: "Choose a photograph." });
+    if (fd.get("confirmed") !== "on") throw invalid("Confirm that the photograph shows the business the Relationship Manager presented.", { confirmed: "Confirm the photograph relates to this business." });
+    const data = Buffer.from(await file.arrayBuffer());
+    checkPhotoFile(data);
+    const doc = await uploadDocument(ctx, { applicationId: appId, category: TL_PHOTO_CATEGORY, filename: file.name || "business-photo.jpg", data });
+    await recordPhotoUpload(ctx, appId, { documentId: doc.id, confirmed: true });
+    return { ok: true, message: "Photograph uploaded and recorded. You can now complete your review.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+export async function tlPhotoSkipAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    const { recordPhotoSkip } = await import("@/server/domain/photo-review");
+    const r = await recordPhotoSkip(ctx, String(fd.get("applicationId") ?? ""), String(fd.get("skipReason") ?? ""));
+    return { ok: true, message: `Skip recorded with your reason. ${r.notified ? `The Unit Head${r.notified > 1 ? "s were" : " was"} notified.` : "No active Unit Head is set up to notify; an administrator must assign one."} You can now complete your review.`, nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

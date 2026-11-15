@@ -23,9 +23,10 @@ import {
 import { confirmDisbursement, decide, type Decision } from "@/server/altphones/approvals";
 import { saveContract, saveHoliday, saveModel, savePolicy, savePricing, setModelImage } from "@/server/altphones/catalogue";
 import { decideReplenishment, decideStockCount, requestReplenishment, submitStockCount } from "@/server/altphones/stock";
-import { commitImport, discardImport, previewImport } from "@/server/altphones/imports";
+import { commitImport, discardImport, previewImport, rejectImport, submitImport } from "@/server/altphones/imports";
+import { decideMovement, requestMovement } from "@/server/altphones/movements";
 import { invalid } from "@/server/errors";
-import { applyProfiling, decideAddressRequest, decideBpmRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
+import { applyProfiling, decideAddressRequest, decideBpmRequest, decideLocationStatus, requestLocationStatus, resubmitAddressRequest, rerouteWaitingNow, discardProfiling, linkSource, previewProfiling, proposeLocation, requestAddress, requestBpmMapping } from "@/server/altphones/location-master";
 import { decideBatch, decideMatching, decideRecord, discardBatch, mapLocations, mapReferrers, setAsAt, stageRegister, submitBatch } from "@/server/altphones/migration";
 
 const s = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
@@ -179,7 +180,15 @@ export const previewImportAction = async (_p: ActionState, fd: FormData) =>
     if (!(file instanceof File) || file.size === 0) throw invalid("Choose a CSV or Excel file.", { file: "Choose a file." });
     return previewImport(ctx, s(fd, "kind"), file.name, Buffer.from(await file.arrayBuffer()));
   }, "File checked. Review the result below before importing.");
-export const commitImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => commitImport(ctx, s(fd, "importId")), (r) => `Imported ${(r as { applied: number }).applied} records.`);
+export const requestMovementAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => requestMovement(ctx, { kind: s(fd, "kind"), locationId: s(fd, "locationId"), toLocationId: s(fd, "toLocationId") || null, modelId: s(fd, "modelId"), quantity: Number(s(fd, "quantity")), imeis: s(fd, "imeis"), note: s(fd, "note") }), (r) => `Movement ${(r as { ref: string }).ref} sent to the Unit Head for approval.`);
+export const decideMovementAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => decideMovement(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? "Approved and posted to the ledger." : "Rejected."));
+export const submitImportAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => submitImport(ctx, s(fd, "importId"), { partial: s(fd, "partial") === "1", note: s(fd, "note") }), "Submitted. A Unit Head must approve it before anything is imported.");
+export const commitImportAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => commitImport(ctx, s(fd, "importId")), (r) => { const x = r as { applied: number; invalidLeftOut: number }; return `Approved: ${x.applied} records imported${x.invalidLeftOut ? `, ${x.invalidLeftOut} invalid rows left out` : ""}.`; });
+export const rejectImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => rejectImport(ctx, s(fd, "importId"), s(fd, "note")), "Import rejected.");
 export const discardImportAction = async (_p: ActionState, fd: FormData) => run((ctx) => discardImport(ctx, s(fd, "importId")), "Import discarded.");
 
 export const contractAction = async (_p: ActionState, fd: FormData) =>
@@ -264,7 +273,13 @@ export const discardProfilingAction = async (_p: ActionState, fd: FormData) => r
 export const requestAddressAction = async (_p: ActionState, fd: FormData) =>
   run((ctx) => requestAddress(ctx, { locationId: s(fd, "locationId"), address: s(fd, "address"), choice: s(fd, "choice"), note: s(fd, "note") }), (r) => `Address request ${(r as { ref: string }).ref} sent to the Unit Head.`);
 export const proposeLocationAction = async (_p: ActionState, fd: FormData) =>
-  run((ctx) => proposeLocation(ctx, { state: s(fd, "state"), type: s(fd, "type"), name: s(fd, "name"), address: s(fd, "address"), note: s(fd, "note") }), (r) => `Location proposed (${(r as { ref: string }).ref}). It stays inactive until the Unit Head approves its address.`);
+  run((ctx) => proposeLocation(ctx, { state: s(fd, "state"), type: s(fd, "type"), name: s(fd, "name"), address: s(fd, "address"), addressFrom: s(fd, "addressFrom"), bpmEmail: s(fd, "bpmEmail"), note: s(fd, "note") }), (r) => `Location proposed (${(r as { ref: string }).ref}). It stays inactive until the Unit Head approves it.`);
+export const resubmitAddressAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => resubmitAddressRequest(ctx, s(fd, "id"), { address: s(fd, "address"), bpmEmail: fd.has("bpmEmail") ? s(fd, "bpmEmail") : undefined, note: s(fd, "note") }), (r) => `${(r as { ref: string }).ref} corrected and sent back to the Unit Head.`);
+export const requestStatusAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => requestLocationStatus(ctx, { locationId: s(fd, "locationId"), action: s(fd, "action"), note: s(fd, "note") }), (r) => `Request ${(r as { ref: string }).ref} sent to the Unit Head.`);
+export const decideStatusAction = async (_p: ActionState, fd: FormData) =>
+  run((ctx) => decideLocationStatus(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }), (r) => ((r as { approved: boolean }).approved ? "Approved." : "Rejected."));
 export const decideAddressAction = async (_p: ActionState, fd: FormData) =>
   run(
     (ctx) => decideAddressRequest(ctx, s(fd, "id"), { decision: s(fd, "decision"), note: s(fd, "note") }),

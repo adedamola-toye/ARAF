@@ -25,7 +25,7 @@ import { readRegister, type Issue, type SheetKind } from "./register";
 import { imeiProblem } from "@/lib/altphones";
 
 export const PREPARER_ROLES = ["SUPER_ADMIN", PM_ROLE] as const;
-export type Classification = "COMPLETED" | "CURRENT" | "IN_ARREARS" | "NOT_STARTED" | "NEEDS_REVIEW" | "CANCELLED";
+export type Classification = "COMPLETED" | "CURRENT" | "IN_ARREARS" | "NOT_STARTED" | "NEEDS_REVIEW" | "CANCELLED" | "UNCONFIRMED";
 export const CLASSIFICATION_LABEL: Record<Classification, string> = {
   COMPLETED: "Completed",
   CURRENT: "Current",
@@ -33,7 +33,28 @@ export const CLASSIFICATION_LABEL: Record<Classification, string> = {
   NOT_STARTED: "Not yet started",
   NEEDS_REVIEW: "Needs review",
   CANCELLED: "Cancelled",
+  UNCONFIRMED: "Unconfirmed (pending reconciliation)",
 };
+
+/** Application and repayment status, tracked separately, for a published historical account. */
+export const APPLICATION_STATUS_LABEL: Record<string, string> = { PENDING: "Pending", APPROVED: "Approved", ISSUED: "Issued", COMPLETED: "Completed", CANCELLED: "Cancelled", DECLINED: "Declined", UNCONFIRMED: "Unconfirmed" };
+export const REPAYMENT_STATUS_LABEL: Record<string, string> = { NOT_STARTED: "Not started", ACTIVE: "Active", OVERDUE: "Overdue", FULLY_REPAID: "Fully repaid", EXCEPTION: "Exception", UNCONFIRMED: "Unconfirmed" };
+export function statusesFor(c: Classification): { application: string; repayment: string } {
+  switch (c) {
+    case "COMPLETED":
+      return { application: "COMPLETED", repayment: "FULLY_REPAID" }; // evidenced by the approved register
+    case "CURRENT":
+      return { application: "ISSUED", repayment: "ACTIVE" };
+    case "IN_ARREARS":
+      return { application: "ISSUED", repayment: "OVERDUE" };
+    case "NOT_STARTED":
+      return { application: "ISSUED", repayment: "NOT_STARTED" };
+    case "CANCELLED":
+      return { application: "CANCELLED", repayment: "NOT_STARTED" };
+    default:
+      return { application: "UNCONFIRMED", repayment: "UNCONFIRMED" };
+  }
+}
 const MAX_BYTES = 15 * 1024 * 1024;
 
 const isPreparer = async (q: Db, staffId: string) => (await Promise.all(PREPARER_ROLES.map((r) => holdsRole(q, staffId, r)))).some(Boolean);
@@ -317,7 +338,7 @@ export async function reconciliation(q: Db, batchId: string): Promise<Reconcilia
       [batchId],
     )
   ).rows;
-  const order: Classification[] = ["CURRENT", "IN_ARREARS", "NOT_STARTED", "COMPLETED", "CANCELLED", "NEEDS_REVIEW"];
+  const order: Classification[] = ["CURRENT", "IN_ARREARS", "NOT_STARTED", "COMPLETED", "CANCELLED", "UNCONFIRMED", "NEEDS_REVIEW"];
   const issues = (
     await q.query<{ code: string; level: string; records: number }>(
       `SELECT i->>'code' AS code, i->>'level' AS level, count(DISTINCT r.id)::int AS records
@@ -439,7 +460,7 @@ export async function decideRecord(ctx: Ctx, recordId: string, p: { decision: st
     const decision = p.decision === "CLEAR" ? null : p.decision;
     if (decision !== null && decision !== "INCLUDE" && decision !== "EXCLUDE") throw invalid("Choose include or exclude.");
     const override = (p.classification ?? "").trim() || null;
-    const allowed: Classification[] = ["COMPLETED", "CURRENT", "IN_ARREARS", "NOT_STARTED", "CANCELLED"];
+    const allowed: Classification[] = ["COMPLETED", "CURRENT", "IN_ARREARS", "NOT_STARTED", "CANCELLED", "UNCONFIRMED"];
     if (override && !allowed.includes(override as Classification)) throw invalid("Choose a valid status.", { classification: "Choose a valid status." });
     const blocked = r.issues.some((i) => i.level === "BLOCK");
     const e: Record<string, string> = {};
@@ -566,13 +587,18 @@ export async function decideBatch(ctx: Ctx, batchId: string, p: { decision: stri
         await tx.query<{ id: string }>(
           `INSERT INTO altphones_historical_accounts (ref, batch_id, record_id, source_sheet, source_row, customer_name, account_enc, account_last4, phone_enc, phone_last4, bvn_enc, bvn_hash, nin_enc, address_enc,
                   units, down_payment_kobo, down_payment_date, instalment_kobo, start_date, end_date, tenor_months, imei, location_id, location_label, officer_id, referrer_label,
-                  status, paid_count, missed_count, arrears_kobo, outstanding_kobo, as_at, decision_note, published_by, published_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35) RETURNING id`,
+                  status, paid_count, missed_count, arrears_kobo, outstanding_kobo, as_at, decision_note, published_by, published_at,
+                  application_status, repayment_status, total_obligation_kobo, amount_repaid_kobo, repayment_evidence, register_repaid_kobo)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$39) RETURNING id`,
           [
             ref, b.id, r.id, r.sheet, r.row_no, r.customer_name, r.account_enc, r.account_last4, r.phone_enc, r.phone_last4, r.bvn_enc, r.bvn_hash,
             r.status === "COMPLETED" ? null : r.nin_enc, // NIN is kept only while repayment is not complete
             r.address_enc, r.units, r.down_payment_kobo, r.down_payment_date, r.instalment_kobo, r.start_date, r.end_date, r.tenor_months, r.imei, r.location_id, r.location_label, r.officer_id, r.referrer_label,
             r.status, r.paid_count, r.missed_count, r.arrears_kobo, r.outstanding_kobo, b.as_at, r.decision_note, actor.staffId, ctx.now,
+            statusesFor(r.status).application, statusesFor(r.status).repayment,
+            r.tenor_months && r.instalment_kobo ? Number(r.tenor_months) * Number(r.instalment_kobo) : null,
+            r.status === "COMPLETED" && r.tenor_months && r.instalment_kobo ? Number(r.tenor_months) * Number(r.instalment_kobo) : Number(r.paid_count ?? 0) * Number(r.instalment_kobo ?? 0),
+            r.status === "UNCONFIRMED" ? "NONE" : "REGISTER",
           ],
         )
       ).rows[0];
@@ -697,6 +723,15 @@ export async function listRecords(q: Db, batchId: string, f: RecordFilter) {
     )
   ).rows;
   return { total, page, pages: Math.max(1, Math.ceil(total / RECORDS_PAGE)), rows };
+}
+
+export async function historicalStatusTotals(q: Db) {
+  return (
+    await q.query<{ application_status: string; repayment_status: string; accounts: number; repaid: string; outstanding: string }>(
+      `SELECT application_status, repayment_status, count(*)::int AS accounts, coalesce(sum(amount_repaid_kobo),0)::text AS repaid, coalesce(sum(outstanding_kobo),0)::text AS outstanding
+         FROM altphones_historical_accounts GROUP BY 1,2 ORDER BY 1,2`,
+    )
+  ).rows;
 }
 
 export async function historicalTotals(q: Db) {

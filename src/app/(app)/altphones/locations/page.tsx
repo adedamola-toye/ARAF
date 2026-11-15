@@ -7,6 +7,10 @@ import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
 import { REGIONS } from "@/server/domain/roles";
 import { BPM_ROLE } from "@/server/altphones/core";
+import { IMPORT_LABELS, listImports as listSetupImports, type ImportKind } from "@/server/altphones/imports";
+import { bpmRegister, locationStatusRequests } from "@/server/altphones/location-master";
+import { listMovements, MOVEMENT_LABELS, type MovementKind } from "@/server/altphones/movements";
+import { commitImportAction, rejectImportAction } from "../actions";
 import {
   addressRequests,
   bpmRequests,
@@ -27,6 +31,10 @@ import {
 import {
   applyProfilingAction,
   decideAddressAction,
+  resubmitAddressAction,
+  requestStatusAction,
+  decideStatusAction,
+  decideMovementAction,
   discardProfilingAction,
   linkSourceAction,
   previewProfilingAction,
@@ -117,7 +125,7 @@ export default async function AltLocations({ searchParams }: { searchParams: Pro
       {tab === "locations" && <Master sp={sp} canManage={access.manage} ph={ph} />}
       {tab === "import" && access.manage && <ImportTab sp={sp} />}
       {tab === "bpm" && access.manage && <BpmTab />}
-      {tab === "requests" && <Requests me={session.staffId} canApprove={access.approve} />}
+      {tab === "requests" && <Requests me={session.staffId} canApprove={access.approve} canManage={access.manage} />}
     </>
   );
 }
@@ -128,8 +136,12 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
     type: ["BRANCH", "ALTSHOP", "ALTBOX"].includes(sp.type ?? "") ? sp.type! : "",
     address: ["REGISTERED", "MISSING", "REVIEW"].includes(sp.address ?? "") ? sp.address! : "",
     q: (sp.q ?? "").slice(0, 60),
+    status: ["ACTIVE", "INACTIVE"].includes(sp.status ?? "") ? sp.status! : "",
+    bpm: (sp.bpm ?? "").slice(0, 120),
   };
   const rows = await locationMaster(db, f);
+  const bpmChoices = (await db.query<{ email: string; full_name: string }>("SELECT DISTINCT s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE s.status = 'ACTIVE' ORDER BY s.full_name", [BPM_ROLE])).rows;
+  const registered = canManage ? (await db.query<{ id: string; name: string; state: string; address: string }>("SELECT id, name, state, address FROM locations WHERE address_status = 'REGISTERED' AND address IS NOT NULL ORDER BY state, name")).rows : [];
   const all = await db.query<{ address_status: string; n: number }>("SELECT address_status, count(*)::int AS n FROM locations GROUP BY 1").then((r) => Object.fromEntries(r.rows.map((x) => [x.address_status, x.n])));
   const sel = sp.location ? rows.find((r) => r.id === sp.location) : null;
   const recorded = sel ? await recordedAddresses(db, sel.id) : [];
@@ -159,8 +171,19 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
             <span className="loc-address-label">Registered address</span>
           </p>
           <p className="loc-address">{sel.address ?? <span className="muted">Not registered</span>}</p>
+          <div className="summary-box" style={{ marginBottom: "var(--space-3)" }}>
+            <p className="small" style={{ marginTop: 0 }}>Status: <strong>{sel.active ? "Active" : "Inactive"}</strong>{sel.status_ref ? ` · ${sel.status_ref} awaiting the Unit Head` : ""}</p>
+            {!sel.status_ref && (sel.active || sel.address_status === "REGISTERED") && (
+              <ActionForm action={requestStatusAction} className="inline-form">
+                <input type="hidden" name="locationId" value={sel.id} />
+                <input type="hidden" name="action" value={sel.active ? "DEACTIVATE" : "REACTIVATE"} />
+                <input name="note" placeholder="Reason" aria-label={`Reason to ${sel.active ? "deactivate" : "reactivate"}`} />
+                <SubmitButton className="btn btn-sm">{sel.active ? "Request deactivation" : "Request reactivation"}</SubmitButton>
+              </ActionForm>
+            )}
+          </div>
           {sel.pending_ref ? (
-            <p className="small muted">Address request {sel.pending_ref} is awaiting the Unit Head.</p>
+            <p className="small muted">Address request {sel.pending_ref} is open (awaiting the Unit Head, or returned for correction under Approvals).</p>
           ) : (
             <ActionForm action={requestAddressAction} className="stack" doneHref="/altphones/locations?tab=requests">
               <input type="hidden" name="locationId" value={sel.id} />
@@ -229,6 +252,22 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
             </select>
           </div>
           <div className="field">
+            <label htmlFor="m-status">Status</label>
+            <select id="m-status" name="status" defaultValue={f.status}>
+              <option value="">Any</option>
+              <option value="ACTIVE">Active</option>
+              <option value="INACTIVE">Inactive</option>
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="m-bpm">BPM</label>
+            <select id="m-bpm" name="bpm" defaultValue={f.bpm}>
+              <option value="">Any</option>
+              <option value="NONE">No BPM mapped (Placeholder)</option>
+              {bpmChoices.map((b) => <option key={b.email} value={b.email.toLowerCase()}>{b.full_name}</option>)}
+            </select>
+          </div>
+          <div className="field">
             <label htmlFor="m-addr">Address</label>
             <select id="m-addr" name="address" defaultValue={f.address}>
               <option value="">Any</option>
@@ -277,7 +316,7 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
                     {canManage && (
                       <div>
                         <Link className="small" href={`?tab=locations&location=${l.id}`}>
-                          {l.address_status === "REGISTERED" ? "Correct address" : "Register address"}
+                          {l.address_status === "REGISTERED" ? "Manage" : "Register address"}
                         </Link>
                       </div>
                     )}
@@ -293,7 +332,7 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
         <section className="card" aria-labelledby="h-new">
           <h2 id="h-new">Add a location</h2>
           <p className="small muted" style={{ marginTop: 0 }}>
-            A new location stays inactive until the Unit Head approves its address. Use this only for a place that is not in the profiling workbook.
+            Product Manager → Unit Head → activation. A new location stays inactive and unavailable for sales until the Unit Head approves it; it then starts with zero stock until an authorised receipt or transfer.
           </p>
           <ActionForm action={proposeLocationAction} className="stack" resetOnSuccess>
             <div className="grid-2">
@@ -323,8 +362,28 @@ async function Master({ sp, canManage, ph }: { sp: Record<string, string | undef
               <input id="n-name" name="name" required />
             </div>
             <div className="field">
-              <label htmlFor="n-address">Address to register</label>
-              <textarea id="n-address" name="address" rows={2} required />
+              <label htmlFor="n-from">Registered address</label>
+              <select id="n-from" name="addressFrom" defaultValue="">
+                <option value="">A new address (enter it below)</option>
+                {registered.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    Same as {r.name} ({r.state}): {r.address.slice(0, 70)}
+                  </option>
+                ))}
+              </select>
+              <span className="hint">Choose an existing registered address when the new Altshop or Altbox is at an existing place.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="n-address">New address (only when it is not registered yet)</label>
+              <textarea id="n-address" name="address" rows={2} />
+            </div>
+            <div className="field">
+              <label htmlFor="n-bpm">Responsible BPM (Altshops and Altboxes)</label>
+              <select id="n-bpm" name="bpmEmail" defaultValue="">
+                <option value="">None yet (Placeholder BPM until mapped)</option>
+                {bpmChoices.map((b) => <option key={b.email} value={b.email.toLowerCase()}>{b.full_name}</option>)}
+              </select>
+              <span className="hint">The mapping takes effect when the Unit Head approves the location. Branches never route to a BPM.</span>
             </div>
             <div className="field">
               <label htmlFor="n-note">Note for the Unit Head (optional)</label>
@@ -574,8 +633,44 @@ async function BpmTab() {
   const uncoveredIds = new Set(uncovered.map((u) => u.id));
   const ph = await placeholderBpm(db);
   const phPending = pending.find((r) => r.scope === "PLACEHOLDER");
+  const register = await bpmRegister(db);
   return (
     <>
+      <section className="card" aria-labelledby="h-reg">
+        <h2 id="h-reg">BPM register</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>Everyone holding the Business Performance Manager role. Only verified people (active @altbank.ng staff with the role) can be mapped and can approve. No profile is created here: BPM access is granted in Users and roles.</p>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th scope="col">BPM</th>
+                <th scope="col">Status</th>
+                <th scope="col">States covered</th>
+                <th scope="col">Locations mapped</th>
+                <th scope="col">Recent mapping requests</th>
+              </tr>
+            </thead>
+            <tbody>
+              {register.map((b) => (
+                <tr key={b.id}>
+                  <td>
+                    <strong>{b.full_name}</strong>
+                    <div className="small muted">{b.email}</div>
+                    {b.placeholder && <span className="badge">{PLACEHOLDER_BPM}</span>}
+                  </td>
+                  <td>{b.verified ? <span className="badge badge-green">Verified</span> : <span className="badge badge-red">Not verified</span>}</td>
+                  <td className="small">{b.states.length ? b.states.join(", ") : "—"}</td>
+                  <td className="small">{b.locations.length ? b.locations.join("; ") : "—"}</td>
+                  <td className="small">{b.history.length ? b.history.slice(0, 4).map((h) => `${h.ref} ${h.status.toLowerCase()}`).join(" · ") : "—"}</td>
+                </tr>
+              ))}
+              {register.length === 0 && (
+                <tr><td colSpan={5} className="muted">No one holds the BPM role yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
       <section className="card action-panel" aria-labelledby="h-ph">
         <h2 id="h-ph">{PLACEHOLDER_BPM}</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
@@ -751,11 +846,140 @@ async function BpmTab() {
   );
 }
 
-async function Requests({ me, canApprove }: { me: string; canApprove: boolean }) {
+async function Requests({ me, canApprove, canManage }: { me: string; canApprove: boolean; canManage: boolean }) {
   const [pending, recent, bpmPending] = await Promise.all([addressRequests(db, "PENDING"), addressRequests(db, "ALL"), bpmRequests(db, "PENDING")]);
-  const done = recent.filter((r) => r.status !== "PENDING").slice(0, 30);
+  const done = recent.filter((r) => r.status === "APPROVED" || r.status === "REJECTED").slice(0, 30);
+  const returned = recent.filter((r) => r.status === "RETURNED");
+  const statusPending = await locationStatusRequests(db, "PENDING");
+  const movesPending = await listMovements(db, { status: "PENDING" });
+  const bpmChoices = (await db.query<{ email: string; full_name: string }>("SELECT DISTINCT s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.role = $1 AND ra.active WHERE s.status = 'ACTIVE' ORDER BY s.full_name", [BPM_ROLE])).rows;
+  const setup = (await listSetupImports(db, 50)).filter((i) => i.status === "SUBMITTED");
   return (
     <>
+      {returned.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-ret">
+          <h2 id="h-ret">Returned for correction</h2>
+          <div className="stack">
+            {returned.map((r) => (
+              <div key={r.id} className="alt-repl">
+                <div>
+                  <strong>{r.location_name}</strong> <span className="small muted">· {TYPE_LABEL[r.outlet_type as keyof typeof TYPE_LABEL]} · {r.state} · <span className="mono">{r.ref}</span></span>
+                  <div className="small">Unit Head: {r.decision_note}</div>
+                  <p className="loc-address" style={{ margin: "6px 0" }}>{r.address}</p>
+                  {r.bpm_email && <div className="small muted">BPM: {r.bpm_email}</div>}
+                </div>
+                {canManage ? (
+                  <ActionForm action={resubmitAddressAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={r.id} />
+                    <textarea name="address" rows={2} defaultValue={r.address} aria-label="Corrected address" />
+                    {r.outlet_type !== "BRANCH" && (
+                      <select name="bpmEmail" defaultValue={r.bpm_email ?? ""} aria-label="BPM">
+                        <option value="">No BPM (Placeholder BPM route)</option>
+                        {bpmChoices.map((b) => <option key={b.email} value={b.email.toLowerCase()}>{b.full_name}</option>)}
+                      </select>
+                    )}
+                    <input name="note" placeholder="What you corrected" aria-label="What you corrected" />
+                    <SubmitButton>Resubmit to the Unit Head</SubmitButton>
+                  </ActionForm>
+                ) : (
+                  <span className="small muted">Waiting for the Product Manager to correct it.</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {movesPending.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-moves">
+          <h2 id="h-moves">Stock movements awaiting the Unit Head</h2>
+          <div className="stack">
+            {movesPending.map((m) => (
+              <div key={m.id} className="alt-repl">
+                <div>
+                  <strong>{MOVEMENT_LABELS[m.kind as MovementKind]}</strong>: {m.quantity} × {m.model_name} at {m.location_name}{m.to_location_name ? ` → ${m.to_location_name}` : ""}
+                  <div className="small muted"><span className="mono">{m.ref}</span> · {m.requested_by_name} · {formatLagos(m.requested_at)}{m.imeis?.length ? ` · ${m.imeis.length} IMEI${m.imeis.length === 1 ? "" : "s"}` : ""}</div>
+                  <div className="small">Reason: {m.note}</div>
+                </div>
+                {!canApprove ? (
+                  <span className="small muted">Waiting for the Unit Head.</span>
+                ) : m.requested_by === me ? (
+                  <span className="small muted">You requested this — another approver must decide.</span>
+                ) : (
+                  <ActionForm action={decideMovementAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={m.id} />
+                    <input name="note" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <div className="action-bar">
+                      <SubmitButton name="decision" value="APPROVE">Approve and post</SubmitButton>
+                      <SubmitButton name="decision" value="REJECT" className="btn btn-danger">Reject</SubmitButton>
+                    </div>
+                  </ActionForm>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {statusPending.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-stat">
+          <h2 id="h-stat">Activation and deactivation requests</h2>
+          <div className="stack">
+            {statusPending.map((r) => (
+              <div key={r.id} className="alt-repl">
+                <div>
+                  <strong>{r.action === "DEACTIVATE" ? "Deactivate" : "Reactivate"} {r.location_name}</strong> <span className="small muted">· {TYPE_LABEL[r.outlet_type as keyof typeof TYPE_LABEL]} · {r.state} · <span className="mono">{r.ref}</span></span>
+                  <div className="small">Reason: {r.note} · {r.requested_by_name}, {formatLagos(r.requested_at)}</div>
+                  <div className="small muted">{r.action === "DEACTIVATE" ? "Requests already submitted keep this location; it stops appearing for new sales." : "It becomes available for new sales again."}</div>
+                </div>
+                {!canApprove ? (
+                  <span className="small muted">Waiting for the Unit Head.</span>
+                ) : r.requested_by === me ? (
+                  <span className="small muted">You requested this — another approver must decide.</span>
+                ) : (
+                  <ActionForm action={decideStatusAction} className="alt-repl-form">
+                    <input type="hidden" name="id" value={r.id} />
+                    <input name="note" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <div className="action-bar">
+                      <SubmitButton name="decision" value="APPROVE">Approve</SubmitButton>
+                      <SubmitButton name="decision" value="REJECT" className="btn btn-danger">Reject</SubmitButton>
+                    </div>
+                  </ActionForm>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {setup.length > 0 && (
+        <section className="card action-panel" aria-labelledby="h-imppend">
+          <h2 id="h-imppend">Setup imports awaiting the Unit Head</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>Nothing in these files is applied until a Unit Head who did not upload or submit it approves. Approval re-checks every row against the current records.</p>
+          <ul className="plain-list">
+            {setup.map((i) => (
+              <li key={i.id} className="summary-box">
+                <strong>{IMPORT_LABELS[i.kind as ImportKind] ?? i.kind}</strong>: {i.filename} · {i.summary.valid} ready{i.summary.errors ? `, ${i.summary.errors} invalid` : ""}
+                {i.partial && <span className="badge badge-warn" style={{ marginLeft: 6 }}>Partial import</span>}
+                <div className="small muted">Uploaded by {i.by_name}, submitted {i.submitted_at ? formatLagos(i.submitted_at) : "—"}{i.submit_note ? ` · ${i.submit_note}` : ""}</div>
+                {i.errors?.length > 0 && <div className="small"><a href={`/api/altphones/imports/${i.id}/errors`}>Error report (CSV)</a></div>}
+                {canApprove && i.created_by !== me && i.submitted_by !== me ? (
+                  <div className="row" style={{ marginTop: 8 }}>
+                    <ActionForm action={commitImportAction} className="inline-form">
+                      <input type="hidden" name="importId" value={i.id} />
+                      <SubmitButton>Approve and import</SubmitButton>
+                    </ActionForm>
+                    <ActionForm action={rejectImportAction} className="inline-form">
+                      <input type="hidden" name="importId" value={i.id} />
+                      <input name="note" placeholder="Reason for rejecting" aria-label="Reason for rejecting" />
+                      <SubmitButton className="btn btn-danger">Reject</SubmitButton>
+                    </ActionForm>
+                  </div>
+                ) : (
+                  <p className="small muted" style={{ margin: "6px 0 0" }}>{canApprove ? "You uploaded or submitted this file, so another Unit Head must approve it." : "Waiting for the Unit Head."}</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section className="card action-panel" aria-labelledby="h-bpmpend">
         <h2 id="h-bpmpend">BPM mappings awaiting the Unit Head</h2>
         {bpmPending.length === 0 ? (
@@ -771,6 +995,8 @@ async function Requests({ me, canApprove }: { me: string; canApprove: boolean })
                     <span className="mono">{r.ref}</span> · {r.requested_by_name} · {formatLagos(r.requested_at)}
                   </div>
                   {r.note && <div className="small">Reason: {r.note}</div>}
+                  {r.basis === "NEW_LOCATION" && r.outlet_type !== "BRANCH" && <div className="small">BPM on approval: {r.bpm_email ?? <span className="text-danger">none (Placeholder BPM route)</span>}</div>}
+                  {r.basis === "NEW_LOCATION" && <div className="small muted">Activated with zero stock until an authorised receipt or transfer.</div>}
                 </div>
                 {!canApprove ? (
                   <span className="small muted">Waiting for the Unit Head.</span>
@@ -817,15 +1043,18 @@ async function Requests({ me, canApprove }: { me: string; canApprove: boolean })
                 </div>
                 {!canApprove ? (
                   <span className="small muted">Waiting for the Unit Head.</span>
-                ) : r.requested_by === me ? (
+                ) : r.requested_by === me || r.resubmitted_by === me ? (
                   <span className="small muted">You requested this — another approver must decide.</span>
                 ) : (
                   <ActionForm action={decideAddressAction} className="alt-repl-form">
                     <input type="hidden" name="id" value={r.id} />
-                    <input name="note" placeholder="Comment (required to reject)" aria-label="Comment" />
+                    <input name="note" placeholder="Comment (required to return or reject)" aria-label="Comment" />
                     <div className="action-bar">
                       <SubmitButton name="decision" value="APPROVE">
-                        Approve address
+                        {r.basis === "NEW_LOCATION" ? "Approve and activate" : "Approve address"}
+                      </SubmitButton>
+                      <SubmitButton name="decision" value="RETURN" className="btn">
+                        Return for correction
                       </SubmitButton>
                       <SubmitButton name="decision" value="REJECT" className="btn btn-danger">
                         Reject

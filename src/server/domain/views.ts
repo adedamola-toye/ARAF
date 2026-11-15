@@ -34,6 +34,8 @@ export interface QueueQuery {
 }
 
 export interface QueueItem {
+  /** A Team Lead skipped the Vendor Financing business photograph (with a reason). */
+  photo_skipped?: boolean;
   task_id: string;
   application_id: string;
   ref: string;
@@ -79,7 +81,8 @@ export async function actionQueue(q: Db, staffId: string, query: QueueQuery) {
   const rows = (
     await q.query<QueueItem>(
       `SELECT t.id AS task_id, t.application_id, a.ref, a.customer_name, a.requested_amount_kobo, t.stage, t.assignee_role, t.assigned_at,
-              t.required_action, a.applicant_type, a.product_label, a.suspended_at IS NOT NULL AS suspended
+              t.required_action, a.applicant_type, a.product_label, a.suspended_at IS NOT NULL AS suspended,
+              EXISTS (SELECT 1 FROM vf_photo_reviews pr WHERE pr.application_id = a.id AND pr.decision = 'SKIPPED') AS photo_skipped
        ${base} ORDER BY ${sortCol} ${dir} NULLS LAST, t.id ASC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
       params,
     )

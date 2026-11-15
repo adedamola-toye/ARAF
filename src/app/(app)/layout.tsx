@@ -1,4 +1,4 @@
-import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target } from "lucide-react";
+import { Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -17,6 +17,9 @@ import { migrationAccess } from "@/server/altphones/migration";
 import { locationAccess } from "@/server/altphones/location-master";
 import { dailySummary, summaryDue, targetAccess } from "@/server/domain/performance";
 import { isEnabled } from "@/server/domain/switches";
+import { unreadCount } from "@/server/domain/notifications";
+import { executiveAccess } from "@/server/executive";
+import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
 
@@ -50,6 +53,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const perfTargets = await targetAccess(db, session.staffId);
   const showPerformance = roles.includes("RM") || roles.includes("TEAM_LEAD") || perfTargets.propose || perfTargets.approve;
   const showTracker = isAdmin || (retailScope?.kind === "ALL" && (await isEnabled(db, "REPAYMENT_TRACKER")));
+  const unread = await unreadCount(db, session.staffId);
+  const godsEye = await executiveAccess(db, session.staffId);
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -91,6 +96,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
             </NavLink>
           )}
+          {godsEye && (
+            <NavLink href="/executive" icon={<Gauge {...ic} />}>
+              God&apos;s Eye
+            </NavLink>
+          )}
           {retailScope && !altWs && (
             <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
               Retail dashboard
@@ -124,6 +134,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   My sales
                 </NavLink>
               </>
+            )}
+            {(alt.pm || alt.admin || (alt.reviewer && roles.includes("UNIT_HEAD"))) && (
+              <NavLink href="/altphones/operations" icon={<BarChart3 {...ic} />}>
+                Operations
+              </NavLink>
             )}
             {(alt.reviewer || alt.pm || alt.admin) && (
               <NavLink href="/altphones/reviews" count={altReviewCount} icon={<ClipboardCheck {...ic} />}>
@@ -197,6 +212,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLink href="/admin/pricing" icon={<Percent {...ic} />}>
               Pricing and tenor
             </NavLink>
+            <NavLink href="/admin/feature-controls" icon={<ToggleRight {...ic} />}>
+              Feature controls
+            </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Staff financing settings
             </NavLink>
@@ -250,6 +268,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
+          <Link href="/notifications" className="bell" aria-label={unread ? `Notifications: ${unread} unread` : "Notifications"}>
+            <Bell className="icon" aria-hidden="true" />
+            {unread > 0 && <span className="bell-count">{unread > 99 ? "99+" : unread}</span>}
+          </Link>
           <details className="menu">
             <summary aria-label={`Profile menu for ${session.fullName}`}>
               <span className="avatar" aria-hidden="true">

@@ -140,6 +140,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                     {r.customer_name}
                     {r.product_label && <div className="small muted">{r.product_label}</div>}
                     {r.suspended && <span className="badge badge-red">Suspended</span>}
+                    {r.photo_skipped && <span className="badge badge-warn">Business photo not uploaded</span>}
                   </td>
                   <td className="num" data-label="Requested amount">{formatKobo(r.requested_amount_kobo)}</td>
                   <td data-label="Stage">

@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/PageHeader";
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { db } from "@/server/db";
 import { formatLagos } from "@/server/time";
-import { CLASSIFICATION_LABEL, type Classification, historicalTotals, listBatches, migrationAccess } from "@/server/altphones/migration";
+import { APPLICATION_STATUS_LABEL, CLASSIFICATION_LABEL, REPAYMENT_STATUS_LABEL, type Classification, historicalStatusTotals, historicalTotals, listBatches, migrationAccess } from "@/server/altphones/migration";
 import { stageRegisterAction } from "../actions";
 import { STATUS_BADGE, STATUS_LABEL } from "./labels";
 
@@ -18,7 +18,7 @@ export default async function MigrationHome() {
   const { session } = await requireUser();
   const access = await migrationAccess(db, session.staffId);
   if (!access.view) redirect("/altphones");
-  const [batches, totals] = await Promise.all([listBatches(db), historicalTotals(db)]);
+  const [batches, totals, byStatus] = await Promise.all([listBatches(db), historicalTotals(db), historicalStatusTotals(db)]);
   const open = batches.find((b) => b.status === "DRAFT" || b.status === "SUBMITTED");
   const lastMonthEnd = (() => {
     const d = new Date(Date.now() + 3600_000);
@@ -49,6 +49,39 @@ export default async function MigrationHome() {
           </div>
         ))}
       </div>
+
+      {byStatus.length > 0 && (
+        <section className="card" aria-labelledby="h-dual">
+          <h2 id="h-dual">Migrated records by application and repayment status</h2>
+          <p className="small muted" style={{ marginTop: 0 }}>
+            Marked as migrated records. &ldquo;Fully repaid&rdquo; only where the approved register or reconciled repayments (with payment references) evidence it, never because a date has passed. Reconcile repayments with the Historical repayments CSV under Altphones settings.
+          </p>
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
+                <tr>
+                  <th scope="col">Application status</th>
+                  <th scope="col">Repayment status</th>
+                  <th scope="col" className="num">Accounts</th>
+                  <th scope="col" className="num">Repaid</th>
+                  <th scope="col" className="num">Outstanding</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byStatus.map((r) => (
+                  <tr key={`${r.application_status}-${r.repayment_status}`}>
+                    <td>{APPLICATION_STATUS_LABEL[r.application_status] ?? r.application_status}</td>
+                    <td>{REPAYMENT_STATUS_LABEL[r.repayment_status] ?? r.repayment_status}</td>
+                    <td className="num">{n(r.accounts)}</td>
+                    <td className="num">{naira(r.repaid)}</td>
+                    <td className="num">{naira(r.outstanding)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {access.prepare && !open && (
         <section className="card" aria-labelledby="h-upload">

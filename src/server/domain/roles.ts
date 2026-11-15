@@ -37,6 +37,8 @@ export const ROLES = [
   "ALTPHONES_PRODUCT_MANAGER",
   // Retail approval policy RETAIL_CX_V1
   "CX_CREDIT_REVIEWER",
+  // Read-only institution-wide reporting (never approves or edits)
+  "EXECUTIVE_VIEW",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -84,6 +86,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
   CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
+  EXECUTIVE_VIEW: "Executive View (God's Eye, read-only)",
 };
 
 /** The Delight Officer / Smile Associate channel originates Altphones only. */

@@ -8,7 +8,7 @@ export async function trackerSwitchAction(_p: ActionState, fd: FormData): Promis
   const { ctx } = await requireUser();
   const on = String(fd.get("enabled")) === "true";
   try {
-    await setSwitch(ctx, "REPAYMENT_TRACKER", on);
+    await setSwitch(ctx, "REPAYMENT_TRACKER", on, String(fd.get("reason") ?? ""));
   } catch (e) {
     return toActionError(e);
   }

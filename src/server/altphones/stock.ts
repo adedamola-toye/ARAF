@@ -26,7 +26,7 @@ import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail } from "../notify/templates";
 import { config } from "../config";
 
-export type Movement = "OPENING" | "RECEIPT" | "RESERVE" | "RELEASE" | "SALE" | "DISBURSEMENT" | "LEGACY_ADJUSTMENT" | "COUNT_ADJUSTMENT";
+export type Movement = "OPENING" | "RECEIPT" | "RESERVE" | "RELEASE" | "SALE" | "DISBURSEMENT" | "LEGACY_ADJUSTMENT" | "COUNT_ADJUSTMENT" | "TRANSFER_OUT" | "TRANSFER_IN" | "RETURN" | "DAMAGED" | "ADJUSTMENT";
 
 /** The colour-agnostic stock-pool model, if configured. */
 export async function poolModelId(q: Db): Promise<string | null> {

@@ -6,7 +6,12 @@ import { ctxFor } from "@/server/demo/scenario";
 import { ALT, CapturingMail, latestPaymentRef, loc, registerDemoAddresses, setupAltphones, TestBureau, TestGateway } from "@/server/demo/altphones-scenario";
 import { setCreditBureauForTests, setPaymentGatewayForTests } from "@/server/altphones/integrations";
 import { setMailTransportForTests } from "@/server/notify/transport";
-import { commitImport, previewImport } from "@/server/altphones/imports";
+import { commitImport, previewImport, submitImport } from "@/server/altphones/imports";
+/** Uploader submits; a Unit Head approves (commits). */
+async function approveImport(id: string) {
+  await submitImport(await ctxFor("superadmin@altbank.ng"), id);
+  return commitImport(await ctxFor("unit.head@altbank.ng"), id);
+}
 import { checkPayment, completeOutright, requestPayment, saveCustomer, saveLocations, startSale } from "@/server/altphones/origination";
 import { decideStockCount, locationStock, poolModelId, submitStockCount } from "@/server/altphones/stock";
 import { listModels, saveModel } from "@/server/altphones/catalogue";
@@ -35,10 +40,10 @@ async function loadOpeningData() {
   const admin = await ctxFor(ALT.admin);
   const l = await previewImport(admin, "LOCATIONS", "opening-locations.csv", LOCATIONS);
   expect(l.summary).toMatchObject({ rows: 69, errors: 0 });
-  await commitImport(admin, l.id);
+  await approveImport(l.id);
   const s = await previewImport(admin, "OPENING_STOCK", "opening-stock.csv", STOCK);
   expect(s.summary).toMatchObject({ rows: 44, errors: 0 });
-  await commitImport(admin, s.id);
+  await approveImport(s.id);
 }
 const pool = async () => (await poolModelId(db))!;
 const bal = async (name: string, model: string) =>
@@ -127,7 +132,7 @@ describe("selling from colour-not-recorded stock", () => {
     await loadOpeningData();
     const admin = await ctxFor(ALT.admin);
     const s = await previewImport(admin, "OPENING_STOCK", "green.csv", Buffer.from(`Location,Phone model,Quantity,IMEIs,Note\nENUGU,Altphone L1 Series — Green,1,,\n`));
-    await commitImport(admin, s.id);
+    await approveImport(s.id);
     const green = (await db.query("SELECT id FROM altphones_models WHERE name = 'Altphone L1 Series — Green'")).rows[0].id;
     const { id } = await paidOutright("ENUGU", green);
     expect((await db.query("SELECT stock_model_id FROM altphones_applications WHERE id = $1", [id])).rows[0].stock_model_id).toBe(green);
