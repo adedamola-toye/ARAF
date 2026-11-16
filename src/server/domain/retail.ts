@@ -28,7 +28,7 @@ import { chooseAssignee, type AppRow } from "./assignment";
 import { currentCleanDocuments, listDocuments } from "./documents";
 import { checkPhotos, evaluateMatrix, type MatrixItem, type PhotoCheck } from "./doc-matrix";
 import { computeAffordability, rulesSnapshot, type AffordabilityInput, type AffordabilityOutput } from "./affordability";
-import { ANNUAL_DENOMINATORS, configById, configGaps, effectiveConfig, getProduct, gapsBlocking, profileRules, structureRules, type ConfigGap, type ProductConfigRow, type ProfileRules } from "./products";
+import { roleMayOriginate, ANNUAL_DENOMINATORS, configById, configGaps, effectiveConfig, getProduct, gapsBlocking, profileRules, structureRules, type ConfigGap, type ProductConfigRow, type ProfileRules } from "./products";
 import { bvnError, phoneError, EMAIL_RE, retailDataSchema, retailDisplayName, retailMaterialDigest, type RetailData } from "./retail-data";
 import { beneficiaryFor, beneficiaryProblems, type BeneficiarySnapshot } from "./vendors";
 import { listLocations, snapshotOf, type LocationRow } from "./locations";
@@ -90,6 +90,7 @@ export async function createRetailDraft(ctx: Ctx, p: { initiatorRole: string; pr
     const product = await getProduct(tx, p.productCode);
     if (!product || product.workflow !== "RETAIL") throw invalid("Choose a product from the catalogue.", { productCode: "Choose a product." });
     if (!product.active) throw invalid(`${product.name} is not open for new applications.`, { productCode: "Product inactive." });
+    if (!retired && !roleMayOriginate(product, p.initiatorRole)) throw forbidden(`${product.name} is not available for origination by your role.`);
     const cfg = await effectiveConfig(tx, product.code, ctx.now);
     if (!cfg) throw gate(`${product.name} has no approved configuration yet.`);
     const rules = profileRules(cfg.config, p.profile);
@@ -370,6 +371,7 @@ export async function retailReadiness(q: Db, appId: string, now: Date): Promise<
   // --- facility
   if (data.requestedAmountKobo === null || data.requestedAmountKobo <= 0) e.requestedAmountKobo = "Enter the requested amount.";
   else if (rules?.maxAmountKobo != null && data.requestedAmountKobo > rules.maxAmountKobo) e.requestedAmountKobo = `The maximum for this product is ${formatKobo(rules.maxAmountKobo)}.`;
+  else if (rules?.minAmountKobo != null && data.requestedAmountKobo < rules.minAmountKobo) e.requestedAmountKobo = `The minimum for this product is ${formatKobo(rules.minAmountKobo)}.`;
   else if (cfg?.config.approvalPolicy !== "RETAIL_CX_V1") {
     try {
       routeForAmount(data.requestedAmountKobo);

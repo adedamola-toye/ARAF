@@ -220,8 +220,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLink href="/admin/exceptions" count={exceptions} alert icon={<Route {...ic} />}>
               Routing exceptions
             </NavLink>
-            <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
-              Products and rules
+            <NavLink href="/admin/product-settings" icon={<PackageCheck {...ic} />}>
+              Product settings
             </NavLink>
             <NavLink href="/admin/pricing" icon={<Percent {...ic} />}>
               Pricing and tenor

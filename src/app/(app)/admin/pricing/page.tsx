@@ -1,29 +1,27 @@
 import Link from "next/link";
 import { requireSuperAdmin } from "../guard";
 import { db } from "@/server/db";
-import { configHistory, effectiveConfig, listProducts, structureLabel, CUSTOMER_PROFILES, PROFILE_LABELS, RATE_CONVENTION_LABELS, RATE_CONVENTIONS } from "@/server/domain/products";
+import { configHistory, effectiveConfig, listProducts, structureLabel, CUSTOMER_PROFILES, PROFILE_LABELS, RATE_CONVENTION_LABELS } from "@/server/domain/products";
 import { listContractTypes } from "@/server/domain/product-admin";
-import { formatLagos, lagosDate } from "@/server/time";
+import { formatLagos } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
-import { ContractTypeForm, MarkupForm, NewProductForm, TenorForm } from "./PricingForms";
+import { ContractTypeForm, NewProductForm } from "./PricingForms";
 
 export const metadata = { title: "Pricing and tenor" };
 
 export default async function PricingAdmin() {
   await requireSuperAdmin();
   const now = new Date();
-  const today = lagosDate(now);
   const products = await listProducts(db, { retailOnly: true });
   const contractTypes = await listContractTypes(db);
   const ctName = new Map(contractTypes.map((c) => [c.code, c.name]));
   const loaded = await Promise.all(products.map(async (p) => ({ p, cfg: await effectiveConfig(db, p.code, now), pending: (await configHistory(db, p.code)).find((h) => h.status === "PROPOSED") ?? null })));
-  const productOpts = products.map((p) => ({ value: p.code, label: `${p.name}${p.active ? "" : " (closed)"}` }));
   return (
     <>
       <PageHeader
         eyebrow="Administration"
         title="Pricing and tenor"
-        intro="Set the mark-up for each product and contract type (for example Alt Drive under Murabaha and under Ijarah), the repayment period, the contract types themselves and new products. Every change is proposed as a new configuration version and applies only after a different Product Configuration Approver approves it; requests already submitted keep the terms they were submitted under."
+        intro="Mark-ups and tenor in force for each product and contract type, the contract types themselves, and new products. Mark-ups and tenor are changed under Product Settings (Financing & Pricing) and published as a new version; requests already submitted keep the terms they were submitted under."
       />
 
       <section className="card" aria-labelledby="h-now">
@@ -59,7 +57,7 @@ export default async function PricingAdmin() {
                         {i === 0 && pr === CUSTOMER_PROFILES.find((x) => cfg.config.profiles[x]) ? (
                           <>
                             <strong>{p.name}</strong>
-                            <div className="small muted">v{cfg.version}{pending ? <> · <Link href={`/admin/products#h-${p.code}`}>v{pending.version} awaiting approval</Link></> : ""}</div>
+                            <div className="small muted">v{cfg.version}{pending ? <> · <Link href={`/admin/product-settings/${p.code}`}>earlier proposal v{pending.version} to review</Link></> : ""}</div>
                           </>
                         ) : null}
                       </td>
@@ -75,23 +73,7 @@ export default async function PricingAdmin() {
             </tbody>
           </table>
         </div>
-        <p className="small muted" style={{ marginBottom: 0 }}>A product can have one proposal waiting at a time. Approve, reject or withdraw it under <Link href="/admin/products">Products and rules</Link> before proposing another change to that product.</p>
-      </section>
-
-      <section className="card" aria-labelledby="h-mk">
-        <h2 id="h-mk">Change a mark-up</h2>
-        <MarkupForm
-          products={productOpts}
-          contractTypes={contractTypes.filter((c) => c.active).map((c) => ({ value: c.code, label: c.name }))}
-          profiles={CUSTOMER_PROFILES.map((p) => ({ value: p, label: PROFILE_LABELS[p] }))}
-          conventions={RATE_CONVENTIONS.map((c) => ({ value: c, label: RATE_CONVENTION_LABELS[c] }))}
-          today={today}
-        />
-      </section>
-
-      <section className="card" aria-labelledby="h-tn">
-        <h2 id="h-tn">Change the repayment period (tenor)</h2>
-        <TenorForm products={productOpts} profiles={CUSTOMER_PROFILES.map((p) => ({ value: p, label: PROFILE_LABELS[p] }))} today={today} />
+        <p className="small muted" style={{ marginBottom: 0 }}>To change a mark-up or the tenor, open the product under <Link href="/admin/product-settings">Product settings</Link> and edit Financing &amp; Pricing.</p>
       </section>
 
       <section className="card" aria-labelledby="h-ct">
@@ -138,7 +120,7 @@ export default async function PricingAdmin() {
 
       <section className="card" aria-labelledby="h-np">
         <h2 id="h-np">Create a product</h2>
-        <p className="small muted" style={{ marginTop: 0 }}>The new product copies the rules of an existing product (mark-ups, tenor, documents and approval chain) as its first configuration. It stays closed to applications until that configuration is approved and you open it under Products and rules. Adjust its mark-ups and tenor here after approval.</p>
+        <p className="small muted" style={{ marginTop: 0 }}>The new product copies the rules of an existing product (mark-ups, tenor, documents and approval chain) as its first configuration. It appears under Product settings as not set up, with the copied rules as a proposal: load it into a draft, adjust it, and publish version 1. It stays closed to applications until you open it there.</p>
         <NewProductForm products={products.map((p) => ({ value: p.code, label: p.name }))} />
       </section>
     </>

@@ -5,15 +5,17 @@ import { BLOCKED_ACTION_LABELS, configGaps, configHistory, effectiveConfig, list
 import { ROLES, ROLE_LABELS } from "@/server/domain/roles";
 import { formatLagos } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
-import { ConfigEditor, DecideConfig, ProductToggle } from "./ConfigEditor";
+import { ConfigEditor, ProductToggle } from "./ConfigEditor";
 
 export const metadata = { title: "Products and rules" };
 
 export default async function ProductsAdmin() {
-  const { roles, session } = await requireUser();
+  const { roles } = await requireUser();
   const isAdmin = roles.includes("SUPER_ADMIN");
   const isApprover = roles.includes("PRODUCT_CONFIG_APPROVER");
   if (!isAdmin && !isApprover) redirect("/forbidden");
+  // Product rules are now set up and published by a Super Admin under Product Settings.
+  if (isAdmin) redirect("/admin/product-settings");
   const products = await listProducts(db, { retailOnly: true });
   const now = new Date();
   const roleOpts = ROLES.filter((r) => !["SUPER_ADMIN", "REPORTING_ADMIN", "LEGAL_REVIEWER", "SHARIAH_REVIEWER", "RM", "DELIGHT_OFFICER", "ANM", "MERCHANT_OFFICER"].includes(r)).map((r) => [r, ROLE_LABELS[r]] as [string, string]);
@@ -21,7 +23,7 @@ export default async function ProductsAdmin() {
   const loaded = await Promise.all(products.map(async (p) => ({ p, cfg: await effectiveConfig(db, p.code, now), hist: await configHistory(db, p.code) })));
   return (
     <>
-      <PageHeader eyebrow="Administration" title="Products and rules" intro="Each product's rules are versioned. Unsupplied parameters stay unset and visibly block the affected action. Changes take effect from their effective date after approval by a second person; applications keep the version they were submitted under." />
+      <PageHeader eyebrow="Administration" title="Products and rules" intro="Each product's rules are versioned. Product rules are now published directly by a Super Admin under Product Settings, with a reason and an effective date; this page shows the history, including earlier proposals. Applications keep the version they were submitted under." />
       <div className="stack">
         {loaded.map(({ p, cfg, hist }) => {
           const pending = hist.find((h) => h.status === "PROPOSED");
@@ -57,7 +59,7 @@ export default async function ProductsAdmin() {
                     <summary className="small">Configuration gaps in the proposal</summary>
                     <ul className="small">{configGaps(pending.config).map((g) => <li key={g.key}>{g.label} ({BLOCKED_ACTION_LABELS[g.blocks]})</li>)}</ul>
                   </details>
-                  <DecideConfig configId={pending.id} mine={pending.proposed_by === session.staffId} canApprove={isApprover} />
+                  <p className="small muted" style={{ margin: 0 }}>Second-person approval has been retired. A Super Admin loads this proposal into a draft or dismisses it under Product Settings.</p>
                 </div>
               )}
               {isAdmin && cfg && !pending && (
