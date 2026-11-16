@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, Circle, Plus, Trash2 } from "lucide-react"
 import { FormMessages } from "@/components/forms";
 import { AmountInput, DigitsInput, SearchSelect, amountToKobo, formatNaira, groupAmount } from "@/components/inputs";
 import { saveRetailDraftAction } from "../../retail-actions";
+import { EMPLOYMENT_STATUSES, SALARY_FREQUENCIES } from "@/lib/customer-types";
 
 export interface RetailFormProps {
   applicationId: string;
@@ -197,6 +198,8 @@ export function RetailDraftForm(props: RetailFormProps) {
       employerName: t.employerName,
       employmentConfirmationRef: t.employmentConfirmationRef,
       jobTitle: t.jobTitle,
+      employmentStatus: t.employmentStatus,
+      salaryFrequency: t.salaryFrequency,
       employmentStartDate: t.employmentStartDate,
       businessSector: t.businessSector,
       purpose: t.purpose,
@@ -346,6 +349,26 @@ export function RetailDraftForm(props: RetailFormProps) {
                 </Field>
                 <Field id="jobTitle" label="Job title">
                   <input id="jobTitle" value={t.jobTitle} onChange={set("jobTitle")} />
+                </Field>
+                <Field id="employmentStatus" label="Employment status" hint="Optional">
+                  <select id="employmentStatus" value={t.employmentStatus} onChange={set("employmentStatus")}>
+                    <option value="">Not stated</option>
+                    {EMPLOYMENT_STATUSES.map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field id="salaryFrequency" label="Salary paid" hint="Optional">
+                  <select id="salaryFrequency" value={t.salaryFrequency} onChange={set("salaryFrequency")}>
+                    <option value="">Not stated</option>
+                    {SALARY_FREQUENCIES.map(([v, l]) => (
+                      <option key={v} value={v}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
                 <Field id="employmentStartDate" label="Employed since">
                   <input id="employmentStartDate" type="date" value={t.employmentStartDate} onChange={set("employmentStartDate")} />

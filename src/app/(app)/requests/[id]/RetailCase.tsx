@@ -1,4 +1,5 @@
 import { checklistFor } from "@/lib/approval-checklists";
+import { EMPLOYMENT_STATUSES, SALARY_FREQUENCIES, label } from "@/lib/customer-types";
 import { currentPhotoReview, MIN_SKIP_REASON, photoSkips } from "@/server/domain/photo-review";
 import { retailCreditStatus } from "@/server/domain/retail-credit";
 import { PhotoVerification } from "./PhotoVerification";
@@ -167,7 +168,8 @@ export async function RetailOverview({ c }: { c: Case }) {
         </div>
         <table className="kv">
           <tbody>
-            <tr><th>Product · profile</th><td>{app.product_label} · {PROFILE_LABELS[app.customer_profile as CustomerProfile]} · {app.applicant_type.toLowerCase()}</td></tr>
+            <tr><th>Customer category</th><td><span className={`badge ${app.customer_profile === "SALARY_EARNER" ? "badge-blue" : ""}`}>{PROFILE_LABELS[app.customer_profile as CustomerProfile]}</span></td></tr>
+            <tr><th>Product</th><td>{app.product_label} · {app.applicant_type.toLowerCase()}</td></tr>
             <tr><th>Customer</th><td>{app.customer_name}</td></tr>
             {app.applicant_type !== "INDIVIDUAL" && <tr><th>CAC registration</th><td className="mono">{data.registrationNumber}</td></tr>}
             <tr><th>Phone · email</th><td className="mono">{data.phone}{data.email ? ` · ${data.email}` : ""}</td></tr>
@@ -175,7 +177,7 @@ export async function RetailOverview({ c }: { c: Case }) {
             {app.applicant_type !== "LIMITED" && <tr><th>BVN</th><td className="mono">{c.masked.bvn} <span className="small muted">(format checked; not verified)</span></td></tr>}
             {app.applicant_type === "LIMITED" && <tr><th>Directors</th><td>{c.directors.map((d: { id: string; full_name: string; bvn_last4: string }) => <div key={d.id}>{d.full_name} · <span className="mono">{maskWithLast4(d.bvn_last4)}</span></div>)}</td></tr>}
             {app.customer_profile === "SALARY_EARNER" ? (
-              <tr><th>Employment</th><td>{data.employerName}{data.jobTitle ? `, ${data.jobTitle}` : ""} · salary {formatKobo(data.statedMonthlySalaryKobo)} · {data.salaryHistory.length} months recorded</td></tr>
+              <tr><th>Employment</th><td>{data.employerName}{data.jobTitle ? `, ${data.jobTitle}` : ""}{data.employmentStatus ? ` · ${label(EMPLOYMENT_STATUSES, data.employmentStatus)}` : ""} · salary {formatKobo(data.statedMonthlySalaryKobo)}{data.salaryFrequency ? ` (${label(SALARY_FREQUENCIES, data.salaryFrequency).toLowerCase()})` : ""} · {data.salaryHistory.length} months recorded</td></tr>
             ) : (
               <tr><th>Business</th><td>{data.businessSector}{data.yearsInOperation !== null ? ` · ${data.yearsInOperation} years` : ""} · turnover {formatKobo(data.statedMonthlyTurnoverKobo)} / month</td></tr>
             )}

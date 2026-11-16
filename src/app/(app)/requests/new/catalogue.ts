@@ -1,9 +1,10 @@
 import type { Db } from "@/server/db";
-import { BLOCKED_ACTION_LABELS, configGaps, effectiveConfig, getProduct, PROFILE_LABELS, RATE_CONVENTION_LABELS, INSURANCE_LABELS, structureLabel, type CustomerProfile } from "@/server/domain/products";
+import { BLOCKED_ACTION_LABELS, configGaps, effectiveConfig, getProduct, INITIAL_PRODUCT_CONFIGS, PROFILE_LABELS, RATE_CONVENTION_LABELS, INSURANCE_LABELS, structureLabel, type CustomerProfile } from "@/server/domain/products";
 import { LEGACY_INITIATOR_ROLES, RETAIL_INITIATOR_ROLES, type Role } from "@/server/domain/roles";
 import { formatKobo } from "@/server/money";
 import { ORIGINATION_PRODUCTS, type OriginationProduct } from "@/lib/origination-products";
 import type { CatalogueProduct } from "./NewRetailForm";
+import { BUSINESS_ONLY_PRODUCTS, type CustomerCategory } from "@/lib/customer-types";
 
 export type Availability = { status: "OPEN" } | { status: "NOT_PERMITTED" } | { status: "UNAVAILABLE"; reason: string };
 
@@ -67,3 +68,19 @@ export async function retailCatalogue(q: Db, code: string, now: Date): Promise<C
     });
   return { code: p.code, name: p.name, description: p.description ?? "", configVersion: cfg.version, profiles };
 }
+
+/**
+ * Customer categories a product serves: the profiles offered by its published rules (Product Settings). WakeelBoost
+ * is business-only. A product without published rules is listed under the categories its supplied rules offer, so
+ * the card can explain that it is awaiting configuration.
+ */
+export async function categoriesOffered(q: Db, p: OriginationProduct, now: Date): Promise<CustomerCategory[]> {
+  if (BUSINESS_ONLY_PRODUCTS.includes(p.code)) return ["BUSINESS_OWNER"];
+  const cfg = await effectiveConfig(q, p.code, now);
+  const profiles = cfg?.config.profiles ?? INITIAL_PRODUCT_CONFIGS[p.code]?.profiles ?? {};
+  const out = (Object.entries(profiles) as [CustomerCategory, { enabled?: boolean } | undefined][]).filter(([, r]) => r?.enabled).map(([c]) => c);
+  return out.length || cfg ? out : ["BUSINESS_OWNER"];
+}
+
+/** The customer-type step applies to retail originators (Relationship Managers, Team Leads, Unit Heads). */
+export const usesCustomerStep = (products: readonly OriginationProduct[]) => products.some((p) => p.kind === "RETAIL");

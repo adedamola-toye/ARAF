@@ -1,4 +1,4 @@
-# Staff Personal Financing
+# Staff Personal Financing (shown to users as "Staff Salary Advance")
 
 An end-to-end workflow for bank staff, from origination to disbursement and post-completion
 documentation, inside the Retail Asset Factory. It has its own records and statuses (it never touches

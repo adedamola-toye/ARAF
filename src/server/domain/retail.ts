@@ -25,7 +25,7 @@ import { PLATFORM_NAME, RETAIL_REF_PREFIX } from "../brand";
 import { TIN_RE, type ApplicantType } from "./application-data";
 import { holdsRole } from "./access";
 import { chooseAssignee, type AppRow } from "./assignment";
-import { currentCleanDocuments, listDocuments } from "./documents";
+import { MISSING_DOCUMENT_MESSAGES, currentCleanDocuments, listDocuments } from "./documents";
 import { checkPhotos, evaluateMatrix, type MatrixItem, type PhotoCheck } from "./doc-matrix";
 import { computeAffordability, rulesSnapshot, type AffordabilityInput, type AffordabilityOutput } from "./affordability";
 import { roleMayOriginate, ANNUAL_DENOMINATORS, configById, configGaps, effectiveConfig, getProduct, gapsBlocking, profileRules, structureRules, type ConfigGap, type ProductConfigRow, type ProfileRules } from "./products";
@@ -96,7 +96,7 @@ export async function createRetailDraft(ctx: Ctx, p: { initiatorRole: string; pr
     const rules = profileRules(cfg.config, p.profile);
     if (!rules) throw invalid(`${product.name} is not available for this customer profile.`, { profile: "Profile not eligible for this product." });
     if (!rules.eligibleApplicantTypes.includes(p.applicantType)) {
-      throw invalid(`${product.name} (${p.profile === "SALARY_EARNER" ? "salary earners" : "business owners"}) is available only to: ${rules.eligibleApplicantTypes.join(", ").toLowerCase()} customers.`, { applicantType: "Customer type not eligible." });
+      throw invalid(`${product.name} (${p.profile === "SALARY_EARNER" ? "salaried individuals" : "business owners"}) is available only to: ${rules.eligibleApplicantTypes.join(", ").toLowerCase()} customers.`, { applicantType: "Customer type not eligible." });
     }
     if (p.structure && !rules.structures.some((s) => s.code === p.structure)) throw invalid("Choose a financing structure offered for this product.", { structure: "Structure not offered." });
     const structure = p.structure || (rules.structures.length === 1 ? rules.structures[0].code : null);
@@ -111,7 +111,7 @@ export async function createRetailDraft(ctx: Ctx, p: { initiatorRole: string; pr
       )
     ).rows[0];
     await tx.query(`INSERT INTO application_versions (application_id, version_no, data, created_by, created_at) VALUES ($1,1,$2,$3,$4)`, [app.id, JSON.stringify(retailDataSchema.parse({})), actor.staffId, ctx.now]);
-    await audit(tx, ctx, { action: "DRAFT_CREATED", actorRole: p.initiatorRole, applicationId: app.id, stage: "DRAFT", details: { ref, productCode: product.code, profile: p.profile, structure, applicantType: p.applicantType, configVersion: cfg.version } });
+    await audit(tx, ctx, { action: "DRAFT_CREATED", actorRole: p.initiatorRole, applicationId: app.id, stage: "DRAFT", details: { ref, productCode: product.code, profile: p.profile, customerCategory: p.profile, structure, applicantType: p.applicantType, configVersion: cfg.version } });
     return { id: app.id, ref };
   });
 }
@@ -441,7 +441,7 @@ export async function retailReadiness(q: Db, appId: string, now: Date): Promise<
   const exceptions = (await q.query("SELECT id, type, subject, status, reason, decision_note, approver_role FROM policy_exceptions WHERE application_id = $1 ORDER BY requested_at", [appId])).rows;
   const approvedExceptionCodes = exceptions.filter((x: { status: string }) => x.status === "APPROVED").map((x: { type: string; subject: string | null }) => (x.type === "AFS" ? "AFS" : (x.subject ?? x.type)));
   const matrix = rules ? evaluateMatrix({ rules, structure, amountKobo: data.requestedAmountKobo, documents: docs, approvedExceptions: approvedExceptionCodes, asOf: lagosDate(now), stages: ["SUBMISSION"] }) : [];
-  for (const m of matrix) if (!m.satisfied) e[`doc_${m.code}`] = `${m.label}: ${m.detail.toLowerCase()}${m.code === "AFS" ? " (or an approved AFS exception)" : ""}.`;
+  for (const m of matrix) if (!m.satisfied) e[`doc_${m.code}`] = m.status === "MISSING" && MISSING_DOCUMENT_MESSAGES[m.code] ? MISSING_DOCUMENT_MESSAGES[m.code] : `${m.label}: ${m.detail.toLowerCase()}${m.code === "AFS" ? " (or an approved AFS exception)" : ""}.`;
   const photos = rules && (rules.businessPhotos.minDistinct > 0 || rules.businessPhotos.rmPhotoRequired) ? checkPhotos(docs, rules, responsibleRm) : null;
   if (photos && !photos.ok) e.photos = photos.messages.join(" ");
   const prop = (await q.query("SELECT * FROM credit_proposals WHERE application_id = $1 ORDER BY version_no DESC LIMIT 1", [appId])).rows[0] ?? null;

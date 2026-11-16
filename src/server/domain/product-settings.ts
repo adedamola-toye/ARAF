@@ -18,7 +18,7 @@ import { holdsRole } from "./access";
 import { CATEGORY_LABEL } from "./documents";
 import { LEGACY_INITIATOR_ROLES, RETAIL_INITIATOR_ROLES, isRole } from "./roles";
 import { configGaps, getProduct, INITIAL_PRODUCT_CONFIGS, productConfigSchema, type ProductConfig, type ProductRow } from "./products";
-import { blankProfile, DEFAULT_TYPES, diffSettings, publishChecks, type Change, type General } from "@/lib/product-settings";
+import { applySalariedDocumentUpdate, blankProfile, DEFAULT_TYPES, diffSettings, SALARIED_DOCUMENT_UPDATE, publishChecks, type Change, type General } from "@/lib/product-settings";
 import { lagosDate } from "../time";
 
 export const ORIGINATION_CEILING: Record<string, readonly string[]> = { RETAIL: RETAIL_INITIATOR_ROLES, WAKEELBOOST: LEGACY_INITIATOR_ROLES };
@@ -134,7 +134,7 @@ async function retailProduct(q: Db, code: string) {
 }
 
 /** Start a draft: from the parameters supplied by the bank, a blank form, a published version, or an earlier proposal. */
-export async function startDraft(ctx: Ctx, code: string, from: { kind: "SUPPLIED" | "BLANK" | "VERSION" | "PROPOSAL"; ref?: string | null; replace?: boolean }) {
+export async function startDraft(ctx: Ctx, code: string, from: { kind: "SUPPLIED" | "BLANK" | "VERSION" | "PROPOSAL"; ref?: string | null; replace?: boolean; update?: string | null }) {
   return withTx(async (tx) => {
     const actor = await requireAdmin(tx, ctx);
     const p = await retailProduct(tx, code);
@@ -153,13 +153,20 @@ export async function startDraft(ctx: Ctx, code: string, from: { kind: "SUPPLIED
       config = productConfigSchema.parse(v.config);
       ref = from.kind === "VERSION" ? String(v.version) : v.id;
     }
+    // An approved update (e.g. salaried documentation) is applied to the version in force, as a draft only.
+    if (from.update) {
+      if (from.update !== SALARIED_DOCUMENT_UPDATE.key || from.kind !== "VERSION" || !latest) throw invalid("Unknown update.");
+      const updated = applySalariedDocumentUpdate(config);
+      if (!updated) throw conflict("This product already has the salaried documentation, or has no salaried profile.");
+      config = productConfigSchema.parse(updated);
+    }
     if (existing) await tx.query("DELETE FROM product_config_drafts WHERE product_code = $1", [code]);
     await tx.query(
       `INSERT INTO product_config_drafts (product_code, config, general, effective_from, base_version, source, source_ref, revision, created_by, created_at, updated_by, updated_at)
        VALUES ($1,$2,$3,NULL,$4,$5,$6,1,$7,$8,$7,$8)`,
       [code, JSON.stringify(config), JSON.stringify(generalOf(p)), latest?.version ?? null, from.kind, ref, actor.staffId, ctx.now],
     );
-    await audit(tx, ctx, { action: "PRODUCT_DRAFT_STARTED", actorRole: "SUPER_ADMIN", details: { productCode: code, source: from.kind, sourceRef: ref, baseVersion: latest?.version ?? null } });
+    await audit(tx, ctx, { action: "PRODUCT_DRAFT_STARTED", actorRole: "SUPER_ADMIN", details: { productCode: code, source: from.kind, sourceRef: ref, update: from.update ?? null, baseVersion: latest?.version ?? null } });
     return { revision: 1 };
   });
 }

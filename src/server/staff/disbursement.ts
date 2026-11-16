@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing disbursement.
+ * Staff Salary Advance disbursement.
  *
  * No payment API is connected to this platform, so no transfer is ever simulated. The assigned
  * Disbursement Officer pays through the bank's core banking system and records the outcome here:
@@ -51,7 +51,7 @@ export async function assignDisbursementOfficer(tx: Tx, ctx: Ctx, req: StaffRequ
   if (!officers.length) {
     await recordEvent(tx, ctx, req, { action: "DISBURSEMENT_ASSIGNMENT_PENDING", role: "SYSTEM", comments: "No eligible, active Disbursement Officer is configured." });
     await alertOperations(tx, ctx, req, "NO_DISBURSEMENT_OFFICER", "No Disbursement Officer available", [
-      `${req.ref} has a signed offer but no eligible, active Disbursement Officer could be assigned. Assign one from the staff financing operations page.`,
+      `${req.ref} has a signed offer but no eligible, active Disbursement Officer could be assigned. Assign one from the salary advance operations page.`,
     ]);
     return req;
   }
@@ -68,7 +68,7 @@ export async function assignDisbursementOfficer(tx: Tx, ctx: Ctx, req: StaffRequ
     set: { disbursement_officer_id: pick.id, disbursement_assigned_at: ctx.now },
     details: { officerId: pick.id, officerRole: pick.role, eligibleCount: officers.length, method: "RANDOM" },
   });
-  await notifyStaff(tx, ctx, fresh, "QUEUE_DISBURSEMENT", [pick.id], "Staff financing request assigned to you for disbursement", [`Staff financing request ${req.ref} has been assigned to you for disbursement.`]);
+  await notifyStaff(tx, ctx, fresh, "QUEUE_DISBURSEMENT", [pick.id], "Salary advance request assigned to you for disbursement", [`Salary advance request ${req.ref} has been assigned to you for disbursement.`]);
   return fresh;
 }
 
@@ -103,7 +103,7 @@ export async function reassignDisbursementOfficer(ctx: Ctx, id: string, input: {
         set: { disbursement_officer_id: officer.id, disbursement_assigned_at: ctx.now, documentation_reviewed_at: null, documentation_reviewed_by: null },
         details: { from: req.disbursement_officer_id, to: officer.id },
       });
-      await notifyStaff(tx, ctx, fresh, "QUEUE_DISBURSEMENT", [officer.id], "Staff financing request assigned to you for disbursement", [`Staff financing request ${req.ref} has been assigned to you for disbursement.`]);
+      await notifyStaff(tx, ctx, fresh, "QUEUE_DISBURSEMENT", [officer.id], "Salary advance request assigned to you for disbursement", [`Salary advance request ${req.ref} has been assigned to you for disbursement.`]);
       return fresh;
     });
   } catch (e) {
@@ -267,7 +267,7 @@ export async function completeDisbursement(ctx: Ctx, id: string, input: Complete
         },
         details: { transactionRef: txnRef, valueDate: input.valueDate, amountKobo: amount },
       });
-      await notifyStaff(tx, ctx, done, "DISBURSED", [done.applicant_id], "Your staff financing has been disbursed", [`The facility for ${req.ref} has been disbursed to your salary account.`]);
+      await notifyStaff(tx, ctx, done, "DISBURSED", [done.applicant_id], "Your salary advance has been disbursed", [`The facility for ${req.ref} has been disbursed to your salary account.`]);
       return done;
     });
   } catch (e) {

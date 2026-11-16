@@ -13,7 +13,7 @@ export const metadata = { title: { absolute: "Retail Asset Factory" } };
 const WORKSPACES: { href: string; title: string; text: string; roles?: string[] }[] = [
   { roles: ["RM"], href: "/enter/relationship-manager", title: "Relationship Manager", text: "Originate and manage customer financing requests." },
   { roles: ["DELIGHT_OFFICER", "SMILE_ASSOCIATE"], href: "/enter/delight-officer", title: "Delight Officer / Smile Associate", text: "Sell Altphones outright or on credit." },
-  { href: "/enter/staff-personal-request", title: "Staff Personal Request", text: "Apply for financing and track your request." },
+  { href: "/enter/staff-personal-request", title: "Staff Salary Advance", text: "Apply for financing and track your request." },
 ];
 
 /** Approved landing page (V39). Markup mirrors the reference so landing.module.css applies unchanged. */

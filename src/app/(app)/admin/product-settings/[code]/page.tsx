@@ -9,7 +9,7 @@ import { listContractTypes } from "@/server/domain/product-admin";
 import { CATEGORY_LABEL } from "@/server/domain/documents";
 import { ROLES, ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { workflowProduct } from "@/lib/approval-workflow";
-import { diffSettings, STATUS, type General } from "@/lib/product-settings";
+import { applySalariedDocumentUpdate, diffSettings, SALARIED_DOCUMENT_UPDATE, STATUS, type General } from "@/lib/product-settings";
 import { formatLagos, lagosDate } from "@/server/time";
 import { PageHeader } from "@/components/PageHeader";
 import { SettingsEditor, ChangeList } from "../SettingsEditor";
@@ -107,6 +107,19 @@ export default async function ProductSettings({ params, searchParams }: { params
             </dl>
           </div>
         </div>
+      )}
+
+      {!draft && latest && applySalariedDocumentUpdate(latest.config) && (
+        <section className="card ps-update" aria-labelledby="ps-upd">
+          <h2 id="ps-upd">Approved update ready: {SALARIED_DOCUMENT_UPDATE.title}</h2>
+          <p className="small" style={{ marginTop: 0 }}>{SALARIED_DOCUMENT_UPDATE.summary}</p>
+          <details>
+            <summary className="small">What it changes</summary>
+            <ChangeList changes={diffSettings({ config: latest.config }, { config: applySalariedDocumentUpdate(latest.config) })} />
+          </details>
+          <p className="small muted">Nothing changes until you review the draft and publish it with a reason. Requests already started keep their version.</p>
+          <StartDraft productCode={code} kind="VERSION" update={SALARIED_DOCUMENT_UPDATE.key} label="Load into draft" primary />
+        </section>
       )}
 
       {proposals.length > 0 && (
@@ -315,7 +328,7 @@ async function WakeelBoostHub({ product }: { product: NonNullable<Awaited<Return
       </section>
       <Hub
         items={[
-          { title: "Eligibility & KYC", text: "BVN and identity verification and the SeedFi credit check apply to every request.", fixed: true },
+          { title: "Eligibility & KYC", text: "Business owners only (merchant financing). BVN and identity verification and the SeedFi credit check apply to every request.", fixed: true },
           { title: "Financing & Pricing", text: "Pricing and tenor are versioned under WakeelBoost pricing.", href: "/admin/pricing", link: "Open pricing" },
           { title: "Approval Workflow", text: "Approval stages and credit authority.", href: "/admin/workflows/WAKEELBOOST", link: "Open approval workflow" },
           { title: "Documentation", text: "WakeelBoost uses its fixed document checklist.", fixed: true },

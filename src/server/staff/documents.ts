@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing documents: private object storage (no personal data in object keys),
+ * Staff Salary Advance documents: private object storage (no personal data in object keys),
  * type sniffing, quarantine and malware scan, versioned rows, and access checks on every read.
  */
 import { randomUUID } from "node:crypto";
@@ -190,7 +190,7 @@ export async function readStaffDocument(ctx: Ctx, docId: string, mode: "view" | 
   const req = (await db.query<StaffRequestRow>("SELECT * FROM staff_requests WHERE id = $1", [doc.request_id])).rows[0];
   const as = await requestAccess(db, actor.staffId, req);
   if (!as.size) {
-    await auditDenied(ctx, req.id, "DOCUMENT_READ", "No access to this staff financing request");
+    await auditDenied(ctx, req.id, "DOCUMENT_READ", "No access to this salary advance request");
     throw forbidden("You do not have access to this document.");
   }
   if (doc.scan_status === "QUARANTINED") throw gate("This file is still being scanned. Try again shortly.");

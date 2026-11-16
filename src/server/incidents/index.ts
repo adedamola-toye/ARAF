@@ -63,7 +63,7 @@ const MODULES: [RegExp, string][] = [
   [/^\/altphones\/inventory/, "Altphones inventory"],
   [/^\/(altphones\/applications\/[^/]+\/disburse|api\/altphones\/paystack)/, "Payments and disbursement"],
   [/^\/(api\/)?altphones/, "Altphones"],
-  [/^\/(api\/)?staff-(financing|request)/, "Staff financing"],
+  [/^\/(api\/)?staff-(financing|request)/, "Staff Salary Advance"],
   [/^\/(api\/)?reports/, "Reporting and analytics"],
   [/^\/wallet/, "Request wallet"],
   [/^\/exceptions/, "Exceptions"],

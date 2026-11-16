@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing: shared core (records, events, access, separation of duties, notifications).
+ * Staff Salary Advance: shared core (records, events, access, separation of duties, notifications).
  *
  * Every status change goes through `transition()`, which re-checks the expected status and the
  * optimistic lock inside the caller's transaction and writes both the request's own status history
@@ -48,15 +48,15 @@ export async function settingsById(q: Db, id: string): Promise<StaffSettings> {
 }
 
 export async function loadRequest(q: Db, id: string): Promise<StaffRequestRow> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound("Staff financing request not found.");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound("Salary advance request not found.");
   const r = (await q.query<StaffRequestRow>("SELECT * FROM staff_requests WHERE id = $1", [id])).rows[0];
-  if (!r) throw notFound("Staff financing request not found.");
+  if (!r) throw notFound("Salary advance request not found.");
   return r;
 }
 export async function lockRequest(tx: Tx, id: string): Promise<StaffRequestRow> {
-  if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound("Staff financing request not found.");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) throw notFound("Salary advance request not found.");
   const r = (await tx.query<StaffRequestRow>("SELECT * FROM staff_requests WHERE id = $1 FOR UPDATE", [id])).rows[0];
-  if (!r) throw notFound("Staff financing request not found.");
+  if (!r) throw notFound("Salary advance request not found.");
   return r;
 }
 
@@ -217,8 +217,8 @@ export async function viewableRequest(ctx: Ctx, id: string, q: Db): Promise<{ re
   const req = await loadRequest(q, id);
   const as = await requestAccess(q, ctx.actor.staffId, req);
   if (as.size === 0) {
-    await auditDenied(ctx, req.id, "VIEW", "No access to this staff financing request");
-    throw forbidden("You do not have access to this staff financing request.");
+    await auditDenied(ctx, req.id, "VIEW", "No access to this salary advance request");
+    throw forbidden("You do not have access to this salary advance request.");
   }
   return { req, as };
 }
@@ -285,7 +285,7 @@ export interface RoutePosition {
  */
 export async function routeUnitHead(q: Db, req?: StaffRequestRow | null): Promise<RoutePosition> {
   const s = await currentSettings(q);
-  if (!s.unit_head_staff_id) return { id: null, name: null, problem: "No Unit Head is configured for the staff financing route. A Super Admin must set one in Staff financing settings." };
+  if (!s.unit_head_staff_id) return { id: null, name: null, problem: "No Unit Head is configured for the salary advance route. A Super Admin must set one in Salary advance settings." };
   const p = (
     await q.query<{ full_name: string; ok: boolean }>(
       `SELECT s.full_name, (s.status = 'ACTIVE' AND EXISTS (SELECT 1 FROM role_assignments ra WHERE ra.staff_id = s.id AND ra.role = 'UNIT_HEAD' AND ra.active)) AS ok FROM staff s WHERE s.id = $1`,

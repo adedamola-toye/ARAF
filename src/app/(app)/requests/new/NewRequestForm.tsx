@@ -11,6 +11,7 @@ const TYPES = [
 export function NewRequestForm({ roles, defaultRole }: { roles: { value: string; label: string }[]; defaultRole: string }) {
   return (
     <ActionForm action={createDraftAction} refreshOnSuccess={false}>
+      <input type="hidden" name="customerCategory" value="BUSINESS_OWNER" />
       <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
         <legend style={{ fontWeight: 700, marginBottom: 8 }}>Applicant type</legend>
         <div className="choice-grid">

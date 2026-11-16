@@ -27,12 +27,13 @@ const TYPE_LABELS: Record<string, { t: string; d: string }> = {
   LIMITED: { t: "Limited company", d: "Incorporated company with directors and their BVNs, CAC." },
 };
 
-export function NewRetailForm({ products, roles, defaultRole }: { products: CatalogueProduct[]; roles: { value: string; label: string }[]; defaultRole: string }) {
+export function NewRetailForm({ products, roles, defaultRole, category }: { products: CatalogueProduct[]; roles: { value: string; label: string }[]; defaultRole: string; category?: { title: string; changeHref: string } | null }) {
   const [product, setProduct] = useState(products[0]?.code ?? "");
   const p = products.find((x) => x.code === product);
   // Opened from a product card: the product is already chosen, so its step is not shown.
   const single = products.length === 1;
-  const off = single ? 1 : 0;
+  // A customer category chosen on the previous step fixes the profile, so its step is not shown either.
+  const off = (single ? 1 : 0) + (category ? 1 : 0);
   const [profile, setProfile] = useState(p?.profiles[0]?.code ?? "");
   const prof = p?.profiles.find((x) => x.code === profile) ?? p?.profiles[0];
   const [type, setType] = useState(prof?.eligibleTypes[0] ?? "");
@@ -75,7 +76,18 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
         </div>
       </fieldset>
       )}
-      {p && (
+      {p && category && (
+        <div className="category-summary">
+          <input type="hidden" name="profile" value={profile} />
+          <span className="small muted">Customer category</span>
+          <strong>{category.title}</strong>
+          <a href={category.changeHref} className="btn btn-ghost btn-sm">
+            Change
+          </a>
+          {prof?.limits && <span className="small muted category-limits">{prof.limits}</span>}
+        </div>
+      )}
+      {p && !category && (
         <fieldset className="step">
           <legend>
             <span className="step-no">{2 - off}</span> Customer profile
@@ -97,7 +109,7 @@ export function NewRetailForm({ products, roles, defaultRole }: { products: Cata
       {prof && (
         <fieldset className="step">
           <legend>
-            <span className="step-no">{3 - off}</span> Customer type
+            <span className="step-no">{3 - off}</span> Legal form
           </legend>
           <div className="choice-grid">
             {types.map((t) => (

@@ -22,7 +22,7 @@ import { DomainError } from "../errors";
 export const STAFF_FINANCING_RESTRICTED_ROLES = ["SMILE_ASSOCIATE"] as const;
 
 export const STAFF_FINANCING_RESTRICTED_MESSAGE =
-  "Your current profile does not authorise you to access Staff Financing. Please contact your administrator if you believe your access should be reviewed.";
+  "Your current profile does not authorise you to access Staff Salary Advance. Please contact your administrator if you believe your access should be reviewed.";
 
 export type StaffFinancingDenial = "UNAUTHENTICATED" | "INACTIVE" | "RESTRICTED_ROLE" | "UNPROFILED";
 export type StaffFinancingAccess = { allowed: true; roles: string[] } | { allowed: false; reason: StaffFinancingDenial; roles: string[] };

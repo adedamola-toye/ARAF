@@ -2,7 +2,7 @@
  * Retail Asset Factory design tokens, derived from the approved landing page (V39, "PIGGYVEST 1").
  * Light: #F7F9FF canvas, #152B59 ink, #1D438E brand, #153FAF accent. Dark: #101820 canvas,
  * #F5F7FA ink, #204991 brand, #9DBBFF accent. Success/warning surfaces reuse the V39 workspace
- * card colours (green: Delight Officer, sand: Staff Personal Request).
+ * card colours (green: Delight Officer, sand: Staff Salary Advance).
  * Typography: Nunito Sans (headings, figures) and DM Sans (body, UI), loaded by next/font.
  * Theme: <html data-theme="light|dark"> is set before first paint (src/lib/theme.ts). Without
  * JavaScript, a System preference falls back to the operating system through the media query.
@@ -587,7 +587,7 @@ table.matrix td { vertical-align: top; }
 .skeleton { display: block; border-radius: 8px; background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; min-height: 14px; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
-/* ---------------------------------------------------------------- Staff Personal Financing */
+/* ---------------------------------------------------------------- Staff Salary Advance */
 .action-bar { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .action-bar .btn { flex: 0 1 auto; }
 @media (max-width: 560px) { .action-bar .btn { flex: 1 1 100%; } }
@@ -1024,3 +1024,31 @@ dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
   .ps-toolbar { position: static; }
   .grid-4 { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ------------------------------------------------------------------ New request: customer type */
+.customer-step { max-width: 920px; }
+.customer-step fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.step-title { display: flex; align-items: center; gap: var(--space-2); font-weight: 700; margin-bottom: var(--space-3); padding: 0; }
+.customer-types { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.customer-card { position: relative; display: flex; align-items: center; gap: var(--space-4); padding: var(--space-4) var(--space-5); min-height: 104px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); cursor: pointer; transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+.customer-card input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.customer-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-card); }
+.customer-card:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.customer-card:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.customer-card:has(input:checked)::after { content: ""; position: absolute; top: 14px; right: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.customer-icon { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.customer-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.customer-text strong { font-size: 16px; }
+.customer-text span { color: var(--muted); font-size: 13.5px; line-height: 1.45; }
+.customer-actions { display: flex; justify-content: flex-end; margin-top: var(--space-4); }
+.category-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); max-width: 920px; }
+.category-summary .customer-icon { width: 34px; height: 34px; border-radius: 10px; }
+.category-summary .btn { margin-left: auto; }
+.category-limits { flex-basis: 100%; }
+@media (max-width: 720px) {
+  .customer-types { grid-template-columns: minmax(0, 1fr); }
+  .customer-actions .btn { width: 100%; justify-content: center; }
+}
+.customer-icon .icon { width: 22px; height: 22px; }
+.customer-text strong { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; }
+.ps-update { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); margin-bottom: var(--space-4); }

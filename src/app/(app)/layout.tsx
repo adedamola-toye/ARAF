@@ -183,13 +183,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
         {staffOk && (
           <div className="nav-section">
-            <span className="nav-title">Staff financing</span>
+            <span className="nav-title">Staff Salary Advance</span>
             <NavLink href="/staff-request" count={myOfferCount} icon={<BadgeCent {...ic} />}>
-              My staff financing
+              My salary advance
             </NavLink>
             {staffViews.length > 0 && (
               <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
-                Staff financing queues
+                Salary advance queues
               </NavLink>
             )}
           </div>
@@ -233,7 +233,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Feature controls
             </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
-              Staff financing settings
+              Salary advance settings
             </NavLink>
             <NavLink href="/admin/locations" icon={<MapPin {...ic} />}>
               Outlet locations

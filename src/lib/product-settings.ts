@@ -25,7 +25,7 @@ export const SECTIONS: { key: SectionKey; title: string; intro: string }[] = [
   { key: "controls", title: "Controls & Exceptions", intro: "Operational controls, permitted exceptions and who may approve them." },
 ];
 
-export const PROFILE_NAMES: Record<string, string> = { SALARY_EARNER: "Salary earners", BUSINESS_OWNER: "Business owners" };
+export const PROFILE_NAMES: Record<string, string> = { SALARY_EARNER: "Salaried individuals", BUSINESS_OWNER: "Business owners" };
 export const APPLICANT_TYPES: [string, string][] = [["INDIVIDUAL", "Individual"], ["ENTERPRISE", "Enterprise (business name)"], ["LIMITED", "Limited company"]];
 
 const kobo = (v: unknown) => {
@@ -254,3 +254,30 @@ export const STATUS: Record<SettingsStatusKey, { label: string; cls: string }> =
   SCHEDULED: { label: "Scheduled", cls: "badge badge-blue" },
   CLOSED: { label: "Closed to new applications", cls: "badge" },
 };
+
+/**
+ * Approved change (customer segmentation): salaried individuals provide salary evidence for the last three months
+ * and an employment or appointment letter, replacing "Payslip" and "Employment and salary confirmation". Returns the
+ * updated configuration, or null when the product has no salaried profile or already has the change. Nothing is
+ * applied automatically: a Super Admin loads it into a draft, reviews it and publishes it with a reason.
+ */
+export const SALARIED_DOCUMENT_UPDATE = {
+  key: "SALARIED_DOCUMENTS",
+  title: "Salaried documentation",
+  summary: "Salaried individuals: salary evidence covering the last three months and an employment or appointment letter become mandatory at submission, replacing Payslip and Employment and salary confirmation.",
+};
+export function applySalariedDocumentUpdate(cfg: Cfg): Cfg | null {
+  const r = cfg?.profiles?.SALARY_EARNER;
+  if (!r) return null;
+  const docs = (r.documents ?? []) as { code: string }[];
+  const has = (c: string) => docs.some((d) => d.code === c);
+  if (has("SALARY_EVIDENCE") && has("EMPLOYMENT_LETTER") && !has("PAYSLIP") && !has("EMPLOYMENT_CONFIRMATION")) return null;
+  const next = JSON.parse(JSON.stringify(cfg));
+  const base = { requirement: "MANDATORY", stage: "SUBMISSION", minCount: 1, coverageFrom: null, amountAboveKobo: null, structures: null, exceptionType: null };
+  next.profiles.SALARY_EARNER.documents = [
+    { code: "SALARY_EVIDENCE", ...base, note: "Payslips or salary statements for the last three months: one combined file or one per month." },
+    { code: "EMPLOYMENT_LETTER", ...base, note: "Employment or appointment letter from the employer." },
+    ...docs.filter((d) => !["PAYSLIP", "EMPLOYMENT_CONFIRMATION", "SALARY_EVIDENCE", "EMPLOYMENT_LETTER"].includes(d.code)),
+  ];
+  return next;
+}

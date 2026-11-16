@@ -4,13 +4,14 @@ import { ActionForm, SubmitButton } from "@/components/forms";
 import type { General } from "@/lib/product-settings";
 import { discardDraftAction, dismissProposalAction, saveGeneralAction, startDraftAction } from "./actions";
 
-export function StartDraft({ productCode, kind, refValue, replace, label, primary, small, confirm }: { productCode: string; kind: "SUPPLIED" | "BLANK" | "VERSION" | "PROPOSAL"; refValue?: string; replace?: boolean; label: string; primary?: boolean; small?: boolean; confirm?: string }) {
+export function StartDraft({ productCode, kind, refValue, replace, label, primary, small, confirm, update }: { productCode: string; kind: "SUPPLIED" | "BLANK" | "VERSION" | "PROPOSAL"; refValue?: string; replace?: boolean; label: string; primary?: boolean; small?: boolean; confirm?: string; update?: string }) {
   return (
     <ActionForm action={startDraftAction} className="ps-inline-form">
       <input type="hidden" name="productCode" value={productCode} />
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="ref" value={refValue ?? ""} />
       <input type="hidden" name="replace" value={replace ? "true" : "false"} />
+      <input type="hidden" name="update" value={update ?? ""} />
       <span
         onClickCapture={(e) => {
           if (confirm && !window.confirm(confirm)) {

@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing: origination (draft, calculator, submission) and the three review stages
+ * Staff Salary Advance: origination (draft, calculator, submission) and the three review stages
  * (Product Manager → Unit Head → Divisional Head), returns, declines and controlled amendment.
  *
  * Account verification, salary history and repayment capacity are NOT checked by any system here:
@@ -226,7 +226,7 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
       // Only a change that affects the figures or the submission rules requires a re-save.
       const cur = await currentSettings(tx);
       const terms = (x: typeof cur) => JSON.stringify([x.deduction_rate_bps, x.min_amount_kobo, x.max_amount_kobo, x.tenor_options_months, x.required_document_types]);
-      if (cur.id !== settings.id && terms(cur) !== terms(settings)) throw conflict("The staff financing settings changed since you last saved. Save the form again to see the updated figures, then submit.");
+      if (cur.id !== settings.id && terms(cur) !== terms(settings)) throw conflict("The salary advance settings changed since you last saved. Save the form again to see the updated figures, then submit.");
       const problems = await submissionProblems(tx, req);
       if (Object.keys(problems).length) throw invalid("Complete the highlighted items before submitting.", problems);
       const f = computeStaffFinancing(Number(req.gross_kobo), settings.deduction_rate_bps);
@@ -253,11 +253,11 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
         },
         details: { grossKobo: f.grossKobo, deductionRateBps: f.deductionRateBps, deductionKobo: f.deductionKobo, netKobo: f.netKobo, tenorMonths: req.tenor_months, settingsVersion: settings.version },
       });
-      await notifyStaff(tx, ctx, fresh, "SUBMITTED", [req.applicant_id], "Staff financing request submitted", [
-        `Your staff financing request ${req.ref} was ${resubmission ? "resubmitted" : "submitted"} and is in the Product Manager queue.`,
-        "You can track its progress in the Staff Personal Request workspace.",
+      await notifyStaff(tx, ctx, fresh, "SUBMITTED", [req.applicant_id], "Salary advance request submitted", [
+        `Your salary advance request ${req.ref} was ${resubmission ? "resubmitted" : "submitted"} and is in the Product Manager queue.`,
+        "You can track its progress in the Staff Salary Advance workspace.",
       ]);
-      await notifyRole(tx, ctx, fresh, "QUEUE_PM", ["PRODUCT_MANAGER"], "Staff financing request awaiting review", [`A staff financing request (${req.ref}) is awaiting Product Manager review.`], [req.applicant_id]);
+      await notifyRole(tx, ctx, fresh, "QUEUE_PM", ["PRODUCT_MANAGER"], "Salary advance request awaiting review", [`A salary advance request (${req.ref}) is awaiting Product Manager review.`], [req.applicant_id]);
       return { req: fresh, duplicate: false };
     });
     return { ref: res.req.ref, submittedAt: res.req.submitted_at as Date, duplicate: res.duplicate };
@@ -348,7 +348,7 @@ export async function pmDecision(ctx: Ctx, id: string, input: PmDecisionInput) {
         // The staff route has one configured Unit Head; the Product Manager does not choose.
         const uh = await routeUnitHead(tx, req);
         if (uh.problem || !uh.id) {
-          await alertOperations(tx, ctx, req, "NO_ROUTE_UNIT_HEAD", "Staff financing route has no usable Unit Head", [`${req.ref} cannot be forwarded: ${uh.problem}`]);
+          await alertOperations(tx, ctx, req, "NO_ROUTE_UNIT_HEAD", "Salary advance route has no usable Unit Head", [`${req.ref} cannot be forwarded: ${uh.problem}`]);
           throw gate(`Forwarding is blocked: ${uh.problem}`);
         }
         designated = uh.id;
@@ -375,7 +375,7 @@ export async function pmDecision(ctx: Ctx, id: string, input: PmDecisionInput) {
       });
       await afterDecisionNotices(tx, ctx, fresh, input.action, comments);
       if (input.action === "FORWARD") {
-        await notifyStaff(tx, ctx, fresh, "QUEUE_UNIT_HEAD", [designated], "Staff financing request awaiting your decision", [`Staff financing request ${req.ref} has been reviewed by the Product Manager and awaits your decision as Unit Head.`]);
+        await notifyStaff(tx, ctx, fresh, "QUEUE_UNIT_HEAD", [designated], "Salary advance request awaiting your decision", [`Salary advance request ${req.ref} has been reviewed by the Product Manager and awaits your decision as Unit Head.`]);
       }
       return fresh;
     }),
@@ -389,12 +389,12 @@ function returnOrDeclineColumns(action: "RETURN" | "DECLINE", req: StaffRequestR
 
 async function afterDecisionNotices(tx: Tx, ctx: Ctx, req: StaffRequestRow, action: string, reason: string) {
   if (action === "RETURN") {
-    await notifyStaff(tx, ctx, req, "RETURNED", [req.applicant_id], "Staff financing request returned for correction", [
-      `Your staff financing request ${req.ref} was returned for correction.`,
+    await notifyStaff(tx, ctx, req, "RETURNED", [req.applicant_id], "Salary advance request returned for correction", [
+      `Your salary advance request ${req.ref} was returned for correction.`,
       "Open the request to read the reason, correct it and resubmit.",
     ]);
   } else if (action === "DECLINE") {
-    await notifyStaff(tx, ctx, req, "DECLINED", [req.applicant_id], "Staff financing request declined", [`Your staff financing request ${req.ref} was declined. Open the request to read the reason.`]);
+    await notifyStaff(tx, ctx, req, "DECLINED", [req.applicant_id], "Salary advance request declined", [`Your salary advance request ${req.ref} was declined. Open the request to read the reason.`]);
   }
   void reason;
 }
@@ -419,7 +419,7 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       checkLock(req, input.lockVersion);
       // Pending requests follow the Unit Head configured for the route now.
       const uh = await routeUnitHead(tx, req);
-      if (uh.id !== ctx.actor?.staffId) throw forbidden("Only the Unit Head configured for the staff financing route can decide this request.");
+      if (uh.id !== ctx.actor?.staffId) throw forbidden("Only the Unit Head configured for the salary advance route can decide this request.");
       if (uh.problem) throw gate(uh.problem);
       await requireActor(tx, ctx, req, "UNIT_HEAD", { allowSelfIn: [req.unit_head_id, uh.id] });
       const comments = (input.comments ?? "").trim();
@@ -442,9 +442,9 @@ export async function unitHeadDecision(ctx: Ctx, id: string, input: HeadDecision
       if (input.action === "APPROVE") {
         const dh = await routeDivisionalHead(tx, fresh);
         if (dh.problem || !dh.id) {
-          await alertOperations(tx, ctx, fresh, "NO_DIVISIONAL_HEAD", "Staff financing request cannot reach a Divisional Head", [`${req.ref} awaits final approval but ${dh.problem}`]);
+          await alertOperations(tx, ctx, fresh, "NO_DIVISIONAL_HEAD", "Salary advance request cannot reach a Divisional Head", [`${req.ref} awaits final approval but ${dh.problem}`]);
         } else {
-          await notifyStaff(tx, ctx, fresh, "QUEUE_DIVISIONAL_HEAD", [dh.id], "Staff financing request awaiting final approval", [`Staff financing request ${req.ref} awaits your final approval as Divisional Head.`]);
+          await notifyStaff(tx, ctx, fresh, "QUEUE_DIVISIONAL_HEAD", [dh.id], "Salary advance request awaiting final approval", [`Salary advance request ${req.ref} awaits your final approval as Divisional Head.`]);
         }
       }
       return fresh;
@@ -516,7 +516,7 @@ export async function divisionalHeadDecision(ctx: Ctx, id: string, input: HeadDe
       await afterDecisionNotices(tx, ctx, next, input.action, comments);
       if (checklist) await recordVerification(tx, ctx, subject, checklist, next.status);
       if (input.action === "APPROVE") {
-        await notifyStaff(tx, ctx, next, "APPROVED", [next.applicant_id], "Staff financing request approved", [`Your staff financing request ${next.ref} has received final approval. Your offer letter will follow.`]);
+        await notifyStaff(tx, ctx, next, "APPROVED", [next.applicant_id], "Salary advance request approved", [`Your salary advance request ${next.ref} has received final approval. Your offer letter will follow.`]);
         next = await issueOffer(tx, ctx, next);
       }
       return next;
