@@ -37,6 +37,9 @@ export const DOC_CATEGORIES: DocCategory[] = [
   // Retail Asset Factory
   { code: "EMPLOYMENT_CONFIRMATION", label: "Employment and salary confirmation", multiple: false },
   { code: "PAYSLIP", label: "Payslip", multiple: true },
+  // Salaried individuals (one combined file or one per month; adequacy is confirmed by a reviewer, never automatically)
+  { code: "SALARY_EVIDENCE", label: "Salary evidence (last three months)", multiple: true },
+  { code: "EMPLOYMENT_LETTER", label: "Employment or appointment letter", multiple: false },
   { code: "VEHICLE_INVOICE", label: "Vehicle invoice", multiple: false },
   { code: "SUPPLIER_QUOTATION", label: "Supplier quotation or invoice (power solution)", multiple: false },
   { code: "VENDOR_CONFIRMATION_EMAIL", label: "Vendor confirmation email", multiple: false },
@@ -68,13 +71,20 @@ export const PHOTO_LABELS: Record<PhotoCategory, string> = {
 };
 /** Categories that need statement / payslip coverage dates. */
 export const COVERAGE_CATEGORIES = ["BANK_STATEMENT", "PAYSLIP"];
+/** Specific messages when a mandatory document is missing (others use the generic label and status). */
+export const MISSING_DOCUMENT_MESSAGES: Record<string, string> = {
+  SALARY_EVIDENCE: "Upload salary evidence covering the last three months.",
+  EMPLOYMENT_LETTER: "Upload the customer's employment letter.",
+};
+/** Shown as "Submitted — pending review" until a reviewer accepts them: their contents are not verified automatically. */
+export const REVIEW_PENDING_CATEGORIES = ["SALARY_EVIDENCE", "EMPLOYMENT_LETTER"];
 export const CATEGORY_LABEL = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.code, c.label])) as Record<string, string>;
 
 const INITIAL = ["BANK_STATEMENT", "CAC_CERTIFICATE", "SUPPLIER_INVOICE", "APPLICATION_FORM", "CONSENT_FORM", "RENT_RECEIPT", "SUPPORTING"];
 export const PACK = ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED"];
 
 const RETAIL_INITIAL = [
-  "BANK_STATEMENT", "CAC_CERTIFICATE", "EMPLOYMENT_CONFIRMATION", "PAYSLIP", "CREDIT_REPORT", "VEHICLE_INVOICE", "SUPPLIER_QUOTATION",
+  "BANK_STATEMENT", "CAC_CERTIFICATE", "EMPLOYMENT_CONFIRMATION", "PAYSLIP", "SALARY_EVIDENCE", "EMPLOYMENT_LETTER", "CREDIT_REPORT", "VEHICLE_INVOICE", "SUPPLIER_QUOTATION",
   "SUPPLIER_INVOICE", "VENDOR_CONFIRMATION_EMAIL", "CUSTOMER_REQUEST_LETTER", "BUSINESS_PHOTO", "AFS", "BUSINESS_OPERATIONS_EVIDENCE",
   "VISIT_EVIDENCE", "DATA_ACCESS_CONSENT", "EXCEPTION_EVIDENCE", "SUPPORTING",
 ];

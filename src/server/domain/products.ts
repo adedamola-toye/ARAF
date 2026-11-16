@@ -24,7 +24,7 @@ import type { ApplicantType } from "./application-data";
 export const CUSTOMER_PROFILES = ["SALARY_EARNER", "BUSINESS_OWNER"] as const;
 export type CustomerProfile = (typeof CUSTOMER_PROFILES)[number];
 export const PROFILE_LABELS: Record<CustomerProfile, string> = {
-  SALARY_EARNER: "Salary earner",
+  SALARY_EARNER: "Salaried individual",
   BUSINESS_OWNER: "Business owner / registered business",
 };
 

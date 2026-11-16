@@ -28,7 +28,7 @@ export const ROLES = [
   "PRODUCT_CONFIG_APPROVER",
   "VENDOR_MANAGER",
   "COLLECTIONS_OFFICER",
-  // Staff Personal Financing
+  // Staff Salary Advance
   "PRODUCT_MANAGER",
   "STAFF_APPLICANT",
   // Altphones
@@ -82,8 +82,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   PRODUCT_CONFIG_APPROVER: "Product configuration approver",
   VENDOR_MANAGER: "Vendor register officer",
   COLLECTIONS_OFFICER: "Collections and servicing officer",
-  PRODUCT_MANAGER: "Product Manager (staff financing)",
-  STAFF_APPLICANT: "Staff member (personal financing)",
+  PRODUCT_MANAGER: "Product Manager (salary advance)",
+  STAFF_APPLICANT: "Staff member (salary advance)",
   SMILE_ASSOCIATE: "Smile Associate (Altphones)",
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",

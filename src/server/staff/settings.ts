@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing settings: versioned and append-only. A new version applies to drafts and
+ * Staff Salary Advance settings: versioned and append-only. A new version applies to drafts and
  * resubmissions from the moment it is saved; submitted requests keep the version they were priced on.
  */
 import { withTx } from "../db";
@@ -27,7 +27,7 @@ export async function proposeStaffSettings(ctx: Ctx, p: SettingsInput) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   return withTx(async (tx) => {
-    if (!(await holdsRole(tx, actor.staffId, "SUPER_ADMIN"))) throw forbidden("Only a Super Admin can change staff financing settings.");
+    if (!(await holdsRole(tx, actor.staffId, "SUPER_ADMIN"))) throw forbidden("Only a Super Admin can change salary advance settings.");
     const fields: Record<string, string> = {};
     const bps = parsePercentToBp(p.deductionPercent);
     if (bps === null || bps > 10000) fields.deductionPercent = "Enter the deduction as a percentage, for example 2.";

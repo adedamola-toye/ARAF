@@ -67,7 +67,7 @@ export function ConfigEditor({ productCode, initial, roles, canPropose }: { prod
       </div>
       {Object.entries(cfg.profiles).map(([p, r]: [string, any]) => (
         <fieldset key={p} className="subfield">
-          <legend>{p === "SALARY_EARNER" ? "Salary earners" : "Business owners"} {r.enabled ? "" : "(disabled)"}</legend>
+          <legend>{p === "SALARY_EARNER" ? "Salaried individuals" : "Business owners"} {r.enabled ? "" : "(disabled)"}</legend>
           <div className="grid-3">
             <div className="field">
               <label htmlFor={`${productCode}-${p}-max`}>Maximum financing</label>

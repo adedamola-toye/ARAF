@@ -44,7 +44,7 @@ import {
   startDisbursementAction,
 } from "../actions";
 
-export const metadata = { title: "Staff financing request" };
+export const metadata = { title: "Salary advance request" };
 
 const STEPS: { label: string; done: (s: StaffStatus, r: Record<string, unknown>) => boolean; current: StaffStatus[] }[] = [
   { label: "Submitted", done: (_s, r) => Number(r.submission_count) > 0, current: ["DRAFT", "RETURNED_FOR_CORRECTION"] },
@@ -62,7 +62,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
   const a = await requireUser();
   // Checked before the request is even looked up, so a restricted user learns nothing about it.
   const home = await staffFinancingGate(a, "VIEW_REQUEST", id);
-  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  if (home) return <AccessRestricted product="Staff Salary Advance" dashboardHref={home} />;
   const { ctx, session } = a;
   let view;
   try {
@@ -82,7 +82,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
   const settings = editable ? await currentSettings(db) : await settingsById(db, req.settings_id);
   const link = (docId: string, mode: "view" | "download") => staffDocLink(docId, me, session.sessionId, mode);
   const reviewer = !isApplicant;
-  const crumbs = isApplicant ? [{ href: "/staff-request", label: "My staff financing" }] : [{ href: "/staff-financing", label: "Staff financing queues" }];
+  const crumbs = isApplicant ? [{ href: "/staff-request", label: "My salary advance" }] : [{ href: "/staff-financing", label: "Salary advance queues" }];
   const net = req.net_kobo ? formatNairaKobo(req.net_kobo) : "—";
   const supporting = d.docs.filter((x) => (APPLICANT_SUPPORTING_CATEGORIES as string[]).includes(x.category));
   const pmReview = [...d.reviews].reverse().find((r) => r.stage === "PRODUCT_MANAGER" && r.submission_no === req.submission_count);
@@ -91,7 +91,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
     <>
       <PageHeader
         crumbs={[...crumbs, { label: req.ref }]}
-        eyebrow="Staff Personal Request"
+        eyebrow="Staff Salary Advance"
         title={req.ref}
         intro={`${req.full_name}${req.staff_number ? ` · Staff ID ${req.staff_number}` : ""}${req.unit ? ` · ${req.unit}` : ""}`}
         actions={
@@ -453,7 +453,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
         ops.push(
           <div key="offer" className="stack">
             <p className="small err" style={{ margin: 0 }}>{req.offer_blocked_reason ?? "Offer not yet generated."}</p>
-            <p className="small muted" style={{ margin: 0 }}>Template: {tpl ? `v${tpl.version} ${tpl.production_approved ? "approved" : "not approved"}` : "none active"}. <Link href="/admin/staff-financing">Staff financing settings</Link></p>
+            <p className="small muted" style={{ margin: 0 }}>Template: {tpl ? `v${tpl.version} ${tpl.production_approved ? "approved" : "not approved"}` : "none active"}. <Link href="/admin/staff-financing">Salary advance settings</Link></p>
             <SimpleAction action={retryOfferAction} hidden={{ id: req.id }} label="Generate offer now" className="btn btn-sm" />
           </div>,
         );
@@ -477,7 +477,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           </div>,
         );
       }
-      if (status === "UNDER_UNIT_HEAD_REVIEW" && uhNow?.problem) ops.push(<p key="uhp" className="small err" style={{ margin: 0 }}>{uhNow.problem} <Link href="/admin/staff-financing">Staff financing settings</Link></p>);
+      if (status === "UNDER_UNIT_HEAD_REVIEW" && uhNow?.problem) ops.push(<p key="uhp" className="small err" style={{ margin: 0 }}>{uhNow.problem} <Link href="/admin/staff-financing">Salary advance settings</Link></p>);
       if (status === "UNDER_DIVISIONAL_HEAD_REVIEW" && dhNow?.problem) ops.push(<p key="dhp" className="small err" style={{ margin: 0 }}>{dhNow.problem}</p>);
       if (status === "UNDER_PM_REVIEW") ops.push(<SimpleAction key="rel" action={releasePmAction} hidden={{ id: req.id }} label="Release Product Manager review" className="btn btn-sm" />);
       if (ops.length) {

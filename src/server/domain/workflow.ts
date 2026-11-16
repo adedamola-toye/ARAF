@@ -209,11 +209,13 @@ export interface DraftInput {
   expectedLockVersion?: number | null;
 }
 
-export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applicantType: ApplicantType }) {
+export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applicantType: ApplicantType; customerCategory?: string | null }) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   if (!isLegacyInitiatorRole(p.initiatorRole)) throw forbidden("WakeelBoost is initiated by Relationship Managers, Agent Network Managers and Merchant Officers.");
   if (!["INDIVIDUAL", "ENTERPRISE", "LIMITED"].includes(p.applicantType)) throw invalid("Choose Individual, Enterprise or Limited.");
+  // WakeelBoost is merchant financing: business owners only (enforced here, not only by the product cards).
+  if (p.customerCategory && p.customerCategory !== "BUSINESS_OWNER") throw invalid("WakeelBoost is available to business owners only.", { customerCategory: "Not available to salaried individuals." });
   return withTx(async (tx) => {
     const ra = (
       await tx.query(
@@ -232,8 +234,8 @@ export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applican
     const ref = `${LEGACY_REF_PREFIX}-${lagosDate(ctx.now).slice(0, 4)}-${String(seq).padStart(6, "0")}`;
     const app = (
       await tx.query<{ id: string }>(
-        `INSERT INTO applications (ref, applicant_type, initiator_id, initiator_role, region, business_unit, status, stage, created_at, updated_at, workflow, product_code, product_label)
-         VALUES ($1,$2,$3,$4,$5,$6,'DRAFT','DRAFT',$7,$7,'WAKEELBOOST','WAKEELBOOST','WakeelBoost') RETURNING id`,
+        `INSERT INTO applications (ref, applicant_type, initiator_id, initiator_role, region, business_unit, status, stage, created_at, updated_at, workflow, product_code, product_label, customer_profile)
+         VALUES ($1,$2,$3,$4,$5,$6,'DRAFT','DRAFT',$7,$7,'WAKEELBOOST','WAKEELBOOST','WakeelBoost','BUSINESS_OWNER') RETURNING id`,
         [ref, p.applicantType, actor.staffId, p.initiatorRole, ra.region, ra.business_unit, ctx.now],
       )
     ).rows[0];
@@ -241,7 +243,7 @@ export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applican
       `INSERT INTO application_versions (application_id, version_no, data, created_by, created_at) VALUES ($1,1,$2,$3,$4)`,
       [app.id, JSON.stringify(draftDataSchema.parse({})), actor.staffId, ctx.now],
     );
-    await audit(tx, ctx, { action: "DRAFT_CREATED", actorRole: p.initiatorRole, applicationId: app.id, stage: "DRAFT", details: { ref, applicantType: p.applicantType } });
+    await audit(tx, ctx, { action: "DRAFT_CREATED", actorRole: p.initiatorRole, applicationId: app.id, stage: "DRAFT", details: { ref, applicantType: p.applicantType, productCode: "WAKEELBOOST", customerCategory: "BUSINESS_OWNER" } });
     return { id: app.id, ref };
   });
 }

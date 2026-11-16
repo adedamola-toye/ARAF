@@ -8,7 +8,7 @@ import { lookupSession, switchWorkspace, SESSION_COOKIE } from "@/server/auth/se
  *  - not signed in → the existing OTP sign-in, with the workspace preselected (`as`) and a return path;
  *  - signed in and holding the role → switch to that workspace (audited) and open it;
  *  - signed in without the role → the existing "forbidden" page.
- * Staff Personal Request has no workspace yet; it opens the documented integration point /staff-request.
+ * Staff Salary Advance has no workspace yet; it opens the documented integration point /staff-request.
  */
 const TARGETS: Record<string, { role: string | null; also?: string[]; next: string }> = {
   "relationship-manager": { role: "RM", next: "/queue" },

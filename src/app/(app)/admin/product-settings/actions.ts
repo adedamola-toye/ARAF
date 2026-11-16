@@ -15,7 +15,7 @@ export async function startDraftAction(_p: ActionState, fd: FormData): Promise<A
   const code = s(fd, "productCode");
   try {
     const kind = s(fd, "kind") as "SUPPLIED" | "BLANK" | "VERSION" | "PROPOSAL";
-    await startDraft(ctx, code, { kind, ref: s(fd, "ref") || null, replace: s(fd, "replace") === "true" });
+    await startDraft(ctx, code, { kind, ref: s(fd, "ref") || null, replace: s(fd, "replace") === "true", update: s(fd, "update") || null });
   } catch (e) {
     return toActionError(e);
   }

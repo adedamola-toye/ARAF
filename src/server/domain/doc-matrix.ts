@@ -6,7 +6,7 @@
  * EXPIRED (coverage too old or too short), EXCEPTION_APPROVED (an approved exception stands in),
  * NOT_APPLICABLE (conditional requirement whose condition is not met).
  */
-import { CATEGORY_LABEL, PHOTO_CATEGORIES, type DocumentRow } from "./documents";
+import { CATEGORY_LABEL, PHOTO_CATEGORIES, REVIEW_PENDING_CATEGORIES, type DocumentRow } from "./documents";
 import type { DocRequirement, DocStage, ProfileRules } from "./products";
 import { addDaysToDateString } from "../time";
 
@@ -85,6 +85,7 @@ export function evaluateMatrix(i: MatrixInput): MatrixItem[] {
     let status: MatrixStatus = good.length >= req.minCount ? "RECEIVED" : rejected.length ? "REJECTED" : "MISSING";
     let detail = good.length ? `${good.length} received` : rejected.length ? `Rejected: ${rejected.map((d) => d.review_reason ?? d.scan_detail ?? "failed check").join("; ")}` : "Not uploaded";
     if (req.minCount > 1) detail = `${good.length} of ${req.minCount} received`;
+    if (status === "RECEIVED" && REVIEW_PENDING_CATEGORIES.includes(req.code)) detail = good.every((d) => d.review_status === "ACCEPTED") ? `${good.length} accepted by a reviewer` : `${good.length} submitted — pending review`;
 
     if (status === "RECEIVED" && req.coverageFrom) {
       const months = req.coverageFrom === "statementMonths" ? i.rules.statementMonths : i.rules.payslipMonths;

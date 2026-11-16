@@ -1,5 +1,5 @@
 /**
- * Staff Personal Financing offer letters.
+ * Staff Salary Advance offer letters.
  *  - Generated only from the ACTIVE staff template that the bank has approved for production
  *    (Legal and Shariah wording is the bank's; this code fills placeholders and never adds terms).
  *  - Generated only from the approved terms, after checking their fingerprint.
@@ -96,7 +96,7 @@ export async function issueOffer(tx: Tx, ctx: Ctx, req: StaffRequestRow): Promis
   if (!termsIntact(req)) throw gate("The approved terms fingerprint does not match the request. Offer generation stopped.");
   const tpl = await activeStaffTemplate(tx);
   let blocked: string | null = null;
-  if (!tpl) blocked = "No active staff personal financing offer template exists. A Super Admin must load the bank-approved Legal and Shariah wording.";
+  if (!tpl) blocked = "No active salary advance offer template exists. A Super Admin must load the bank-approved Legal and Shariah wording.";
   else if (!tpl.production_approved) blocked = `The staff offer template (v${tpl.version}) has not been approved by the bank for production use.`;
   if (blocked) {
     if (req.offer_blocked_reason === blocked) return req;
@@ -129,7 +129,7 @@ export async function issueOffer(tx: Tx, ctx: Ctx, req: StaffRequestRow): Promis
     details: { templateVersion: tpl.version, deadline: deadline.toISOString(), termsSha256: req.approved_terms_sha256 },
   });
   await notifyStaff(tx, ctx, fresh, "OFFER_ISSUED", [fresh.applicant_id], "Your offer letter is ready", [
-    `The offer letter for your staff financing request ${req.ref} is ready.`,
+    `The offer letter for your salary advance request ${req.ref} is ready.`,
     `Sign it and upload the signed copy by ${formatLagos(deadline)} (Lagos time). After that the offer expires and cannot be disbursed.`,
   ]);
   return fresh;
@@ -161,7 +161,7 @@ async function expireOne(tx: Tx, ctx: Ctx, req: StaffRequestRow) {
     set: { expired_at: ctx.now },
   });
   await notifyStaff(tx, ctx, fresh, "OFFER_EXPIRED", [fresh.applicant_id], "Your offer has expired", [
-    `The offer for staff financing request ${req.ref} expired because the signed copy was not returned within ${OFFER_ACCEPTANCE_HOURS} hours.`,
+    `The offer for salary advance request ${req.ref} expired because the signed copy was not returned within ${OFFER_ACCEPTANCE_HOURS} hours.`,
     "The request cannot be disbursed. Its records are kept.",
   ]);
   return fresh;

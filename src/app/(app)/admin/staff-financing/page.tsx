@@ -12,7 +12,7 @@ import { config } from "@/server/config";
 import { APPLICANT_SUPPORTING_CATEGORIES, bpsLabel, formatNairaKobo, STAFF_DOC_CATEGORIES } from "@/lib/staff-financing";
 import { StaffSettingsForm, StaffTemplateForm } from "./AdminStaffForms";
 
-export const metadata = { title: "Staff financing settings" };
+export const metadata = { title: "Salary advance settings" };
 
 export default async function StaffFinancingAdmin() {
   await requireSuperAdmin();
@@ -35,9 +35,9 @@ export default async function StaffFinancingAdmin() {
   return (
     <>
       <PageHeader
-        crumbs={[{ href: "/admin", label: "Administration" }, { label: "Staff financing" }]}
+        crumbs={[{ href: "/admin", label: "Administration" }, { label: "Salary advance" }]}
         eyebrow="Administration"
-        title="Staff personal financing"
+        title="Staff salary advance"
         intro="Settings, the offer letter template, integrations and role coverage for the staff workflow."
         actions={<Link className="btn" href="/staff-financing?view=ops">Operations queue</Link>}
       />

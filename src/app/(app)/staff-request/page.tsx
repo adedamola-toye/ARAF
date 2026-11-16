@@ -13,12 +13,12 @@ import { StaffStatusBadge, eventLabel } from "./StatusBadge";
 import { Countdown } from "./StaffForms";
 import { startStaffRequestAction } from "./actions";
 
-export const metadata = { title: "Staff Personal Request" };
+export const metadata = { title: "Staff Salary Advance" };
 
 export default async function StaffRequestHub() {
   const a = await requireUser();
   const home = await staffFinancingGate(a, "VIEW_MY_REQUESTS");
-  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  if (home) return <AccessRestricted product="Staff Salary Advance" dashboardHref={home} />;
   const { session } = a;
   const rows = await myRequestRows(db, session.staffId);
   const settings = await currentSettings(db);
@@ -28,9 +28,9 @@ export default async function StaffRequestHub() {
   return (
     <>
       <PageHeader
-        eyebrow="Staff Personal Request"
-        title="My staff financing"
-        intro="Apply for personal financing as a member of staff and follow each request from submission to disbursement."
+        eyebrow="Staff Salary Advance"
+        title="My salary advance"
+        intro="Apply for a salary advance as a member of staff and follow each request from submission to disbursement."
         actions={
           <form action={startStaffRequestAction}>
             <button className="btn btn-primary">
@@ -72,7 +72,7 @@ export default async function StaffRequestHub() {
         <div className="card empty-card">
           <div className="empty">
             <Inbox className="icon" aria-hidden="true" />
-            <strong>No staff financing requests yet</strong>
+            <strong>No salary advance requests yet</strong>
             <p>
               Start a request to see the {bpsLabel(settings.deduction_rate_bps)} deduction and your net amount before you submit. Drafts are saved on the server and
               can be resumed at any time.

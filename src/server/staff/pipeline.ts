@@ -1,5 +1,5 @@
 /**
- * Post-completion documentation for Staff Personal Financing:
+ * Post-completion documentation for Staff Salary Advance:
  *   1. build one ZIP archive of the facility's real records (nothing is fabricated for missing items)
  *      and keep it in the platform's encrypted object store;
  *   2. when SharePoint is configured, upload it to the customer-specific folder and verify the bytes
@@ -81,7 +81,7 @@ export async function buildArchive(q: Db, req: StaffRequestRow): Promise<{ data:
     "01-application/application-summary.html",
     page(
       `Application ${req.ref}`,
-      `<h1>Staff financing application ${escapeHtml(req.ref)}</h1><table>${[
+      `<h1>Salary advance application ${escapeHtml(req.ref)}</h1><table>${[
         row("Staff name", req.full_name), row("Staff ID", req.staff_number), row("Department", req.department), row("Unit", req.unit),
         row("Staff email", req.email), row("Phone", req.phone), row("Salary account", `${req.salary_account_number ?? ""} (${req.salary_account_name ?? ""})`),
         row("Purpose", req.purpose), row("Gross financing amount", formatNairaKobo(req.gross_kobo)), row(`Deduction (${bpsLabel(req.deduction_rate_bps)})`, formatNairaKobo(req.deduction_kobo)),

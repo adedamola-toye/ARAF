@@ -19,7 +19,7 @@ export async function createDraftAction(_p: ActionState, fd: FormData): Promise<
   const { ctx } = await requireUser();
   let id: string;
   try {
-    id = (await createDraft(ctx, { initiatorRole: str(fd, "initiatorRole"), applicantType: str(fd, "applicantType") as ApplicantType })).id;
+    id = (await createDraft(ctx, { initiatorRole: str(fd, "initiatorRole"), applicantType: str(fd, "applicantType") as ApplicantType, customerCategory: str(fd, "customerCategory") || null })).id;
   } catch (e) {
     return toActionError(e);
   }

@@ -49,6 +49,9 @@ export const retailDataSchema = z.object({
   employerName: text(160).default(""),
   employmentConfirmationRef: text(80).default(""),
   jobTitle: text(120).default(""),
+  /** Optional (not required by current policy). */
+  employmentStatus: z.enum(["", "PERMANENT", "CONTRACT", "PROBATION", "OTHER"]).default(""),
+  salaryFrequency: z.enum(["", "MONTHLY", "BI_WEEKLY", "WEEKLY"]).default(""),
   employmentStartDate: text(10).default(""),
   statedMonthlySalaryKobo: koboN.default(null),
   salaryHistory: z.array(salaryMonthSchema).max(36).default([]),

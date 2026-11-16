@@ -445,7 +445,7 @@ describe("Scenario H: unauthorised actions and separation of duties", () => {
     // A second Unit Head who was not designated is refused.
     const admin = await ctxFor(STAFF.admin);
     await grantRole(admin, { staffId: await sid("hou@altbank.ng"), role: "UNIT_HEAD" });
-    await expect(headDecisionV("UNIT_HEAD", await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/configured for the staff financing route/);
+    await expect(headDecisionV("UNIT_HEAD", await ctxFor("hou@altbank.ng"), id, { action: "APPROVE", confirmed: true })).rejects.toThrow(/configured for the salary advance route/);
     // The PM cannot also be the Divisional Head on the same request.
     // The Divisional Head position has one holder: move it to the PM, who is then refused (separation of duties).
     await unitHeadApprove(id);

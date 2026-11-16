@@ -11,7 +11,7 @@ import { heldRoles, queueMetrics, queueRows, viewsFor, QUEUE_LABELS, type QueueV
 import { formatNairaKobo, STAFF_STATUSES, STAFF_STATUS_LABELS, STAFF_STATUS_QUEUE, type StaffStatus } from "@/lib/staff-financing";
 import { DocumentationBadge, StaffStatusBadge } from "../staff-request/StatusBadge";
 
-export const metadata = { title: "Staff financing queues" };
+export const metadata = { title: "Salary advance queues" };
 
 const n = (v: unknown) => Number(v ?? 0).toLocaleString("en-NG");
 const hrs = (v: unknown) => (v === null || v === undefined ? "—" : `${v} h`);
@@ -20,7 +20,7 @@ export default async function StaffFinancingQueues({ searchParams }: { searchPar
   const sp = await searchParams;
   const a = await requireUser();
   const home = await staffFinancingGate(a, "VIEW_QUEUES");
-  if (home) return <AccessRestricted product="Staff Financing" dashboardHref={home} />;
+  if (home) return <AccessRestricted product="Staff Salary Advance" dashboardHref={home} />;
   const { session } = a;
   const roles = await heldRoles(db, session.staffId);
   const views = viewsFor(roles);
@@ -47,7 +47,7 @@ export default async function StaffFinancingQueues({ searchParams }: { searchPar
   };
   return (
     <>
-      <PageHeader eyebrow="Staff Personal Financing" title="Staff financing queues" intro="Requests that need your decision come first. You see only the requests your roles allow." />
+      <PageHeader eyebrow="Staff Salary Advance" title="Salary advance queues" intro="Requests that need your decision come first. You see only the requests your roles allow." />
       {views.length > 1 && (
         <nav className="tabs" aria-label="Queues">
           {views.map((v) => (
@@ -91,7 +91,7 @@ export default async function StaffFinancingQueues({ searchParams }: { searchPar
           <div className="empty">
             <Inbox className="icon" aria-hidden="true" />
             <strong>Nothing here</strong>
-            <p>{sp.q || sp.status ? "No requests match these filters." : "No staff financing requests are in this queue yet. New items appear here automatically."}</p>
+            <p>{sp.q || sp.status ? "No requests match these filters." : "No salary advance requests are in this queue yet. New items appear here automatically."}</p>
           </div>
         </div>
       ) : (

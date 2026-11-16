@@ -143,13 +143,13 @@ const REPORTING: TourStep[] = [
   help,
 ];
 const STAFF: TourStep[] = [
-  { title: "My staff financing", body: "Apply for staff financing, upload your documents and follow your request.", target: nav("/staff-request"), href: "/staff-request" },
+  { title: "My salary advance", body: "Apply for a salary advance, upload your documents and follow your request.", target: nav("/staff-request"), href: "/staff-request" },
   help,
 ];
 
 const VENDOR: TourStep[] = [{ title: "Vendor register", body: "Register vendors and verify their bank accounts before they can be paid.", target: nav("/vendors"), href: "/vendors" }, queue, help];
 const CONFIG: TourStep[] = [{ title: "Product configuration", body: "Approve or reject proposed product rule, pricing and tenor changes. You cannot approve a change you proposed.", target: nav("/admin/products"), href: "/admin/products" }, help];
-const STAFF_PM: TourStep[] = [{ title: "Staff financing queues", body: "Staff financing requests waiting for your review, with the checks to complete.", target: nav("/staff-financing"), href: "/staff-financing" }, queue, help];
+const STAFF_PM: TourStep[] = [{ title: "Salary advance queues", body: "Salary advance requests waiting for your review, with the checks to complete.", target: nav("/staff-financing"), href: "/staff-financing" }, queue, help];
 const COLLECTIONS: TourStep[] = [queue, { title: "Portfolio and collections", body: "Facilities by repayment status and arrears, monthly collections, performance by location, officer and channel, and stock against the opening count. Open a facility to record a repayment.", target: nav("/altphones/portfolio") }, { title: "Repayment monitoring", body: "Expected schedules against recorded repayments (when the tracker is switched on).", target: nav("/repayments") }, help];
 
 /** The walkthrough for a role (every role defined in ARAF has one; unknown roles get the general guide). */

@@ -1,5 +1,5 @@
 /**
- * Read models for the Staff Personal Financing screens. Every list is scoped to what the viewer's
+ * Read models for the Staff Salary Advance screens. Every list is scoped to what the viewer's
  * role allows; nothing here changes data.
  */
 import type { Db } from "../db";

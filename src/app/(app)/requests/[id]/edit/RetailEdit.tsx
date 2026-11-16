@@ -155,6 +155,8 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
             employerName: data.employerName,
             employmentConfirmationRef: data.employmentConfirmationRef,
             jobTitle: data.jobTitle,
+            employmentStatus: data.employmentStatus ?? "",
+            salaryFrequency: data.salaryFrequency ?? "",
             employmentStartDate: data.employmentStartDate,
             businessSector: data.businessSector,
             purpose: data.purpose,
