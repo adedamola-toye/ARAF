@@ -8,7 +8,7 @@ import { originationProduct } from "@/lib/origination-products";
 import { PageHeader } from "@/components/PageHeader";
 import { NewRequestForm } from "../NewRequestForm";
 import { NewRetailForm } from "../NewRetailForm";
-import { availability, initiatorRolesFor, retailCatalogue } from "../catalogue";
+import { availability, initiatorRolesFor, originationSettings, retailCatalogue } from "../catalogue";
 
 export async function generateMetadata({ params }: { params: Promise<{ product: string }> }) {
   return { title: `New ${originationProduct((await params).product)?.name ?? "Financing"} Request` };
@@ -19,7 +19,7 @@ export default async function NewProductRequest({ params }: { params: Promise<{ 
   if (!p) notFound();
   const { roles, session } = await requireUser();
   if (session.activeRole === "DELIGHT_OFFICER" || session.activeRole === "SMILE_ASSOCIATE") redirect("/altphones");
-  const mine = initiatorRolesFor(p, roles);
+  const mine = initiatorRolesFor(p, roles, (await originationSettings(db))[p.code]);
   if (!mine.length) redirect("/forbidden");
   const now = new Date();
   const a = await availability(db, p, roles, now);

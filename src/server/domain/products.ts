@@ -134,6 +134,8 @@ export const profileRulesSchema = z.object({
   enabled: z.boolean(),
   eligibleApplicantTypes: z.array(z.enum(["INDIVIDUAL", "ENTERPRISE", "LIMITED"])).min(1),
   eligibilityNote: z.string().max(300).nullable().default(null),
+  /** Smallest amount the product finances (null: no minimum beyond ₦1). */
+  minAmountKobo: kobo.nullable().default(null),
   maxAmountKobo: kobo.nullable(),
   maxTenorMonths: z.number().int().min(1).max(360).nullable(),
   /** Minimum repayment period. Null = no minimum. */
@@ -417,6 +419,14 @@ export interface ProductRow {
   workflow: "WAKEELBOOST" | "RETAIL";
   active: boolean;
   sort_order: number;
+  owner?: string | null;
+  /** Roles allowed to originate this product (null = every role the product type allows). */
+  origination_roles?: string[] | null;
+}
+
+/** Whether a provisioned role may originate this product under its Product Settings. */
+export function roleMayOriginate(product: Pick<ProductRow, "origination_roles">, role: string): boolean {
+  return !product.origination_roles || product.origination_roles.includes(role);
 }
 
 export interface ProductConfigRow {

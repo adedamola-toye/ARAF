@@ -58,6 +58,8 @@ export interface AssessmentRules {
   dsrExceptionApproverRole: string | null;
   principalTurnoverCap: { applies: boolean; maxPercent: string | null };
   maxAmountKobo: number | null;
+  /** Absent on snapshots taken before minimum amounts existed. */
+  minAmountKobo?: number | null;
   maxTenorMonths: number | null;
   /** Absent on snapshots taken before engine @2. */
   minTenorMonths?: number | null;
@@ -84,6 +86,7 @@ export function rulesSnapshot(p: { configId: string; configVersion: number; prod
     dsrExceptionApproverRole: p.rules.dsr.exceptionApproverRole,
     principalTurnoverCap: p.rules.principalTurnoverCap,
     maxAmountKobo: p.rules.maxAmountKobo,
+    minAmountKobo: p.rules.minAmountKobo ?? null,
     maxTenorMonths: p.rules.maxTenorMonths,
     minTenorMonths: p.rules.minTenorMonths ?? null,
     inflowRecognitionPercent: p.rules.dsr.inflowRecognitionPercent ?? "100",
@@ -176,6 +179,7 @@ export function computeAffordability(rules: AssessmentRules, i: AffordabilityInp
   checks.push({ rule: "Customer type eligible", pass: rules.eligibleApplicantTypes.includes(i.applicantType), detail: `${i.applicantType} (eligible: ${rules.eligibleApplicantTypes.join(", ")})` });
   if (rules.maxAmountKobo === null) blocked.push("Maximum financing amount is not configured.");
   else if (principal !== null) checks.push({ rule: "Within maximum financing amount", pass: principal <= rules.maxAmountKobo, detail: `${formatKobo(principal)} of maximum ${formatKobo(rules.maxAmountKobo)}` });
+  if (rules.minAmountKobo && principal !== null) checks.push({ rule: "At least the minimum financing amount", pass: principal >= rules.minAmountKobo, detail: `${formatKobo(principal)} of minimum ${formatKobo(rules.minAmountKobo)}` });
   if (principal === null || principal <= 0) checks.push({ rule: "Principal entered", pass: false, detail: "Enter the principal." });
   if (rules.maxTenorMonths === null) blocked.push("Maximum tenor is not configured.");
   else if (tenor !== null) checks.push({ rule: "Within maximum tenor", pass: tenor >= 1 && tenor <= rules.maxTenorMonths, detail: `${tenor} of maximum ${rules.maxTenorMonths} months` });

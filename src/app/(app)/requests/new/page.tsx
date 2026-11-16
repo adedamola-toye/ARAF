@@ -4,7 +4,7 @@ import { ArrowRight, Car, Package, Store, Zap } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
 import { db } from "@/server/db";
 import { PageHeader } from "@/components/PageHeader";
-import { availability, visibleProducts } from "./catalogue";
+import { availability, originationSettings, visibleProducts } from "./catalogue";
 
 export const metadata = { title: "New Financing Request" };
 
@@ -19,7 +19,7 @@ export default async function NewRequest() {
   const { roles, session } = await requireUser();
   // The Delight Officer / Smile Associate workspace sells Altphones only.
   if (session.activeRole === "DELIGHT_OFFICER" || session.activeRole === "SMILE_ASSOCIATE") redirect("/altphones");
-  const products = visibleProducts(roles);
+  const products = visibleProducts(roles, await originationSettings(db));
   if (!products.length) redirect("/forbidden");
   const now = new Date();
   const rows = await Promise.all(products.map(async (p) => ({ p, a: await availability(db, p, roles, now) })));

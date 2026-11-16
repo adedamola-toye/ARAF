@@ -7,24 +7,36 @@ import type { CatalogueProduct } from "./NewRetailForm";
 
 export type Availability = { status: "OPEN" } | { status: "NOT_PERMITTED" } | { status: "UNAVAILABLE"; reason: string };
 
-/** Roles the user holds that may initiate this product (provisioned roles only; the workspace grants nothing). */
-export function initiatorRolesFor(p: OriginationProduct, roles: readonly string[]): Role[] {
+/** Roles each product's settings allow to originate it (null = every role the product type allows). */
+export async function originationSettings(q: Db): Promise<Record<string, string[] | null>> {
+  const r = await q.query<{ code: string; origination_roles: string[] | null }>("SELECT code, origination_roles FROM products");
+  return Object.fromEntries(r.rows.map((x) => [x.code, x.origination_roles]));
+}
+
+/**
+ * Roles the user holds that may initiate this product: provisioned roles only (the workspace grants nothing),
+ * within what the product type allows, narrowed by the product's settings.
+ */
+export function initiatorRolesFor(p: OriginationProduct, roles: readonly string[], configured?: string[] | null): Role[] {
   const allowed: readonly string[] = p.kind === "WAKEELBOOST" ? LEGACY_INITIATOR_ROLES : RETAIL_INITIATOR_ROLES;
-  return allowed.filter((r) => roles.includes(r)) as Role[];
+  return allowed.filter((r) => roles.includes(r) && (!configured || configured.includes(r))) as Role[];
 }
 
 /** Whether a product can be opened now. Missing configuration is reported as a gap, never filled in. */
 export async function availability(q: Db, p: OriginationProduct, roles: readonly string[], now: Date): Promise<Availability> {
-  if (!initiatorRolesFor(p, roles).length) return { status: "NOT_PERMITTED" };
   const row = await getProduct(q, p.code);
+  if (!initiatorRolesFor(p, roles, row?.origination_roles).length) return { status: "NOT_PERMITTED" };
   if (!row) return { status: "UNAVAILABLE", reason: "This product is not set up in ARAF." };
   if (!row.active) return { status: "UNAVAILABLE", reason: "This product is not open for new applications." };
-  if (p.kind === "RETAIL" && !(await effectiveConfig(q, p.code, now))) return { status: "UNAVAILABLE", reason: "Awaiting product configuration: the product rules have not been approved yet." };
+  if (p.kind === "RETAIL" && !(await effectiveConfig(q, p.code, now))) {
+    const next = (await q.query<{ d: Date }>("SELECT min(effective_from) AS d FROM product_configs WHERE product_code = $1 AND status = 'APPROVED' AND effective_from > $2", [p.code, now])).rows[0]?.d;
+    return { status: "UNAVAILABLE", reason: next ? `Available from ${new Date(next).toLocaleDateString("en-GB", { timeZone: "Africa/Lagos", day: "numeric", month: "long", year: "numeric" })}.` : "Awaiting product configuration: the product rules have not been published yet." };
+  }
   return { status: "OPEN" };
 }
 
-export function visibleProducts(roles: readonly string[]) {
-  return ORIGINATION_PRODUCTS.filter((p) => initiatorRolesFor(p, roles).length > 0);
+export function visibleProducts(roles: readonly string[], settings: Record<string, string[] | null> = {}) {
+  return ORIGINATION_PRODUCTS.filter((p) => initiatorRolesFor(p, roles, settings[p.code]).length > 0);
 }
 
 /** Catalogue entry (profiles, limits and structures) for one retail product, from its approved configuration. */

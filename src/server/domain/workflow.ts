@@ -223,6 +223,10 @@ export async function createDraft(ctx: Ctx, p: { initiatorRole: string; applican
       )
     ).rows[0];
     if (!ra) throw forbidden("You do not hold the selected initiator role.");
+    // Product Settings: availability and origination roles.
+    const product = (await tx.query<{ name: string; active: boolean; origination_roles: string[] | null }>("SELECT name, active, origination_roles FROM products WHERE code = 'WAKEELBOOST'")).rows[0];
+    if (product && !product.active) throw invalid("WakeelBoost is not open for new applications.");
+    if (product?.origination_roles && !product.origination_roles.includes(p.initiatorRole)) throw forbidden("WakeelBoost is not available for origination by your role.");
     const seq = (await tx.query<{ n: string }>("SELECT nextval('application_ref_seq') AS n")).rows[0].n;
     if (p.initiatorRole === "DELIGHT_OFFICER") throw invalid("Delight Officers initiate retail products only.");
     const ref = `${LEGACY_REF_PREFIX}-${lagosDate(ctx.now).slice(0, 4)}-${String(seq).padStart(6, "0")}`;
