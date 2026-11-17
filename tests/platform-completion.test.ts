@@ -209,6 +209,28 @@ describe("9–13. Closing documents on final approval", () => {
   });
 });
 
+describe("Authorised Ijarah letter", () => {
+  it("an Alt Drive Ijarah request gets its offer letter automatically on final approval", async () => {
+    await applyConfig("ALT_DRIVE", syntheticConfig("ALT_DRIVE"));
+    const tpl = (await db.query("SELECT production_approved, body_html FROM offer_templates WHERE product_code = 'ALT_DRIVE' AND structure = 'IJARAH' AND status = 'ACTIVE'")).rows[0];
+    expect(tpl.production_approved).toBe(true);
+    expect(tpl.body_html).not.toMatch(/DRAFT WORDING/);
+    const id = await createRetailCase({ channel: "RM", product: "ALT_DRIVE", profile: "BUSINESS_OWNER", structure: "IJARAH", amountKobo: N(5_000_000), tenorMonths: 12, incomeBasisKobo: N(10_000_000), proposedMonthlyKobo: N(450_000) });
+    await driveBusinessReview(id);
+    const co1 = await openTaskOf(id);
+    for (let i = 1; i <= 3; i++) await uploadDocument(await ctxFor(co1.email!), { applicationId: id, category: "CREDIT_REPORT", filename: `r${i}.pdf`, data: makePdf(`r${i}`) });
+    await driveCredit(id); // no manual template approval
+    expect((await app(id)).stage).toBe("OFFER_PREPARATION");
+    await generateClosingDocuments(id);
+    expect((await closingStatus(db, id))!.items.find((i) => i.kind === "OFFER")?.state).toBe("READY");
+    const doc = (await db.query("SELECT storage_key FROM documents WHERE application_id = $1 AND category = 'GENERATED_OFFER' AND superseded_at IS NULL", [id])).rows[0];
+    const html = (await objectStore().get(doc.storage_key)).toString("utf8");
+    expect(html).toContain("Ijarah");
+    expect(html).toContain((await app(id)).customer_name);
+    expect(html).not.toMatch(/\{\{|DRAFT WORDING/);
+  });
+});
+
 describe("14–17. Invoice confirmation", () => {
   const withInvoice = () => vf();
   const INV = "SUPPLIER_INVOICE";

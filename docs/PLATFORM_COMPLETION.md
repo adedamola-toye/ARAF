@@ -110,7 +110,7 @@ How generation behaves:
 **Administration → Configuration centre** links every setting above, plus product settings, approval workflows, pricing, templates and service targets, and shows each one's current status.
 
 ## Outstanding
-- **Bank-approved Ijarah and Qard offer letters are not in ARAF.** The only existing ones are the development AltDrive Ijarah placeholder and the Staff Qard placeholder. Retail offers for those structures show *being prepared* until the bank's templates are uploaded and approved.
+- **Ijarah and Qard offer letters:** authorised for use by the business owner on 17 Nov 2026 (migration `046_authorise_ijarah_qard_offers.sql`). The Alt Drive Ijarah letter and the Staff Salary Advance (Qard) letter are approved for production. The draft-wording note is replaced with the customer's acceptance and signature block. Each letter is generated automatically, prefilled with the customer's details, as soon as a request of that contract type receives final approval. Staff offers that were held back for want of an approved template are issued by the worker. The other HTML retail letters (Alt Drive Murabaha, Alt Power, Vendor Financing) are unchanged.
 - **Corporate GSI mandate form:** upload it when available.
 - **Remita API:** not integrated. ARAF prepares the set-up sheet; the RRR and QR code come from Remita.
 - **Invoice Confirmation Officer account:** create Olamilekan Gaji's account and assign the *Invoice Confirmation Officer* role. Their email is already the configured primary.

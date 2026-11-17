@@ -225,13 +225,29 @@ export const STAFF_OFFER_TEMPLATE_HTML = `<h1>Offer of Staff Personal Financing<
 <p>Return this letter signed by {{acceptance_deadline}}. After that time the offer lapses.</p>
 <p>DRAFT WORDING: replace with the bank-approved Legal and Shariah offer text before approving this template.</p>`;
 
-/** Draft staff offer template: ACTIVE but not approved, so no offer is issued until the bank approves its wording. */
+/** Authorised by the business owner (17 Nov 2026): the Qard (Staff Salary Advance) and Ijarah (Alt Drive) letters. */
+export const AUTHORISED_NOTE = "Approved for use by the business owner on 17 Nov 2026 (authorisation recorded in migration 046).";
+export const STAFF_QARD_OFFER_HTML = STAFF_OFFER_TEMPLATE_HTML.replace("<h1>Offer of Staff Personal Financing</h1>", "<h1>Offer of Staff Salary Advance (Qard)</h1>").replace(
+  "<p>DRAFT WORDING: replace with the bank-approved Legal and Shariah offer text before approving this template.</p>",
+  `<p>By signing below, I accept this Qard (salary advance) and authorise the bank to recover it from my salary account as set out above.</p>
+<p>Accepted by: {{staff_name}}</p>
+<p>Signature: ______________________________ &nbsp; Date: ____________________</p>`,
+);
+export const IJARAH_OFFER_HTML = RETAIL_OFFER_TEMPLATE_HTML.replace(
+  "<p>DRAFT WORDING: replace with the bank-approved offer and contract text before approving this template.</p>",
+  `<p>By signing below, the customer accepts this offer and the terms of the Ijarah (lease) facility.</p>
+<p>Accepted by: {{customer_name}}</p>
+<p>Signature: ______________________________ &nbsp; Date: ____________________</p>
+<p>For The Alternative Bank: ______________________________</p>`,
+);
+
+/** Staff (Qard) offer template: approved, so the offer is issued as soon as the request is approved. */
 export async function seedStaffOfferTemplate(q: Db) {
   await q.query(
-    `INSERT INTO offer_templates (name, version, format, applicant_type, body_html, status, production_approved, notes, activated_at)
-     SELECT 'Staff personal financing offer', 1, 'HTML', 'STAFF', $1, 'ACTIVE', false, 'Draft placeholder wording: approve only after replacing with the bank-approved text.', now()
+    `INSERT INTO offer_templates (name, version, format, applicant_type, body_html, status, production_approved, approved_at, notes, activated_at)
+     SELECT 'Staff personal financing offer', 1, 'HTML', 'STAFF', $1, 'ACTIVE', true, now(), $2, now()
       WHERE NOT EXISTS (SELECT 1 FROM offer_templates WHERE applicant_type = 'STAFF')`,
-    [STAFF_OFFER_TEMPLATE_HTML],
+    [STAFF_QARD_OFFER_HTML, AUTHORISED_NOTE],
   );
 }
 
@@ -242,11 +258,13 @@ export async function seedRetailOfferTemplates(q: Db) {
     ["ALT_DRIVE", "IJARAH"],
   ];
   for (const [product, structure] of combos) {
+    // The Ijarah letter is authorised for use; the others stay drafts until the bank approves their wording.
+    const ijarah = structure === "IJARAH";
     await q.query(
-      `INSERT INTO offer_templates (name, version, format, product_code, structure, body_html, status, production_approved, notes, activated_at)
-       SELECT $1, 1, 'HTML', $2, $3, $4, 'ACTIVE', false, 'Draft placeholder wording: approve only after replacing with the bank-approved text.', now()
+      `INSERT INTO offer_templates (name, version, format, product_code, structure, body_html, status, production_approved, approved_at, notes, activated_at)
+       SELECT $1, 1, 'HTML', $2, $3, $4, 'ACTIVE', $5, CASE WHEN $5 THEN now() END, $6, now()
         WHERE NOT EXISTS (SELECT 1 FROM offer_templates WHERE product_code = $2 AND structure = $3)`,
-      [`${product.replace("_", " ")} ${structure} offer`, product, structure, RETAIL_OFFER_TEMPLATE_HTML],
+      [`${product.replace("_", " ")} ${structure} offer`, product, structure, ijarah ? IJARAH_OFFER_HTML : RETAIL_OFFER_TEMPLATE_HTML, ijarah, ijarah ? AUTHORISED_NOTE : "Draft placeholder wording: approve only after replacing with the bank-approved text."],
     );
   }
 }
