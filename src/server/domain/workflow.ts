@@ -573,7 +573,8 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
       });
     });
     // Closing documents (offer, GSI, Remita) are prepared after the approval commits; the worker retries.
-    if (result.stage === "OFFER_PREPARATION" && !result.replayed) {
+    // (Not in automated tests, which call these explicitly so nothing runs after a test has finished.)
+    if (result.stage === "OFFER_PREPARATION" && !result.replayed && process.env.APP_ENV !== "test") {
       void generateClosingDocuments(result.applicationId, ctx.now).catch((e) => console.error("[closing-docs]", e));
       void import("./invoice-confirmation").then((m) => m.dispatchForApplication(result.applicationId, ctx.now)).catch((e) => console.error("[invoice-confirmation]", e));
     }

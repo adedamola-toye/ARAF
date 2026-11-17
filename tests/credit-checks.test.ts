@@ -47,7 +47,7 @@ describe("Relationship Manager route — SeedFi credit check", () => {
     expect((await appRow(id)).stage).not.toBe("DRAFT");
   });
 
-  it("a Fail closes the request; an unavailable check never counts", async () => {
+  it("a low score keeps the request open for Proceed with Reason; an unavailable check never counts", async () => {
     const id = await draft();
     const rm = await ctxFor("rm.bola@altbank.ng");
     setCreditBureauForTests(null);
@@ -56,8 +56,9 @@ describe("Relationship Manager route — SeedFi credit check", () => {
     setCreditBureauForTests(new TestBureau(500)); // below 530
     const r = await runRetailCreditCheck(rm, id, "APPLICANT", CREDIT_PERSON);
     expect(r.outcome).toBe("FAIL");
-    expect(await appRow(id)).toEqual({ stage: "REJECTED", status: "REJECTED" });
-    expect((await db.query("SELECT 1 FROM audit_events WHERE action = 'REQUEST_CLOSED_CREDIT_FAILED' AND application_id = $1", [id])).rowCount).toBe(1);
+    expect((await appRow(id)).stage).toBe("DRAFT");
+    expect((await db.query("SELECT 1 FROM audit_events WHERE action = 'CREDIT_CHECK_LOW_SCORE' AND application_id = $1", [id])).rowCount).toBe(1);
+    expect((await retailReadiness(db, id, new Date())).blockers.join(" ")).toMatch(/Proceed with Reason/);
   });
 
   it("changing the BVN on the draft needs a new check", async () => {

@@ -44,7 +44,7 @@ export async function retailCreditStatus(q: Db, appId: string, now: Date): Promi
   const rows = (
     await q.query<CreditCheckRow>(
       `SELECT DISTINCT ON (c.person_key) c.*, s.full_name AS requested_by_name FROM credit_checks c LEFT JOIN staff s ON s.id = c.requested_by
-        WHERE c.application_id = $1 ORDER BY c.person_key, c.created_at DESC`,
+        WHERE c.application_id = $1 ORDER BY c.person_key, c.created_at DESC, (c.status = 'COMPLETED') DESC`,
       [appId],
     )
   ).rows;

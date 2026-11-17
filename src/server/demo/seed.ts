@@ -46,6 +46,7 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "do1@altbank.ng", name: "Peter Disburse-One", roles: [{ role: "DISBURSEMENT_OFFICER_1" }], unit: "Operations" },
   { email: "do2@altbank.ng", name: "Mary Disburse-Two", roles: [{ role: "DISBURSEMENT_OFFICER_2" }], unit: "Operations" },
   { email: "legal.officer@altbank.ng", name: "Lanre Legal", roles: [{ role: "LEGAL_REVIEWER" }], unit: "Legal" },
+  { email: "invoice.officer@altbank.ng", name: "Ifeoma Invoice (synthetic)", roles: [{ role: "INVOICE_CONFIRMATION_OFFICER" }], unit: "Operations" },
   { email: "shariah.officer@altbank.ng", name: "Aisha Shariah", roles: [{ role: "SHARIAH_REVIEWER" }], unit: "Shariah Compliance" },
   // Retail Asset Factory (synthetic)
   { email: "rm.bola@altbank.ng", name: "Bola Adisa", roles: [{ role: "RM", region: "LAGOS", team: "RETAIL-LAGOS-1" }], region: "LAGOS", unit: "Retail" },

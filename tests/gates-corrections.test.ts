@@ -79,7 +79,7 @@ describe("offer pack, CO3 and CRMS gates", () => {
   it("pack must be complete; CO3 must upload separate insurance evidence; DO1 must toggle Logged CRMS", async () => {
     const id = await createSubmittedCase({ initiator: "ANM_SOUTH", amountKobo: NAIRA(2_000_000) });
     await driveToOffer(id);
-    await expect(act(id, "SUBMIT_PACK")).rejects.toThrow(/offer pack is incomplete.*generated offer/);
+    await expect(act(id, "SUBMIT_PACK")).rejects.toThrow(/offer pack is incomplete.*Offer letter/);
     await preparePack(id);
     await act(id, "SUBMIT_PACK");
     expect((await openTaskOf(id)).email).toBe("co3@altbank.ng");

@@ -670,11 +670,13 @@ async function enterUnitHead(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
 }
 
 export async function submitRetail(tx: Tx, ctx: Ctx, app: AppRow): Promise<ActionResult> {
+  // Read against the draft (before it is finalised): people whose current SeedFi result is a low score.
+  const lowScores = (await currentLowScores(tx, app.id, ctx.now)).length;
   const { cfg, rules, data } = await finaliseRetailVersion(tx, ctx, app);
   const credit = await retailCreditBlockers(tx, app.id, ctx.now);
   if (credit.length) throw gate(credit.join(" "));
   // A justification recorded earlier is set aside (kept) when a later check cleared every person.
-  await supersedeIfCleared(tx, ctx, app.id, (await currentLowScores(tx, app.id, ctx.now)).length);
+  await supersedeIfCleared(tx, ctx, app.id, lowScores);
   const docs = await currentCleanDocuments(tx, app.id);
   await storeAssessment(tx, ctx, app, "PRELIMINARY", cfg, rules, preliminaryInput(app.applicant_type, data, docs), app.initiator_role);
   (app as { submitted_at: Date | null }).submitted_at = ctx.now;

@@ -144,7 +144,7 @@ describe("offer pack gate", () => {
   it("still requires the generated offer plus the signed pack", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     await driveToOffer(id);
-    await expect(act(id, "SUBMIT_PACK")).rejects.toThrow(/generated offer/);
+    await expect(act(id, "SUBMIT_PACK")).rejects.toThrow(/Offer letter/);
     await preparePack(id);
     await act(id, "SUBMIT_PACK");
   });
