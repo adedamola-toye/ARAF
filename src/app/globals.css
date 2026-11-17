@@ -1070,3 +1070,9 @@ dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
 .closing-ico { display: inline-flex; color: var(--muted); }
 .closing-body { display: flex; flex-direction: column; flex: 1 1 160px; min-width: 0; }
 .closing-links { display: inline-flex; gap: 6px; }
+dl.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0 0 12px; font-size: 14px; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 520px) { dl.kv { grid-template-columns: 1fr; } dl.kv dd { margin-bottom: 6px; } }
+.ic-reassign { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .ic-reassign select, .ic-reassign input { min-width: 0; max-width: 200px; }
+.config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; } .config-tile { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: inherit; } .config-tile:hover { border-color: var(--accent, currentColor); } .config-tile .badge { align-self: flex-start; }

@@ -34,6 +34,7 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "GENERATED_GSI", label: "GSI mandate form (prefilled by ARAF)", multiple: false },
   { code: "GENERATED_REMITA", label: "Remita direct debit set-up sheet (prefilled by ARAF)", multiple: false },
   { code: "REMITA_MANDATE", label: "Signed Remita mandate", multiple: false },
+  { code: "INVOICE_CONFIRMATION_RESPONSE", label: "Invoice confirmation response (issuer's reply)", multiple: true },
   { code: "INSURANCE_SIGNED", label: "Customer-signed insurance document", multiple: false },
   { code: "INSURANCE_EVIDENCE", label: "Evidence of insurance (Credit Officer 3)", multiple: false },
   { code: "SUPPORTING", label: "Other supporting document", multiple: true },
@@ -83,6 +84,9 @@ export const MISSING_DOCUMENT_MESSAGES: Record<string, string> = {
 export const REVIEW_PENDING_CATEGORIES = ["SALARY_EVIDENCE", "EMPLOYMENT_LETTER"];
 export const CATEGORY_LABEL = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.code, c.label])) as Record<string, string>;
 
+/** Invoices sent to the Invoice Confirmation Officer after final approval. */
+export const INVOICE_CATEGORIES = ["SUPPLIER_INVOICE", "VEHICLE_INVOICE", "SUPPLIER_QUOTATION"];
+
 const INITIAL = ["BANK_STATEMENT", "CAC_CERTIFICATE", "SUPPLIER_INVOICE", "APPLICATION_FORM", "CONSENT_FORM", "RENT_RECEIPT", "SUPPORTING"];
 export const PACK = ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED"];
 
@@ -102,10 +106,10 @@ export const RETAIL_UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   HEAD_OF_UNIT_APPROVAL: ["SUPPORTING"],
   FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"],
   CREDIT_CORRECTION: ["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"],
-  OFFER_PREPARATION: [...PACK_LIST(), "CONTRACT_EVIDENCE", "SUPPORTING"],
+  OFFER_PREPARATION: [...PACK_LIST(), "CONTRACT_EVIDENCE", ...INVOICE_CATEGORIES, "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
   DISBURSEMENT_CHECK: ["CRMS_EVIDENCE", "SUPPORTING"],
-  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK_LIST(), "CONTRACT_EVIDENCE", "SUPPORTING"],
+  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK_LIST(), "CONTRACT_EVIDENCE", ...INVOICE_CATEGORIES, "SUPPORTING"],
   DISBURSEMENT_BOOKING: ["SUPPORTING"],
   PAYMENT_RECONCILIATION: ["PAYMENT_EVIDENCE", "SUPPORTING"],
   FULFILMENT: ["FULFILMENT_EVIDENCE", "SUPPORTING"],
@@ -120,9 +124,9 @@ export const UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   INITIATOR_CORRECTION: INITIAL,
   FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
   CREDIT_CORRECTION: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
-  OFFER_PREPARATION: [...PACK, "REMITA_MANDATE", "SUPPORTING"],
+  OFFER_PREPARATION: [...PACK, "REMITA_MANDATE", "SUPPLIER_INVOICE", "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
-  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "REMITA_MANDATE", "SUPPORTING"],
+  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "REMITA_MANDATE", "SUPPLIER_INVOICE", "SUPPORTING"],
 };
 
 export interface DocumentRow {
@@ -314,6 +318,16 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
           allowed = ASSIGNED_RM_UPLOADS;
           role = "RM";
         }
+      } else if (input.category === "INVOICE_CONFIRMATION_RESPONSE") {
+        const ic = await tx.query(
+          `SELECT 1 FROM invoice_confirmations WHERE application_id = $1 AND officer_id = $2 AND status = 'PENDING'
+             AND EXISTS (SELECT 1 FROM role_assignments WHERE staff_id = $2 AND role = 'INVOICE_CONFIRMATION_OFFICER' AND active)`,
+          [app.id, actor.staffId],
+        );
+        if (ic.rowCount) {
+          allowed = ["INVOICE_CONFIRMATION_RESPONSE"];
+          role = "INVOICE_CONFIRMATION_OFFICER";
+        }
       } else if (retail && input.category === "REPAYMENT_EVIDENCE") {
         const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = 'COLLECTIONS_OFFICER' AND active", [actor.staffId]);
         const fac = await tx.query("SELECT 1 FROM facilities WHERE application_id = $1 AND status IN ('ACTIVE','IN_ARREARS','RESTRUCTURED')", [app.id]);
@@ -363,6 +377,12 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
     console.error("[scan] deferred to worker", err);
     return "QUARANTINED";
   });
+  // A (replacement) invoice uploaded after final approval goes to the Invoice Confirmation Officer.
+  if (INVOICE_CATEGORIES.includes(input.category) && scanStatus === "CLEAN") {
+    await import("./invoice-confirmation")
+      .then((m) => m.dispatchForApplication(input.applicationId, ctx.now))
+      .catch((e) => console.error("[invoice-confirmation] dispatch deferred to worker", e));
+  }
   return { ...rec, scanStatus };
 }
 

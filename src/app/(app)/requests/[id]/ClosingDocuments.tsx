@@ -1,6 +1,7 @@
 import { FileDown, FileCheck2, Hourglass, PenLine } from "lucide-react";
 import { db } from "@/server/db";
 import { closingStatus } from "@/server/domain/closing-docs";
+import { IC_STATUS_LABELS, icForApplication } from "@/server/domain/invoice-confirmation";
 import { RepaymentAccountForm } from "./RepaymentAccountForm";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
@@ -11,6 +12,7 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
   if (!st) return null;
   const banks = canEdit ? (await db.query<{ name: string }>("SELECT name FROM financial_institutions ORDER BY name")).rows.map((r) => r.name) : [];
   const needsAccount = st.items.some((i) => i.state === "NEEDS_ACCOUNT");
+  const conf = (await icForApplication(db, appId))[0] ?? null;
   return (
     <section className="card" id="closing-documents" aria-labelledby="cd-h">
       <p className="eyebrow">After final approval</p>
@@ -41,6 +43,12 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
           </li>
         ))}
       </ul>
+      {conf && (
+        <p className="small" style={{ margin: "12px 0 0" }}>
+          <strong>Invoice confirmation:</strong> <span className={`badge ${conf.status === "COMPLETED" ? "badge-green" : conf.status === "RETURNED" || conf.status === "DISPATCH_FAILED" ? "badge-red" : ""}`}>{IC_STATUS_LABELS[conf.status]}</span>
+          {conf.status === "RETURNED" && conf.returned_reason ? ` “${conf.returned_reason}” Upload a corrected invoice in Documents.` : ""}
+        </p>
+      )}
       {canEdit && (
         <details open={needsAccount} style={{ marginTop: 12 }}>
           <summary className="small">

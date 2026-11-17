@@ -81,5 +81,11 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
   // A Unit Head notified that a Team Lead skipped the business photograph can open that request (read access).
   const notified = await q.query("SELECT 1 FROM notifications n WHERE n.recipient_id = $1 AND n.application_id = $2 AND n.kind = 'VF_PHOTO_SKIPPED' AND EXISTS (SELECT 1 FROM role_assignments ra WHERE ra.staff_id = $1 AND ra.role = 'UNIT_HEAD' AND ra.active)", [staffId, appId]);
   if (notified.rowCount) capacities.push("NOTIFIED_UNIT_HEAD");
+  // The Invoice Confirmation Officer a confirmation is (or was) assigned to.
+  const ico = await q.query(
+    "SELECT 1 FROM invoice_confirmations ic WHERE ic.application_id = $2 AND ic.officer_id = $1 AND EXISTS (SELECT 1 FROM role_assignments ra WHERE ra.staff_id = $1 AND ra.role = 'INVOICE_CONFIRMATION_OFFICER' AND ra.active)",
+    [staffId, appId],
+  );
+  if (ico.rowCount) capacities.push("INVOICE_CONFIRMATION");
   return { canView: capacities.length > 0, capacities };
 }

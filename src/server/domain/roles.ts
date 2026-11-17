@@ -39,6 +39,8 @@ export const ROLES = [
   "CX_CREDIT_REVIEWER",
   // Read-only institution-wide reporting (never approves or edits)
   "EXECUTIVE_VIEW",
+  // Confirms supplier / vehicle invoices with the issuer after final approval (one queue, all products)
+  "INVOICE_CONFIRMATION_OFFICER",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -89,6 +91,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
   CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
   EXECUTIVE_VIEW: "Executive View (God's Eye, read-only)",
+  INVOICE_CONFIRMATION_OFFICER: "Invoice Confirmation Officer",
 };
 
 /** The Delight Officer / Smile Associate channel originates Altphones only. */

@@ -572,7 +572,10 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
       });
     });
     // Closing documents (offer, GSI, Remita) are prepared after the approval commits; the worker retries.
-    if (result.stage === "OFFER_PREPARATION" && !result.replayed) void generateClosingDocuments(result.applicationId, ctx.now).catch((e) => console.error("[closing-docs]", e));
+    if (result.stage === "OFFER_PREPARATION" && !result.replayed) {
+      void generateClosingDocuments(result.applicationId, ctx.now).catch((e) => console.error("[closing-docs]", e));
+      void import("./invoice-confirmation").then((m) => m.dispatchForApplication(result.applicationId, ctx.now)).catch((e) => console.error("[invoice-confirmation]", e));
+    }
     return result;
   } catch (e) {
     if (e instanceof DomainError && (e.code === "FORBIDDEN" || e.code === "GATE")) {
