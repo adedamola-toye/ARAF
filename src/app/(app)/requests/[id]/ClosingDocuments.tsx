@@ -1,5 +1,6 @@
 import { FileDown, FileCheck2, Hourglass, PenLine } from "lucide-react";
 import { db } from "@/server/db";
+import { formatLagos } from "@/server/time";
 import { closingStatus } from "@/server/domain/closing-docs";
 import { checklistStatus } from "@/server/domain/closing-checklist";
 import { IC_STATUS_LABELS, icForApplication } from "@/server/domain/invoice-confirmation";
@@ -21,7 +22,7 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
       <p className="eyebrow">After final approval</p>
       <h2 id="cd-h" style={{ marginBottom: 4 }}>Closing documents</h2>
       <p className="small muted" style={{ marginTop: 0 }}>
-        Prefilled from the approved request. If the customer is with you, have them sign; otherwise download, take it to the customer, then upload the signed copy in Documents.
+        Prefilled from the approved request and e-mailed to the customer (copied to you) once they are all ready. Upload the signed copies in Documents.
       </p>
       <ul className="closing-list">
         {st.items.map((i) => (
@@ -30,6 +31,7 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
             <span className="closing-body">
               <strong>{i.label}</strong>
               {i.note && <span className="small muted">{i.note}</span>}
+              {i.sentAt && <span className="small muted">E-mailed to the customer {formatLagos(i.sentAt)}</span>}
             </span>
             {i.documentId ? (
               <span className="closing-links">

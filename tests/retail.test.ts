@@ -508,6 +508,7 @@ describe("booking, payment reconciliation and facility lifecycle", () => {
     await driveCredit(id);
     const t = await openTaskOf(id);
     const { generateOffer } = await import("@/server/domain/offer");
+    await db.query("UPDATE offer_templates SET production_approved = false WHERE product_code IS NOT NULL"); // e.g. a newly edited letter
     await expect(generateOffer(await ctxFor(t.email!), id)).rejects.toThrow(/not been approved/);
     await approveRetailTemplates();
     await generateOffer(await ctxFor(t.email!), id);

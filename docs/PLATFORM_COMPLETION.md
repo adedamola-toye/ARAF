@@ -110,7 +110,16 @@ How generation behaves:
 **Administration → Configuration centre** links every setting above, plus product settings, approval workflows, pricing, templates and service targets, and shows each one's current status.
 
 ## Outstanding
-- **Ijarah and Qard offer letters:** authorised for use by the business owner on 17 Nov 2026 (migration `046_authorise_ijarah_qard_offers.sql`). The Alt Drive Ijarah letter and the Staff Salary Advance (Qard) letter are approved for production. The draft-wording note is replaced with the customer's acceptance and signature block. Each letter is generated automatically, prefilled with the customer's details, as soon as a request of that contract type receives final approval. Staff offers that were held back for want of an approved template are issued by the worker. The other HTML retail letters (Alt Drive Murabaha, Alt Power, Vendor Financing) are unchanged.
+- **Authorised offer letters (17 Nov 2026):**
+  - Migration `046` covers the Alt Drive Ijarah letter and the Staff Salary Advance (Qard) letter.
+  - Migration `047` covers the Alt Drive Murabaha, Alt Power Murabaha and Ijarah, and Vendor Financing Murabaha letters. Alt Power and Vendor Financing requests on the "Standard" structure use the Murabaha letter.
+  - Each letter is approved for production, carries the customer's acceptance and signature block, and is prefilled and generated automatically on final approval.
+  - Letters the bank later edits are not overwritten.
+- **Closing pack e-mailed to the customer:**
+  - Once the offer letter, GSI mandate and Remita set-up sheet are all ready, ARAF e-mails them together to the customer's e-mail on the request, copied to the RM. The e-mail tells the customer how to sign and return them.
+  - Documents prepared again later (for example after a change of repayment account) follow as an "Updated documents" e-mail.
+  - If the request has no customer e-mail, nothing is sent and the RM is told to hand the documents over.
+  - The case page shows when each document was e-mailed.
 - **Corporate GSI mandate form:** upload it when available.
 - **Remita API:** not integrated. ARAF prepares the set-up sheet; the RRR and QR code come from Remita.
 - **Invoice Confirmation Officer account:** create Olamilekan Gaji's account and assign the *Invoice Confirmation Officer* role. Their email is already the configured primary.

@@ -78,7 +78,95 @@ export async function generateClosingDocuments(appId: string, now = new Date()):
       console.error("[closing-docs]", appId, r.kind, e);
     }
   }
+  await sendCustomerPack(appId, now).catch((e) => console.error("[closing-docs] customer pack", appId, e));
   return done;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * E-mail the prepared documents to the customer (copying the initiator). The first e-mail goes once the offer letter
+ * and the other documents are ready, so the customer receives them together; documents prepared again later (e.g. after
+ * the repayment account changes) follow in an update. Without a customer e-mail the initiator is told to hand them over.
+ */
+export async function sendCustomerPack(appId: string, now = new Date()): Promise<boolean> {
+  return withTx(async (tx) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const app = (await tx.query<Record<string, any>>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [appId])).rows[0];
+    if (!app || !CLOSING_STAGES.includes(app.stage)) return false;
+    const rows = (
+      await tx.query<{ kind: ClosingKind; status: string; detail: string | null; document_id: string | null; customer_sent_at: Date | null }>(
+        "SELECT kind, status, detail, document_id, customer_sent_at FROM document_generation WHERE application_id = $1 AND version_id = $2",
+        [appId, app.current_version_id],
+      )
+    ).rows;
+    const offer = rows.find((r) => r.kind === "OFFER");
+    if (!offer || offer.status !== "GENERATED") return false;
+    const unsent = rows.filter((r) => r.status === "GENERATED" && r.document_id && !r.customer_sent_at);
+    if (!unsent.length) return false;
+    const firstSend = !offer.customer_sent_at;
+    // Send together: hold the first e-mail while a document still waits for something the initiator can supply.
+    if (firstSend && rows.some((r) => r.status !== "GENERATED" && !String(r.detail ?? "").startsWith("CORPORATE_GSI"))) return false;
+    const ctx = systemCtx(now);
+    const v = (await tx.query("SELECT data FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0]?.data ?? {};
+    const email = String(v.email ?? "").trim().toLowerCase();
+    const rm = (await tx.query<{ full_name: string; email: string }>("SELECT full_name, email FROM staff WHERE id = $1", [app.initiator_id])).rows[0];
+    if (!EMAIL_RE.test(email)) {
+      await notify(tx, now, {
+        recipientId: app.initiator_id,
+        kind: "CUSTOMER_PACK_NO_EMAIL",
+        title: `No customer e-mail — ${app.ref}`,
+        body: "The offer letter and closing documents are ready but the request has no valid customer e-mail. Download them and hand them to the customer.",
+        applicationId: appId,
+        link: `/requests/${appId}#closing-documents`,
+        dedupeKey: `customer-pack-no-email:${appId}:${app.current_version_id}`,
+      });
+      return false;
+    }
+    const docs = unsent.map((r) => CLOSING_LABELS[r.kind]);
+    const name = String(v.customerName ?? "").trim() || app.customer_name || "Customer";
+    const product = app.product_label ?? "financing";
+    const lines = [
+      `Dear ${name},`,
+      "",
+      firstSend
+        ? `Your ${product} request (reference ${app.ref}) has been approved. Please find attached:`
+        : `Please find attached updated documents for your ${product} facility (reference ${app.ref}):`,
+      ...docs.map((d) => `  - ${d}`),
+      "",
+      "What to do next:",
+      "  1. Read the offer letter and sign where indicated if you accept it.",
+      ...(unsent.some((r) => r.kind === "GSI") ? ["  2. Complete the GSI mandate form: affix a passport photograph, sign, and have a witness sign."] : []),
+      ...(unsent.some((r) => r.kind === "REMITA_SETUP") ? ["  3. Sign the Remita direct debit set-up sheet (payer signature)."] : []),
+      `Return the signed documents to your Relationship Manager${rm ? `, ${rm.full_name} (${rm.email})` : ""}.`,
+      "",
+      "If anything in these documents is incorrect, contact your Relationship Manager before signing.",
+      "",
+      "The Alternative Bank",
+    ];
+    await enqueueEmail(tx, now, {
+      kind: "CUSTOMER_CLOSING_PACK",
+      dedupeKey: `customer-pack:${appId}:${unsent.map((r) => r.document_id).sort().join(",")}`,
+      applicationId: appId,
+      to: [email],
+      cc: rm ? [rm.email] : [],
+      subject: firstSend ? `Your ${product} offer — ${app.ref}` : `Updated documents — ${product} — ${app.ref}`,
+      text: lines.join("\n"),
+      attachmentDocumentIds: unsent.map((r) => r.document_id!),
+    });
+    await tx.query("UPDATE document_generation SET customer_sent_at = $3 WHERE application_id = $1 AND version_id = $2 AND kind = ANY($4)", [appId, app.current_version_id, now, unsent.map((r) => r.kind)]);
+    await audit(tx, ctx, { action: "CUSTOMER_PACK_SENT", applicationId: appId, stage: app.stage, details: { documents: unsent.map((r) => ({ kind: r.kind, documentId: r.document_id })), update: !firstSend } });
+    await notify(tx, now, {
+      recipientId: app.initiator_id,
+      kind: "CUSTOMER_PACK_SENT",
+      title: `${firstSend ? "Offer and documents" : "Updated documents"} sent to the customer — ${app.ref}`,
+      body: `${docs.join(", ")} e-mailed to the customer (copied to you).`,
+      applicationId: appId,
+      link: `/requests/${appId}#closing-documents`,
+      dedupeKey: `customer-pack-sent:${appId}:${now.getTime()}`,
+    });
+    return true;
+  });
 }
 
 /** Worker: retry anything pending, waiting or failed. */
@@ -86,7 +174,7 @@ export async function runDocumentGeneration(now = new Date()): Promise<number> {
   const apps = (
     await db.query<{ application_id: string }>(
       `SELECT DISTINCT g.application_id FROM document_generation g JOIN applications a ON a.id = g.application_id AND a.current_version_id = g.version_id
-        WHERE g.status IN ('PENDING','FAILED','WAITING') AND g.attempts < $1 AND a.stage = ANY($2) LIMIT 25`,
+        WHERE ((g.status IN ('PENDING','FAILED','WAITING') AND g.attempts < $1) OR (g.status = 'GENERATED' AND g.customer_sent_at IS NULL)) AND a.stage = ANY($2) LIMIT 25`,
       [MAX_ATTEMPTS, CLOSING_STAGES],
     )
   ).rows;
@@ -375,7 +463,7 @@ export async function saveRepaymentAccount(ctx: Ctx, appId: string, a: Repayment
     await tx.query("UPDATE applications SET repayment_account = $2, updated_at = $3 WHERE id = $1", [appId, JSON.stringify(clean), ctx.now]);
     // Re-prepare GSI and Remita for the current approved version (new document versions; earlier ones are kept).
     await tx.query(
-      `UPDATE document_generation SET status = 'PENDING', attempts = 0, detail = NULL, updated_at = $2
+      `UPDATE document_generation SET status = 'PENDING', attempts = 0, detail = NULL, customer_sent_at = NULL, updated_at = $2
         WHERE application_id = $1 AND kind IN ('GSI','REMITA_SETUP') AND version_id = $3`,
       [appId, ctx.now, app.current_version_id],
     );
@@ -395,6 +483,7 @@ export interface ClosingStatus {
   state: "READY" | "PREPARING" | "NEEDS_ACCOUNT" | "MANUAL";
   note: string | null;
   documentId: string | null;
+  sentAt: Date | null;
 }
 
 /** What the case page shows (never "template missing"). */
@@ -406,10 +495,10 @@ export async function closingStatus(q: Db, appId: string): Promise<{ items: Clos
   const items = CLOSING_KINDS.map((k): ClosingStatus => {
     const r = rows.find((x: { kind: string }) => x.kind === k);
     const detail = String(r?.detail ?? "");
-    if (r?.status === "GENERATED") return { kind: k, label: CLOSING_LABELS[k], state: "READY", note: null, documentId: r.document_id };
-    if (detail.startsWith("REPAYMENT_ACCOUNT")) return { kind: k, label: CLOSING_LABELS[k], state: "NEEDS_ACCOUNT", note: "Add the customer's repayment account below.", documentId: null };
-    if (detail.startsWith("CORPORATE_GSI")) return { kind: k, label: CLOSING_LABELS[k], state: "MANUAL", note: "Use the bank's corporate GSI mandate form for this company and upload the signed copy.", documentId: null };
-    return { kind: k, label: CLOSING_LABELS[k], state: "PREPARING", note: "ARAF is preparing this document.", documentId: null };
+    if (r?.status === "GENERATED") return { kind: k, label: CLOSING_LABELS[k], state: "READY", note: null, documentId: r.document_id, sentAt: r.customer_sent_at ?? null };
+    if (detail.startsWith("REPAYMENT_ACCOUNT")) return { kind: k, label: CLOSING_LABELS[k], state: "NEEDS_ACCOUNT", note: "Add the customer's repayment account below.", documentId: null, sentAt: null };
+    if (detail.startsWith("CORPORATE_GSI")) return { kind: k, label: CLOSING_LABELS[k], state: "MANUAL", note: "Use the bank's corporate GSI mandate form for this company and upload the signed copy.", documentId: null, sentAt: null };
+    return { kind: k, label: CLOSING_LABELS[k], state: "PREPARING", note: "ARAF is preparing this document.", documentId: null, sentAt: null };
   });
   return { items, account: app.repayment_account ?? null };
 }

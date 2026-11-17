@@ -231,6 +231,54 @@ describe("Authorised Ijarah letter", () => {
   });
 });
 
+describe("Authorised retail letters sent to the customer", () => {
+  it("every Murabaha and Ijarah letter is approved, prefilled-ready and free of draft wording", async () => {
+    const rows = (await db.query("SELECT product_code, structure, production_approved, body_html FROM offer_templates WHERE status = 'ACTIVE' AND product_code IS NOT NULL")).rows;
+    for (const [p, s2] of [["ALT_DRIVE", "MURABAHA"], ["ALT_DRIVE", "IJARAH"], ["ALT_POWER", "MURABAHA"], ["ALT_POWER", "IJARAH"], ["ALT_POWER", "STANDARD"], ["VENDOR_FINANCING", "MURABAHA"], ["VENDOR_FINANCING", "STANDARD"]]) {
+      const t = rows.find((r: any) => r.product_code === p && r.structure === s2);
+      expect(t, `${p} ${s2}`).toBeTruthy();
+      expect(t.production_approved).toBe(true);
+      expect(t.body_html).not.toMatch(/DRAFT WORDING/);
+      expect(t.body_html).toMatch(s2 === "IJARAH" ? /Ijarah/ : /Murabaha/);
+    }
+  });
+
+  it("on final approval the offer, GSI and Remita go to the customer together, copied to the RM; changes follow as an update", async () => {
+    const id = await vf();
+    await driveBusinessReview(id);
+    await driveCredit(id); // letters are already approved: no manual step
+    await generateClosingDocuments(id);
+    const mails = async () => (await db.query("SELECT subject, to_addresses, cc_addresses, attachment_document_ids, body_text FROM notification_outbox WHERE kind = 'CUSTOMER_CLOSING_PACK' AND application_id = $1 ORDER BY created_at", [id])).rows;
+    expect(await mails()).toHaveLength(0); // held until the GSI form and Remita sheet can be prepared too
+    const rm = await ctxFor(RM);
+    await saveRepaymentAccount(rm, id, { bankName: "Access Bank Plc", accountNumber: "0123456789", accountName: "Amina Bello", branch: "Yaba", townCity: "Lagos" });
+    let m = await mails();
+    expect(m).toHaveLength(1);
+    expect(m[0].to_addresses).toEqual(["amina@example.com"]);
+    expect(m[0].cc_addresses).toEqual([RM]);
+    expect(m[0].attachment_document_ids).toHaveLength(3);
+    expect(m[0].subject).toMatch(/offer/i);
+    expect(m[0].body_text).toMatch(/GSI mandate form/);
+    expect((await closingStatus(db, id))!.items.every((i) => i.sentAt)).toBe(true);
+    expect(await generateClosingDocuments(id)).toBe(0);
+    expect(await mails()).toHaveLength(1); // not sent twice
+    await saveRepaymentAccount(rm, id, { bankName: "Zenith Bank Plc", accountNumber: "1234567890", accountName: "Amina Bello", branch: "", townCity: "Lagos" });
+    m = await mails();
+    expect(m).toHaveLength(2);
+    expect(m[1].subject).toMatch(/Updated documents/);
+    expect(m[1].attachment_document_ids).toHaveLength(2);
+  });
+
+  it("without a customer e-mail nothing is sent and the RM is told to hand the documents over", async () => {
+    const id = await vf({ data: { email: "" } } as any);
+    await driveBusinessReview(id);
+    await driveCredit(id);
+    await saveRepaymentAccount(await ctxFor(RM), id, { bankName: "Access Bank Plc", accountNumber: "0123456789", accountName: "Amina Bello", branch: "", townCity: "" });
+    expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'CUSTOMER_CLOSING_PACK' AND application_id = $1", [id])).rowCount).toBe(0);
+    expect((await db.query("SELECT 1 FROM notifications WHERE kind = 'CUSTOMER_PACK_NO_EMAIL' AND application_id = $1", [id])).rowCount).toBe(1);
+  });
+});
+
 describe("14–17. Invoice confirmation", () => {
   const withInvoice = () => vf();
   const INV = "SUPPLIER_INVOICE";

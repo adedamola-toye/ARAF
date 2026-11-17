@@ -36,6 +36,6 @@ UPDATE offer_templates SET production_approved = true, approved_at = COALESCE(ap
  WHERE status = 'ACTIVE' AND ((product_code = 'ALT_DRIVE' AND structure = 'IJARAH') OR applicant_type = 'STAFF') AND NOT production_approved;
 
 INSERT INTO audit_events (occurred_at, actor_role, action, outcome, reason, details)
-SELECT now(), 'SYSTEM', 'TEMPLATE_APPROVED', 'SUCCESS', 'Business owner authorised use of the Ijarah and Qard offer letters (17 Nov 2026).',
+SELECT now(), 'SYSTEM', 'TEMPLATE_AUTHORISED', 'SUCCESS', 'Business owner authorised use of the Ijarah and Qard offer letters (17 Nov 2026).',
        jsonb_build_object('templateId', id, 'name', name, 'version', version, 'source', 'migration 046')
   FROM offer_templates WHERE status = 'ACTIVE' AND ((product_code = 'ALT_DRIVE' AND structure = 'IJARAH') OR applicant_type = 'STAFF');
