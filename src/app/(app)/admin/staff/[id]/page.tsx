@@ -35,7 +35,7 @@ export default async function StaffDetail({ params, searchParams }: { params: Pr
         </div>
         {!self && <StatusButton staffId={id} status={s.status} />}
       </div>
-      {sp.created && <div className="alert alert-success" style={{ marginBottom: 12 }}>Staff provisioned. Grant roles below.</div>}
+      {sp.created && <div className="alert alert-success" style={{ marginBottom: 12 }}>Added to the bank directory. Now assign their role below.</div>}
       {self && <div className="alert alert-info" style={{ marginBottom: 12 }}>You cannot change your own role assignments or status (separation of duties).</div>}
       <div className="card">
         <h2>Role assignments</h2>

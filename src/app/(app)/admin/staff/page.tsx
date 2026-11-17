@@ -35,8 +35,8 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Add a staff member</h2>
-        <p className="small muted" style={{ marginTop: 0 }}>Enter their email and name, and choose a role to assign now. For many people at once, use the bulk upload below.</p>
-        <ProvisionForm regions={[...REGIONS]} roles={roleOptions} />
+        <p className="small muted" style={{ marginTop: 0 }}>Enter their email and name and add them to the bank directory; you then assign their role. For many people at once, use the bulk upload below.</p>
+        <ProvisionForm />
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Bulk upload staff</h2>

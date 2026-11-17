@@ -4,7 +4,8 @@ import * as A from "./actions";
 
 type Opt = { value: string; label: string };
 
-export function ProvisionForm({ regions, roles }: { regions: string[]; roles: Opt[] }) {
+/** Super Admin: add one person (email and name). Their role is assigned on the next screen. */
+export function ProvisionForm() {
   return (
     <ActionForm action={A.provisionAction} refreshOnSuccess={false}>
       {(st) => (
@@ -17,49 +18,14 @@ export function ProvisionForm({ regions, roles }: { regions: string[]; roles: Op
             </div>
             <div className="field">
               <label htmlFor="fullName">Full name</label>
-              <input id="fullName" name="fullName" required />
+              <input id="fullName" name="fullName" required minLength={3} />
               {st.fields?.fullName && <span className="err">{st.fields.fullName}</span>}
             </div>
-            <div className="field">
-              <label htmlFor="role">Role</label>
-              <select id="role" name="role">
-                <option value="">No role yet</option>
-                {roles.map((r) => (
-                  <option key={r.value} value={r.value}>
-                    {r.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="pteam">Team (routing scope)</label>
-              <input id="pteam" name="team" placeholder="e.g. RETAIL-LAGOS-1" />
-              <span className="hint">Required for Relationship Managers and Team Leads.</span>
-              {st.fields?.team && <span className="err">{st.fields.team}</span>}
-            </div>
-            <div className="field">
-              <label htmlFor="region">State</label>
-              <select id="region" name="region">
-                <option value="">None</option>
-                {regions.map((r) => (
-                  <option key={r}>{r}</option>
-                ))}
-              </select>
-              {st.fields?.region && <span className="err">{st.fields.region}</span>}
-            </div>
-            <div className="field">
-              <label htmlFor="businessUnit">Business unit</label>
-              <input id="businessUnit" name="businessUnit" />
-            </div>
           </div>
-          <label className="check">
-            <input type="checkbox" name="addToDirectory" defaultChecked />
-            <span>Add to the bank directory if the email is not there yet</span>
-          </label>
-          <p className="small muted" style={{ margin: 0 }}>The person can sign in with this email straight away. ANM roles require a state. Legal and Shariah reviewers must first be added to their recipient group.</p>
           <div>
-            <SubmitButton>Provision staff</SubmitButton>
+            <SubmitButton>Add to bank directory</SubmitButton>
           </div>
+          <p className="small muted" style={{ margin: 0 }}>Next you assign their role. They can sign in with this email once they have one.</p>
         </>
       )}
     </ActionForm>

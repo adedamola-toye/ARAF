@@ -38,19 +38,12 @@ async function run(fd: FormData, op: Op, ok: string): Promise<ActionState> {
   }
 }
 
+/** Super Admin: add a person to the bank directory and staff list, then go to their page to assign a role. */
 export async function provisionAction(_p: ActionState, fd: FormData): Promise<ActionState> {
   const { ctx } = await requireUser();
   let id: string;
   try {
-    id = await provisionStaff(ctx, {
-      email: s(fd, "email"),
-      fullName: s(fd, "fullName"),
-      region: s(fd, "region") || null,
-      businessUnit: s(fd, "businessUnit") || null,
-      role: s(fd, "role") || null,
-      team: s(fd, "team") || null,
-      addToDirectory: fd.get("addToDirectory") === "on",
-    });
+    id = await provisionStaff(ctx, { email: s(fd, "email"), fullName: s(fd, "fullName"), addToDirectory: true });
   } catch (e) {
     return toActionError(e);
   }

@@ -58,13 +58,13 @@ export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: str
       await audit(tx, ctx, { action: "DIRECTORY_ENTRY_ADDED", actorRole: "SUPER_ADMIN", details: { email, source: "staff-manual-add" } });
       dir = await directoryEntry(tx, email);
     }
-    if (!dir) throw invalid("This email is not in the bank directory. Tick “Add to the bank directory” to add it now.", { email: "Not found in the bank directory." });
+    if (!dir) throw invalid("This email is not in the bank directory.", { email: "Not found in the bank directory." });
     if (!dir.active) throw invalid("This email is marked inactive in the bank directory.", { email: "Inactive in the bank directory." });
     if (dir.is_group_mailbox) throw invalid("Group mailboxes cannot be provisioned as staff.", { email: "Group mailbox." });
     if (p.region && !isRegion(p.region)) throw invalid("Unknown state.", { region: "Unknown state." });
     if (p.role && !isRole(p.role)) throw invalid("Unknown role.", { role: "Unknown role." });
     const exists = await tx.query("SELECT 1 FROM staff WHERE email = $1", [email]);
-    if (exists.rowCount) throw conflict("A staff record already exists for this email.");
+    if (exists.rowCount) throw conflict("This person is already on the staff list. Open them in the list below to change their role.");
     const r = await tx.query<{ id: string }>(
       `INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING id`,
       [email, p.fullName.trim() || dir.full_name, p.region || null, p.businessUnit?.trim() || null, ctx.actor!.staffId, ctx.now],
