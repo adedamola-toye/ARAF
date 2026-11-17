@@ -11,9 +11,9 @@ beforeEach(resetDb);
 describe("Super Admin adds a staff member by email and name, then assigns a role", () => {
   it("adds the email to the bank directory and the staff list; the role is assigned afterwards", async () => {
     const ctx = await ctxFor(ADMIN);
-    const id = await provisionStaff(ctx, { email: "New.Officer@altbank.ng", fullName: "New Officer", addToDirectory: true });
-    expect((await db.query("SELECT email, full_name, status FROM staff WHERE id = $1", [id])).rows[0]).toEqual({ email: "new.officer@altbank.ng", full_name: "New Officer", status: "ACTIVE" });
-    expect((await db.query("SELECT source FROM bank_directory WHERE email = 'new.officer@altbank.ng'")).rows[0].source).toBe("staff-manual-add");
+    const id = await provisionStaff(ctx, { email: "Zainab.Test-Add@altbank.ng", fullName: "Zainab Test-Add", addToDirectory: true });
+    expect((await db.query("SELECT email, full_name, status FROM staff WHERE id = $1", [id])).rows[0]).toEqual({ email: "zainab.test-add@altbank.ng", full_name: "Zainab Test-Add", status: "ACTIVE" });
+    expect((await db.query("SELECT source FROM bank_directory WHERE email = 'zainab.test-add@altbank.ng'")).rows[0].source).toBe("staff-manual-add");
     expect((await db.query("SELECT 1 FROM role_assignments WHERE staff_id = $1", [id])).rowCount).toBe(0); // no role yet
     expect((await audits("DIRECTORY_ENTRY_ADDED")).length).toBe(1);
     await grantRole(ctx, { staffId: id, role: "INVOICE_CONFIRMATION_OFFICER" });
