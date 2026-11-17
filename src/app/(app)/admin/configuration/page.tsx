@@ -19,6 +19,7 @@ export default async function ConfigurationCentre() {
   const icFailed = await n("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'DISPATCH_FAILED'");
   const officers = await n("SELECT count(*) AS n FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE ra.active AND ra.role = 'INVOICE_CONFIRMATION_OFFICER' AND s.status = 'ACTIVE'");
   const sla = (await db.query("SELECT enabled, reminder_hours FROM sla_policy WHERE id = 1")).rows[0];
+  const custEmail = !!(await db.query("SELECT customer_email_enabled FROM document_settings WHERE id = 1")).rows[0]?.customer_email_enabled;
   const templates = (await db.query<{ product_code: string; structure: string | null; production_approved: boolean }>("SELECT product_code, structure, production_approved FROM offer_templates WHERE status = 'ACTIVE' ORDER BY product_code")).rows;
   const groups: [string, Tile[]][] = [
     [
@@ -35,7 +36,7 @@ export default async function ConfigurationCentre() {
       [
         { href: "/admin/templates", title: "Offer templates", body: "Bank-approved offer letters by product and structure (WakeelBoost by applicant type).", status: `${templates.filter((t) => t.production_approved).length} approved · ${templates.filter((t) => !t.production_approved).length} not approved` },
         { href: "/admin/closing-checklists", title: "Closing checklists", body: "Documents required per product before the pack is submitted and before disbursement." },
-        { href: "/admin/document-settings", title: "Document settings", body: "Bank and Remita beneficiary details, charges and VAT on the documents ARAF prepares.", status: waitingDocs ? `${waitingDocs} document(s) waiting` : "Nothing waiting" },
+        { href: "/admin/document-settings", title: "Document settings", body: "Bank and Remita beneficiary details, charges and VAT, and whether documents are e-mailed to customers.", status: `Customer e-mails ${custEmail ? "on" : "off"} · ${waitingDocs ? `${waitingDocs} document(s) waiting` : "nothing waiting"}` },
         { href: "/admin/invoice-confirmation", title: "Invoice confirmation", body: "Invoice Confirmation Officers and open confirmations.", status: `${officers} officer(s)${icFailed ? ` · ${icFailed} not dispatched` : ""}` },
       ],
     ],

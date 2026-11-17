@@ -16,6 +16,8 @@ export interface DocumentSettingsInput {
   beneficiaryPhone: string;
   charge: string; // naira, blank = not printed
   vatPercent: string;
+  /** E-mail the prepared closing documents to the customer automatically (off by default). */
+  customerEmail: boolean;
   reason: string;
 }
 
@@ -45,14 +47,16 @@ export async function saveDocumentSettings(ctx: Ctx, i: DocumentSettingsInput) {
     const v = (s: string) => s.trim() || null;
     await tx.query(
       `UPDATE document_settings SET bank_name = $1, bank_address = $2, remita_beneficiary_name = $3, remita_beneficiary_bank = $4, remita_beneficiary_account = $5,
-         remita_beneficiary_email = $6, remita_beneficiary_phone = $7, remita_charge_kobo = $8, remita_vat_percent = $9, updated_by = $10, updated_at = $11 WHERE id = 1`,
-      [i.bankName.trim(), v(i.bankAddress), v(i.beneficiaryName), v(i.beneficiaryBank), v(i.beneficiaryAccount), v(i.beneficiaryEmail), v(i.beneficiaryPhone), chargeKobo, vat, actor.staffId, ctx.now],
+         remita_beneficiary_email = $6, remita_beneficiary_phone = $7, remita_charge_kobo = $8, remita_vat_percent = $9, updated_by = $10, updated_at = $11,
+         customer_email_enabled = $12,
+         customer_email_enabled_at = CASE WHEN $12 AND NOT customer_email_enabled THEN $11 WHEN $12 THEN customer_email_enabled_at ELSE NULL END WHERE id = 1`,
+      [i.bankName.trim(), v(i.bankAddress), v(i.beneficiaryName), v(i.beneficiaryBank), v(i.beneficiaryAccount), v(i.beneficiaryEmail), v(i.beneficiaryPhone), chargeKobo, vat, actor.staffId, ctx.now, i.customerEmail],
     );
     await audit(tx, ctx, {
       action: "DOCUMENT_SETTINGS_CHANGED",
       actorRole: "SUPER_ADMIN",
       reason: i.reason.trim(),
-      details: { previous: { ...before, updated_by: undefined }, next: { bankName: i.bankName, beneficiaryName: i.beneficiaryName, beneficiaryBank: i.beneficiaryBank, beneficiaryAccountLast4: i.beneficiaryAccount.slice(-4), chargeKobo, vat } },
+      details: { previous: { ...before, updated_by: undefined }, next: { bankName: i.bankName, beneficiaryName: i.beneficiaryName, beneficiaryBank: i.beneficiaryBank, beneficiaryAccountLast4: i.beneficiaryAccount.slice(-4), chargeKobo, vat, customerEmail: i.customerEmail } },
     });
   });
 }

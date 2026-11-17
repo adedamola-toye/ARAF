@@ -16,7 +16,7 @@ const F: [keyof V, string, string?][] = [
   ["vatPercent", "VAT on charges (%)", "e.g. 7.5"],
 ];
 
-export function DocumentSettingsForm({ v }: { v: V }) {
+export function DocumentSettingsForm({ v, customerEmail }: { v: V; customerEmail: boolean }) {
   return (
     <ActionForm action={saveDocumentSettingsAction}>
       {(st) => (
@@ -30,6 +30,14 @@ export function DocumentSettingsForm({ v }: { v: V }) {
               </div>
             ))}
           </div>
+          <fieldset className="ps-checks">
+            <legend>Sending to the customer</legend>
+            <label className="check">
+              <input type="checkbox" name="customerEmail" defaultChecked={customerEmail} />
+              <span>E-mail the offer letter, GSI form and Remita sheet to the customer automatically (copied to the RM)</span>
+            </label>
+            <span className="hint">Off: the documents are still prepared on approval; the RM gives them to the customer to sign (on paper or on the RM&apos;s tablet) and uploads the signed copies. Switching it on applies only to documents prepared from then on.</span>
+          </fieldset>
           <div className="field">
             <label htmlFor="ds-reason">Reason for the change</label>
             <textarea id="ds-reason" name="reason" rows={2} required minLength={20} />

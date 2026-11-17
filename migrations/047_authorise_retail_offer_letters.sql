@@ -318,3 +318,8 @@ SELECT now(), 'SYSTEM', 'TEMPLATE_AUTHORISED', 'SUCCESS', 'Business owner author
 
 -- Closing documents e-mailed to the customer (offer letter, GSI mandate, Remita set-up sheet).
 ALTER TABLE document_generation ADD COLUMN customer_sent_at timestamptz;
+
+-- E-mailing the closing documents to the customer is a Super Admin choice, off by default. When it is switched on,
+-- only documents prepared from then on are e-mailed (nothing already prepared is sent retroactively).
+ALTER TABLE document_settings ADD COLUMN customer_email_enabled boolean NOT NULL DEFAULT false;
+ALTER TABLE document_settings ADD COLUMN customer_email_enabled_at timestamptz;

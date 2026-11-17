@@ -243,7 +243,24 @@ describe("Authorised retail letters sent to the customer", () => {
     }
   });
 
-  it("on final approval the offer, GSI and Remita go to the customer together, copied to the RM; changes follow as an update", async () => {
+  const emailCustomers = (on: boolean) => db.query("UPDATE document_settings SET customer_email_enabled = $1, customer_email_enabled_at = CASE WHEN $1 THEN now() - interval '1 hour' END", [on]);
+
+  it("by default nothing is e-mailed to the customer: documents are prepared for the RM to hand over", async () => {
+    expect((await db.query("SELECT customer_email_enabled FROM document_settings")).rows[0].customer_email_enabled).toBe(false);
+    const id = await vf();
+    await driveBusinessReview(id);
+    await driveCredit(id);
+    await saveRepaymentAccount(await ctxFor(RM), id, { bankName: "Access Bank Plc", accountNumber: "0123456789", accountName: "Amina Bello", branch: "", townCity: "" });
+    expect((await closingStatus(db, id))!.items.every((i) => i.state === "READY" && !i.sentAt)).toBe(true);
+    expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'CUSTOMER_CLOSING_PACK' AND application_id = $1", [id])).rowCount).toBe(0);
+    // switching it on later does not e-mail documents already prepared
+    await db.query("UPDATE document_settings SET customer_email_enabled = true, customer_email_enabled_at = now() + interval '1 minute'");
+    await generateClosingDocuments(id);
+    expect((await db.query("SELECT 1 FROM notification_outbox WHERE kind = 'CUSTOMER_CLOSING_PACK' AND application_id = $1", [id])).rowCount).toBe(0);
+  });
+
+  it("when the Super Admin switches it on, the offer, GSI and Remita go to the customer together, copied to the RM; changes follow as an update", async () => {
+    await emailCustomers(true);
     const id = await vf();
     await driveBusinessReview(id);
     await driveCredit(id); // letters are already approved: no manual step
@@ -269,7 +286,8 @@ describe("Authorised retail letters sent to the customer", () => {
     expect(m[1].attachment_document_ids).toHaveLength(2);
   });
 
-  it("without a customer e-mail nothing is sent and the RM is told to hand the documents over", async () => {
+  it("(switched on) without a customer e-mail nothing is sent and the RM is told to hand the documents over", async () => {
+    await emailCustomers(true);
     const id = await vf({ data: { email: "" } } as any);
     await driveBusinessReview(id);
     await driveCredit(id);

@@ -95,14 +95,18 @@ export async function sendCustomerPack(appId: string, now = new Date()): Promise
     const app = (await tx.query<Record<string, any>>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [appId])).rows[0];
     if (!app || !CLOSING_STAGES.includes(app.stage)) return false;
     const rows = (
-      await tx.query<{ kind: ClosingKind; status: string; detail: string | null; document_id: string | null; customer_sent_at: Date | null }>(
-        "SELECT kind, status, detail, document_id, customer_sent_at FROM document_generation WHERE application_id = $1 AND version_id = $2",
+      await tx.query<{ kind: ClosingKind; status: string; detail: string | null; document_id: string | null; customer_sent_at: Date | null; updated_at: Date }>(
+        "SELECT kind, status, detail, document_id, customer_sent_at, updated_at FROM document_generation WHERE application_id = $1 AND version_id = $2",
         [appId, app.current_version_id],
       )
     ).rows;
+    // Only when the Super Admin has switched customer e-mails on, and only for documents prepared since then.
+    const setting = (await tx.query<{ customer_email_enabled: boolean; customer_email_enabled_at: Date | null }>("SELECT customer_email_enabled, customer_email_enabled_at FROM document_settings WHERE id = 1")).rows[0];
+    if (!setting?.customer_email_enabled) return false;
+    const since = setting.customer_email_enabled_at ?? new Date(0);
     const offer = rows.find((r) => r.kind === "OFFER");
-    if (!offer || offer.status !== "GENERATED") return false;
-    const unsent = rows.filter((r) => r.status === "GENERATED" && r.document_id && !r.customer_sent_at);
+    if (!offer || offer.status !== "GENERATED" || new Date(offer.updated_at) < since) return false;
+    const unsent = rows.filter((r) => r.status === "GENERATED" && r.document_id && !r.customer_sent_at && new Date(r.updated_at) >= since);
     if (!unsent.length) return false;
     const firstSend = !offer.customer_sent_at;
     // Send together: hold the first e-mail while a document still waits for something the initiator can supply.
@@ -174,7 +178,7 @@ export async function runDocumentGeneration(now = new Date()): Promise<number> {
   const apps = (
     await db.query<{ application_id: string }>(
       `SELECT DISTINCT g.application_id FROM document_generation g JOIN applications a ON a.id = g.application_id AND a.current_version_id = g.version_id
-        WHERE ((g.status IN ('PENDING','FAILED','WAITING') AND g.attempts < $1) OR (g.status = 'GENERATED' AND g.customer_sent_at IS NULL)) AND a.stage = ANY($2) LIMIT 25`,
+        WHERE ((g.status IN ('PENDING','FAILED','WAITING') AND g.attempts < $1) OR (g.status = 'GENERATED' AND g.customer_sent_at IS NULL AND EXISTS (SELECT 1 FROM document_settings ds WHERE ds.id = 1 AND ds.customer_email_enabled AND g.updated_at >= ds.customer_email_enabled_at))) AND a.stage = ANY($2) LIMIT 25`,
       [MAX_ATTEMPTS, CLOSING_STAGES],
     )
   ).rows;

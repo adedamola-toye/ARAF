@@ -26,6 +26,7 @@ export default async function DocumentSettings() {
       <section className="card" aria-labelledby="ds-h">
         <h2 id="ds-h">Bank and Remita beneficiary</h2>
         <DocumentSettingsForm
+          customerEmail={!!d.customer_email_enabled}
           v={{
             bankName: d.bank_name ?? "",
             bankAddress: d.bank_address ?? "",

@@ -19,6 +19,7 @@ export async function saveDocumentSettingsAction(_p: ActionState, fd: FormData):
       beneficiaryPhone: s(fd, "beneficiaryPhone"),
       charge: s(fd, "charge"),
       vatPercent: s(fd, "vatPercent"),
+      customerEmail: fd.get("customerEmail") === "on",
       reason: s(fd, "reason"),
     });
     revalidatePath("/admin/document-settings");
