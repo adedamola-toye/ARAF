@@ -1063,3 +1063,10 @@ dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
 .ce-grid dt { font-weight: 700; }
 .ce-grid dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 720px) { .ce-grid > div { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+/* Closing documents (offer, GSI mandate, Remita set-up sheet) */
+.closing-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; }
+.closing-list li { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.closing-ico { display: inline-flex; color: var(--muted); }
+.closing-body { display: flex; flex-direction: column; flex: 1 1 160px; min-width: 0; }
+.closing-links { display: inline-flex; gap: 6px; }

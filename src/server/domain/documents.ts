@@ -31,6 +31,9 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "KYC", label: "KYC documents", multiple: true },
   { code: "PRE_DISBURSEMENT", label: "Pre-disbursement document", multiple: false },
   { code: "GSI_FORM", label: "GSI form", multiple: false },
+  { code: "GENERATED_GSI", label: "GSI mandate form (prefilled by ARAF)", multiple: false },
+  { code: "GENERATED_REMITA", label: "Remita direct debit set-up sheet (prefilled by ARAF)", multiple: false },
+  { code: "REMITA_MANDATE", label: "Signed Remita mandate", multiple: false },
   { code: "INSURANCE_SIGNED", label: "Customer-signed insurance document", multiple: false },
   { code: "INSURANCE_EVIDENCE", label: "Evidence of insurance (Credit Officer 3)", multiple: false },
   { code: "SUPPORTING", label: "Other supporting document", multiple: true },
@@ -108,7 +111,7 @@ export const RETAIL_UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   FULFILMENT: ["FULFILMENT_EVIDENCE", "SUPPORTING"],
 };
 function PACK_LIST() {
-  return ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED"];
+  return ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "INSURANCE_SIGNED"];
 }
 
 /** Which categories the current task holder may upload at each stage. */
@@ -117,9 +120,9 @@ export const UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   INITIATOR_CORRECTION: INITIAL,
   FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
   CREDIT_CORRECTION: ["CREDIT_REPORT", "DSR_EXCEPTION_EVIDENCE", "SUPPORTING"],
-  OFFER_PREPARATION: [...PACK, "SUPPORTING"],
+  OFFER_PREPARATION: [...PACK, "REMITA_MANDATE", "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
-  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "SUPPORTING"],
+  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "REMITA_MANDATE", "SUPPORTING"],
 };
 
 export interface DocumentRow {
@@ -138,7 +141,7 @@ export interface DocumentRow {
   generated: boolean;
   template_id: string | null;
   template_version: number | null;
-  uploaded_by: string;
+  uploaded_by: string | null;
   uploaded_role: string | null;
   uploader_name?: string;
   uploaded_at: Date;
@@ -155,7 +158,7 @@ export interface DocumentRow {
 
 export async function listDocuments(q: Db, appId: string): Promise<DocumentRow[]> {
   const r = await q.query<DocumentRow>(
-    `SELECT d.*, s.full_name AS uploader_name FROM documents d JOIN staff s ON s.id = d.uploaded_by
+    `SELECT d.*, COALESCE(s.full_name, 'ARAF (generated)') AS uploader_name FROM documents d LEFT JOIN staff s ON s.id = d.uploaded_by
       WHERE d.application_id = $1 ORDER BY d.category, d.slot, d.version_no DESC`,
     [appId],
   );
@@ -245,7 +248,7 @@ async function insertDocumentRow(
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id`,
     [
       p.appId, p.category, slot, version, p.filename, p.mime, p.data.length, sha256Hex(p.data), p.storageKey, p.status,
-      p.generated ?? false, p.templateId ?? null, p.templateVersion ?? null, ctx.actor!.staffId, p.role, ctx.now, p.stage, p.versionId,
+      p.generated ?? false, p.templateId ?? null, p.templateVersion ?? null, ctx.actor?.staffId ?? null, p.role, ctx.now, p.stage, p.versionId,
       JSON.stringify(p.meta ?? {}),
     ],
   );
@@ -367,7 +370,7 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
 export async function storeGeneratedDocument(
   tx: Tx,
   ctx: Ctx,
-  p: { appId: string; category: string; filename: string; mime: string; data: Buffer; templateId: string; templateVersion: number; role: string; stage: string; versionId: string | null },
+  p: { appId: string; category: string; filename: string; mime: string; data: Buffer; templateId: string | null; templateVersion: number | null; role: string; stage: string; versionId: string | null; meta?: Record<string, string> },
 ) {
   const key = `documents/${p.appId}/${randomUUID()}`;
   await objectStore().put(key, p.data, p.mime);

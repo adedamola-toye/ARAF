@@ -158,3 +158,10 @@ CREATE TABLE application_handovers (
   PRIMARY KEY (application_id, group_code)
 );
 ALTER TABLE applications ADD COLUMN records_status text CHECK (records_status IN ('PREPARING_ARCHIVE','SENT_TO_LEGAL_SHARIAH','REVIEW_COMPLETED','FAILED'));
+
+-- 7. Documents ARAF prepares itself (offer, GSI mandate, Remita set-up sheet) have no human uploader.
+ALTER TABLE documents ALTER COLUMN uploaded_by DROP NOT NULL;
+
+-- 8. The customer's repayment (debit) account, used on the GSI mandate and the Remita set-up sheet.
+ALTER TABLE applications ADD COLUMN repayment_account jsonb;   -- {bankName, accountNumber, accountName, branch, townCity}
+ALTER TABLE document_settings ADD COLUMN remita_beneficiary_phone text;

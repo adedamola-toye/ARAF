@@ -11,6 +11,7 @@
  *   6. writes audit events and outbox notifications.
  * See docs/WORKFLOW.md for the state map.
  */
+import { generateClosingDocuments, queueClosingDocuments } from "./closing-docs";
 import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
 import { checkVerification, recordVerification } from "./verification";
@@ -103,6 +104,7 @@ export async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen
   app.status = statusForStage(stage, app.status);
   await audit(tx, ctx, { action: "STAGE_CHANGED", applicationId: app.id, stage, details: { from, to: stage } });
   await settleCreditException(tx, app.id, stage, ctx.now);
+  if (stage === "OFFER_PREPARATION") await queueClosingDocuments(tx, app.id, app.current_version_id, ctx.now);
   if (stage === "TEAM_LEAD_REVIEW") await enterTeamLeadReview(tx, app, ctx.now);
   if (chosen) return openTask(tx, ctx, app, stage, chosen, note);
   return null;
@@ -527,7 +529,7 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   try {
-    return await withTx(async (tx) => {
+    const result = await withTx(async (tx) => {
       const t0 = (await tx.query<TaskRow>("SELECT * FROM tasks WHERE id = $1", [input.taskId])).rows[0];
       if (!t0) throw notFound("Task not found.");
       return idempotent(tx, ctx, input.idempotencyKey, `TASK:${input.action}`, t0.application_id, async () => {
@@ -569,6 +571,9 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         return { applicationId: app.id, stage: app.stage, message };
       });
     });
+    // Closing documents (offer, GSI, Remita) are prepared after the approval commits; the worker retries.
+    if (result.stage === "OFFER_PREPARATION" && !result.replayed) void generateClosingDocuments(result.applicationId, ctx.now).catch((e) => console.error("[closing-docs]", e));
+    return result;
   } catch (e) {
     if (e instanceof DomainError && (e.code === "FORBIDDEN" || e.code === "GATE")) {
       await auditOutsideTx(ctx, { action: `TASK_${input.action}`, outcome: e.code === "FORBIDDEN" ? "DENIED" : "FAILURE", reason: e.message, details: { taskId: input.taskId } });
