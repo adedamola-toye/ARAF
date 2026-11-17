@@ -1,4 +1,4 @@
-import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight } from "lucide-react";
+import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -64,6 +64,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const showTracker = isAdmin || (retailScope?.kind === "ALL" && (await isEnabled(db, "REPAYMENT_TRACKER")));
   const unread = await unreadCount(db, session.staffId);
   const godsEye = await executiveAccess(db, session.staffId);
+  const icOfficer = roles.includes("INVOICE_CONFIRMATION_OFFICER");
+  const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
+  const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -95,9 +98,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Requested Today
             </NavLink>
           )}
+          {icOfficer && (
+            <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
+              Invoice confirmation
+            </NavLink>
+          )}
           {isApprover && (
             <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
               Exceptions
+            </NavLink>
+          )}
+          {creditExceptionsView && !altWs && (
+            <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
+              Credit score exceptions
             </NavLink>
           )}
           {showPerformance && !altWs && (
@@ -219,6 +232,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/exceptions" count={exceptions} alert icon={<Route {...ic} />}>
               Routing exceptions
+            </NavLink>
+            <NavLink href="/admin/configuration" icon={<SlidersHorizontal {...ic} />}>
+              Configuration centre
             </NavLink>
             <NavLink href="/admin/product-settings" icon={<PackageCheck {...ic} />}>
               Product settings

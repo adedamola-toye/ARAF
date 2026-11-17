@@ -199,7 +199,22 @@ describe("Scenario A: successful application end to end", () => {
     }
   });
 
-  it("an offer is not issued until the bank approves the staff template, then issues automatically", async () => {
+  it("the authorised Qard letter is issued as soon as the request is approved", async () => {
+    const tpl = (await db.query("SELECT production_approved, body_html FROM offer_templates WHERE applicant_type = 'STAFF' AND status = 'ACTIVE'")).rows[0];
+    expect(tpl.production_approved).toBe(true);
+    expect(tpl.body_html).toMatch(/Qard/);
+    expect(tpl.body_html).not.toMatch(/DRAFT WORDING/);
+    const id = await submittedStaffRequest();
+    await pmForward(id);
+    await unitHeadApprove(id);
+    await divisionalApprove(id);
+    const r = await reqRow(id);
+    expect(r.status).toBe("AWAITING_SIGNED_OFFER");
+    expect(r.offer_blocked_reason).toBeNull();
+  });
+
+  it("an offer is not issued while a staff template is unapproved, then issues automatically", async () => {
+    await db.query("UPDATE offer_templates SET production_approved = false WHERE applicant_type = 'STAFF'");
     const id = await submittedStaffRequest();
     await pmForward(id);
     await unitHeadApprove(id);

@@ -11,6 +11,9 @@
  *   6. writes audit events and outbox notifications.
  * See docs/WORKFLOW.md for the state map.
  */
+import { generateClosingDocuments, queueClosingDocuments } from "./closing-docs";
+import { disbursementBlockers, missingRequired } from "./closing-checklist";
+import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
 import { checkVerification, recordVerification } from "./verification";
 import type { VerificationInput } from "@/lib/approval-checklists";
@@ -41,7 +44,7 @@ import { type AppRow, chooseAssignee, openTask, type Chosen } from "./assignment
 import { holdsRole } from "./access";
 import { approvedAssessment, latestAssessment } from "./assessment";
 import { activeCalculator, calculatorUsableForApproval, findCalculator } from "./apr/registry";
-import { currentCleanDocuments, PACK } from "./documents";
+import { currentCleanDocuments } from "./documents";
 import { isInitiatorRole, isLegacyInitiatorRole, type InitiatorRole } from "./roles";
 import { routeForAmount } from "./routing";
 import { creditBandForApp, pinWorkflow } from "./approval-workflows";
@@ -101,6 +104,8 @@ export async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen
   app.stage = stage;
   app.status = statusForStage(stage, app.status);
   await audit(tx, ctx, { action: "STAGE_CHANGED", applicationId: app.id, stage, details: { from, to: stage } });
+  await settleCreditException(tx, app.id, stage, ctx.now);
+  if (stage === "OFFER_PREPARATION") await queueClosingDocuments(tx, app.id, app.current_version_id, ctx.now);
   if (stage === "TEAM_LEAD_REVIEW") await enterTeamLeadReview(tx, app, ctx.now);
   if (chosen) return openTask(tx, ctx, app, stage, chosen, note);
   return null;
@@ -525,7 +530,7 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   try {
-    return await withTx(async (tx) => {
+    const result = await withTx(async (tx) => {
       const t0 = (await tx.query<TaskRow>("SELECT * FROM tasks WHERE id = $1", [input.taskId])).rows[0];
       if (!t0) throw notFound("Task not found.");
       return idempotent(tx, ctx, input.idempotencyKey, `TASK:${input.action}`, t0.application_id, async () => {
@@ -551,6 +556,7 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         ctx.actor = { ...actor, activeRole: task.assignee_role };
         const subject = { kind: "APPLICATION" as const, id: app.id, ref: app.ref, lockVersion: app.lock_version, versionId: task.version_id, stage: task.stage, action: input.action, role: task.assignee_role, policy: app.approval_policy ?? null, workflow: app.workflow, taskId: task.id };
         const checklist = checkVerification(subject, input.verification);
+        if (app.workflow === "RETAIL") await requireExceptionAck(tx, app, task);
         const message = await dispatch(tx, ctx, app, task, input, reason);
         await persistApp(tx, app, ctx.now);
         if (checklist) await recordVerification(tx, ctx, subject, checklist, app.stage);
@@ -566,6 +572,13 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         return { applicationId: app.id, stage: app.stage, message };
       });
     });
+    // Closing documents (offer, GSI, Remita) are prepared after the approval commits; the worker retries.
+    // (Not in automated tests, which call these explicitly so nothing runs after a test has finished.)
+    if (result.stage === "OFFER_PREPARATION" && !result.replayed && process.env.APP_ENV !== "test") {
+      void generateClosingDocuments(result.applicationId, ctx.now).catch((e) => console.error("[closing-docs]", e));
+      void import("./invoice-confirmation").then((m) => m.dispatchForApplication(result.applicationId, ctx.now)).catch((e) => console.error("[invoice-confirmation]", e));
+    }
+    return result;
   } catch (e) {
     if (e instanceof DomainError && (e.code === "FORBIDDEN" || e.code === "GATE")) {
       await auditOutsideTx(ctx, { action: `TASK_${input.action}`, outcome: e.code === "FORBIDDEN" ? "DENIED" : "FAILURE", reason: e.message, details: { taskId: input.taskId } });
@@ -691,10 +704,8 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
     case "INITIATOR_CORRECTION":
       return resubmitByInitiator(tx, ctx, app, task);
     case "OFFER_PREPARATION": {
-      const docs = await currentCleanDocuments(tx, app.id);
-      const cats = new Set(docs.map((d) => d.category));
-      const missing = ["GENERATED_OFFER", ...PACK].filter((c) => !cats.has(c));
-      if (missing.length) throw gate(`The offer pack is incomplete. Missing: ${missing.map((m) => m.replace(/_/g, " ").toLowerCase()).join(", ")}.`);
+      const missing = await missingRequired(tx, app);
+      if (missing.length) throw gate(`The offer pack is incomplete. Missing: ${missing.join(", ")}.`);
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       if (app.active_correction_id) {
@@ -736,6 +747,8 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
         return "Sent back to Credit Officer 3 for correction.";
       }
       if (!input.crmsLogged) throw gate('Toggle "Logged CRMS" before selecting Okay.');
+      const blockers = await disbursementBlockers(tx, app);
+      if (blockers.length) throw gate(`Not ready for disbursement. ${blockers.join(" ")}`);
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a, { crmsLogged: true, attestedAt: ctx.now.toISOString() });
       const chosen = await chooseAssignee(tx, app, "DISBURSEMENT_BOOKING", { preferred: app.do2_id });

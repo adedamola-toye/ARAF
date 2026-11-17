@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   // Security hardening: never announce the framework (X-Powered-By). Guarded by tests/security-headers.test.ts.
   poweredByHeader: false,
   serverExternalPackages: ["pg", "exceljs", "nodemailer"],
+  // Files read at runtime (e.g. the logos on the generated GSI mandate) must ship with the serverless functions.
+  outputFileTracingIncludes: { "/**": ["./templates/closing/**"] },
   experimental: {
     serverActions: { bodySizeLimit: "25mb" },
   },

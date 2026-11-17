@@ -98,11 +98,14 @@ export async function appRow(appId: string) {
 }
 
 /** Act on the current open task as its assignee. */
-export async function act(appId: string, action: TaskActionInput["action"], extra: Partial<TaskActionInput> = {}, now = new Date()) {
+export async function act(appId: string, action: TaskActionInput["action"], extra: Partial<TaskActionInput> & { confirmInvoice?: boolean } = {}, now = new Date()) {
   const t = await openTaskOf(appId);
   if (!t?.email) throw new Error(`No assignee for open task on ${appId} (${t?.stage})`);
+  if (t.stage === "DISBURSEMENT_CHECK" && action === "OKAY" && extra.confirmInvoice !== false) await confirmInvoiceIfNeeded(appId, now);
   const ctx = await ctxFor(t.email, now);
-  return performTaskAction(ctx, await withVerification({ taskId: t.id, action, idempotencyKey: randomUUID(), ...extra }));
+  const { confirmInvoice: _ci, ...input } = extra;
+  void _ci;
+  return performTaskAction(ctx, await withVerification({ taskId: t.id, action, idempotencyKey: randomUUID(), ...input }));
 }
 
 /**
@@ -233,4 +236,20 @@ export async function driveToClosed(appId: string, now = new Date(), txRef = `TR
   }, now);
   await act(appId, "COMPLETE_PROCESS", {}, now);
   await act(appId, "CONFIRM_VENDOR_PAYMENT", {}, now);
+}
+
+
+export const DEMO_INVOICE_OFFICER = "invoice.officer@altbank.ng";
+
+/** Demo/test: the synthetic Invoice Confirmation Officer confirms the current invoice (if the request has one). */
+export async function confirmInvoiceIfNeeded(appId: string, now = new Date()) {
+  const { invoiceConfirmationBlocker, dispatchForApplication, completeConfirmation } = await import("../domain/invoice-confirmation");
+  if (!(await invoiceConfirmationBlocker(db, appId))) return;
+  await db.query("UPDATE invoice_confirmation_settings SET officer_emails = array_append(officer_emails, $1) WHERE id = 1 AND NOT ($1 = ANY(officer_emails))", [DEMO_INVOICE_OFFICER]);
+  await dispatchForApplication(appId, now);
+  const ic = (await db.query("SELECT id FROM invoice_confirmations WHERE application_id = $1 AND status = 'PENDING' ORDER BY created_at DESC LIMIT 1", [appId])).rows[0];
+  if (!ic) return;
+  const ctx = await ctxFor(DEMO_INVOICE_OFFICER, now);
+  await uploadDocument(ctx, { applicationId: appId, category: "INVOICE_CONFIRMATION_RESPONSE", filename: "issuer-confirmation.pdf", data: makePdf("Issuer confirms the invoice") });
+  await completeConfirmation(ctx, ic.id, "Confirmed with the issuer (synthetic).", null);
 }

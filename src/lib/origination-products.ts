@@ -1,6 +1,6 @@
 /**
  * The four products a Relationship Manager can originate, in display order. Each opens its existing journey:
- * WakeelBoost uses the WakeelBoost (legacy) workflow; the others are retail products driven by their approved
+ * WakeelBoost uses its own (WakeelBoost) workflow; the others are retail products driven by their approved
  * product configuration. Altphones is sold only from the Delight Officer / Smile Associate workspace.
  */
 export interface OriginationProduct {

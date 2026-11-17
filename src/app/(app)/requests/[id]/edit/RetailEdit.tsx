@@ -18,8 +18,10 @@ type Case = Awaited<ReturnType<typeof getCase>>;
 const k2s = (k: number | null | undefined) => (k === null || k === undefined ? "" : koboToNairaString(k).replace(/\.00$/, ""));
 
 import { CreditCheckPanel } from "@/components/CreditCheckPanel";
-import { retailCreditStatus } from "@/server/domain/retail-credit";
-import { retailCreditAction } from "../../retail-actions";
+import { currentLowScores, retailCreditStatus } from "@/server/domain/retail-credit";
+import { proceedWithReasonAction, retailCreditAction } from "../../retail-actions";
+import { ProceedWithReason } from "@/components/CreditException";
+import { openCreditException } from "@/server/domain/credit-exception";
 
 export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; staffId: string; sessionId: string; mode: "INITIATOR" | "ASSIGNED_RM" }) {
   const app = c.app;
@@ -107,6 +109,8 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
   const evidence = docs.filter((d) => ["EXCEPTION_EVIDENCE", "AFS", "BUSINESS_OPERATIONS_EVIDENCE", "BANK_STATEMENT"].includes(d.category) && d.scan_status === "CLEAN").map((d) => ({ id: d.id, label: `${CATEGORY_LABEL[d.category]}: ${d.filename}` }));
   const pre = readiness.preliminary;
   const credit = await retailCreditStatus(db, app.id, now);
+  const lowScores = await currentLowScores(db, app.id, now);
+  const openExc = await openCreditException(db, app.id);
   return (
     <>
       {header}
@@ -206,6 +210,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
       />
       <div className="form-after stack">
         <CreditCheckPanel persons={credit} action={retailCreditAction} hidden={{ applicationId: app.id }} canRun subjectNoun="the customer" />
+        {lowScores.length > 0 && <ProceedWithReason applicationId={app.id} failed={lowScores.map((f) => ({ person: f.person, score: f.score }))} existingReason={openExc?.rm_reason ?? null} action={proceedWithReasonAction} />}
         {proposalCard}
         {uploads}
         {readiness.config?.config.beneficiaryRequired && (

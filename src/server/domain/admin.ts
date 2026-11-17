@@ -7,6 +7,7 @@ import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
 import { type AppRow, assignmentSpec, eligibleStaff, notifyAssignment } from "./assignment";
+import { notifyExceptionReviewer } from "./credit-exception";
 import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, normaliseNigerianState, type Role } from "./roles";
 import type { Stage } from "./stages";
 import { validateTemplate, DOCX_MIME } from "./offer";
@@ -42,23 +43,34 @@ export async function directoryEntry(q: Db, email: string) {
   return (await q.query<{ email: string; full_name: string; is_group_mailbox: boolean; active: boolean }>("SELECT * FROM bank_directory WHERE email = $1", [email.toLowerCase()])).rows[0] ?? null;
 }
 
-export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null; role?: string | null }) {
+/**
+ * Provision one staff member (Super Admin) and, optionally, grant a role on the spot. With `addToDirectory`, an
+ * @altbank.ng address not yet in the bank directory is added to it (audited) instead of being refused.
+ */
+export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null; role?: string | null; team?: string | null; addToDirectory?: boolean }) {
   return adminOp(ctx, "STAFF_PROVISIONED", async (tx) => {
     const email = p.email.trim().toLowerCase();
     if (!isStaffDomain(email) || !/^[a-z0-9._%+-]+@[a-z0-9.-]+$/.test(email)) throw invalid(`Staff must use a verified @${config.staffEmailDomain} email.`, { email: "Invalid email." });
-    const dir = await directoryEntry(tx, email);
-    if (!dir || !dir.active) throw invalid("This email is not in the bank directory (verification failed).", { email: "Not found in the bank directory." });
+    if (p.fullName.trim().length < 3) throw invalid("Enter the staff member's full name.", { fullName: "Enter the full name." });
+    let dir = await directoryEntry(tx, email);
+    if (!dir && p.addToDirectory) {
+      await tx.query("INSERT INTO bank_directory (email, full_name, source, updated_at) VALUES ($1,$2,'staff-manual-add',$3) ON CONFLICT (email) DO NOTHING", [email, p.fullName.trim(), ctx.now]);
+      await audit(tx, ctx, { action: "DIRECTORY_ENTRY_ADDED", actorRole: "SUPER_ADMIN", details: { email, source: "staff-manual-add" } });
+      dir = await directoryEntry(tx, email);
+    }
+    if (!dir) throw invalid("This email is not in the bank directory.", { email: "Not found in the bank directory." });
+    if (!dir.active) throw invalid("This email is marked inactive in the bank directory.", { email: "Inactive in the bank directory." });
     if (dir.is_group_mailbox) throw invalid("Group mailboxes cannot be provisioned as staff.", { email: "Group mailbox." });
     if (p.region && !isRegion(p.region)) throw invalid("Unknown state.", { region: "Unknown state." });
     if (p.role && !isRole(p.role)) throw invalid("Unknown role.", { role: "Unknown role." });
     const exists = await tx.query("SELECT 1 FROM staff WHERE email = $1", [email]);
-    if (exists.rowCount) throw conflict("A staff record already exists for this email.");
+    if (exists.rowCount) throw conflict("This person is already on the staff list. Open them in the list below to change their role.");
     const r = await tx.query<{ id: string }>(
       `INSERT INTO staff (email, full_name, region, business_unit, created_by, created_at, updated_at) VALUES ($1,$2,$3,$4,$5,$6,$6) RETURNING id`,
       [email, p.fullName.trim() || dir.full_name, p.region || null, p.businessUnit?.trim() || null, ctx.actor!.staffId, ctx.now],
     );
     if (p.role) {
-      await grantRoleInTx(tx, ctx, { staffId: r.rows[0].id, role: p.role, region: p.region ?? null, businessUnit: p.businessUnit ?? null });
+      await grantRoleInTx(tx, ctx, { staffId: r.rows[0].id, role: p.role, region: p.region ?? null, businessUnit: p.businessUnit ?? null, team: p.team ?? null });
     }
     await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId: r.rows[0].id, email, region: p.region ?? null, role: p.role ?? null } });
     return r.rows[0].id;
@@ -192,6 +204,7 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     if (c) await tx.query(`UPDATE applications SET ${c} = $2, lock_version = lock_version + 1, updated_at = $3 WHERE id = $1`, [app.id, staffId, ctx.now]);
     await audit(tx, ctx, { action: "TASK_REASSIGNED", actorRole: "SUPER_ADMIN", applicationId: app.id, stage: task.stage, reason: note, assignmentFrom: task.assignee_id, assignmentTo: staffId, details: { taskId } });
     await notifyAssignment(tx, ctx, app, taskId, task.stage as Stage, staffId, `:admin:${ctx.now.getTime()}`);
+    await notifyExceptionReviewer(tx, ctx, app, taskId, task.stage as Stage, staffId);
   });
 }
 

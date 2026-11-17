@@ -1,4 +1,7 @@
 import { checklistFor } from "@/lib/approval-checklists";
+import { ackSlot, creditExceptionFor, exceptionView, openCreditException } from "@/server/domain/credit-exception";
+import { ExceptionAckForm, ExceptionBanner } from "@/components/CreditException";
+import { acknowledgeExceptionAction } from "../retail-actions";
 import { EMPLOYMENT_STATUSES, SALARY_FREQUENCIES, label } from "@/lib/customer-types";
 import { currentPhotoReview, MIN_SKIP_REASON, photoSkips } from "@/server/domain/photo-review";
 import { retailCreditStatus } from "@/server/domain/retail-credit";
@@ -143,8 +146,10 @@ export async function RetailOverview({ c }: { c: Case }) {
   const out = b.prelim?.outputs as AffordabilityOutput | undefined;
   const skips = await photoSkips(db, app.id);
   const photoNow = await currentPhotoReview(db, app.id);
+  const exc = await creditExceptionFor(db, app.id);
   return (
     <div className="stack">
+      {exc && exc.status !== "SUPERSEDED" && <ExceptionBanner e={exceptionView(exc)} heading={app.stage === "TEAM_LEAD_REVIEW" ? "CREDIT SCORE EXCEPTION — SEEDFI LOW SCORE" : "CREDIT SCORE EXCEPTION — REQUIRES ATTENTION"} />}
       {app.suspended_at && <div className="alert alert-warn"><AlertTriangle className="icon" aria-hidden="true" /> Suspended: {app.suspension_reason}</div>}
       {skips.map((k, i) => (
         <div key={i} className="alert alert-warn" role="note">
@@ -336,6 +341,15 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
   const effective = app.product_code ? await effectiveConfig(db, app.product_code, now) : null;
   const gapsNow = effective ? configGaps(effective.config, { profile: app.customer_profile as CustomerProfile, structure: app.financing_structure }) : [];
   if (app.suspended_at) body.push(<Blocked key="susp">Suspended: {app.suspension_reason}. Actions are paused.</Blocked>);
+  const openExc = await openCreditException(db, app.id);
+  if (openExc && ackSlot(openExc, stage)) {
+    body.push(
+      <div key="exc" className="stack">
+        <ExceptionBanner e={exceptionView(openExc)} heading={stage === "TEAM_LEAD_REVIEW" ? "CREDIT SCORE EXCEPTION — SEEDFI LOW SCORE" : "CREDIT SCORE EXCEPTION — REQUIRES ATTENTION"} />
+        <ExceptionAckForm applicationId={app.id} action={acknowledgeExceptionAction} />
+      </div>,
+    );
+  }
   if (openCorrection && ["CREDIT_CORRECTION", "INITIATOR_CORRECTION", "OFFER_PREPARATION"].includes(stage)) {
     body.push(<div key="corr" className="alert alert-warn"><AlertTriangle className="icon" aria-hidden="true" /><span><strong>Correction requested</strong> by {openCorrection.requested_by_name}: {openCorrection.reason}</span></div>);
   }

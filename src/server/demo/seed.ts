@@ -46,6 +46,7 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "do1@altbank.ng", name: "Peter Disburse-One", roles: [{ role: "DISBURSEMENT_OFFICER_1" }], unit: "Operations" },
   { email: "do2@altbank.ng", name: "Mary Disburse-Two", roles: [{ role: "DISBURSEMENT_OFFICER_2" }], unit: "Operations" },
   { email: "legal.officer@altbank.ng", name: "Lanre Legal", roles: [{ role: "LEGAL_REVIEWER" }], unit: "Legal" },
+  { email: "invoice.officer@altbank.ng", name: "Ifeoma Invoice (synthetic)", roles: [{ role: "INVOICE_CONFIRMATION_OFFICER" }], unit: "Operations" },
   { email: "shariah.officer@altbank.ng", name: "Aisha Shariah", roles: [{ role: "SHARIAH_REVIEWER" }], unit: "Shariah Compliance" },
   // Retail Asset Factory (synthetic)
   { email: "rm.bola@altbank.ng", name: "Bola Adisa", roles: [{ role: "RM", region: "LAGOS", team: "RETAIL-LAGOS-1" }], region: "LAGOS", unit: "Retail" },
@@ -129,7 +130,8 @@ export async function seedReferenceData(q: Db, opts: { includeDemo?: boolean } =
   ] as const) {
     for (const e of emails) await q.query("INSERT INTO recipient_group_members (group_code, email) VALUES ($1,$2) ON CONFLICT DO NOTHING", [g, e]);
   }
-  const tpl = await q.query("SELECT 1 FROM offer_templates");
+  // WakeelBoost letters (retail and staff letters are seeded separately, some by migrations).
+  const tpl = await q.query("SELECT 1 FROM offer_templates WHERE product_code IS NULL AND coalesce(applicant_type, '') <> 'STAFF'");
   if (!tpl.rowCount) await seedOfferTemplates(q);
   await seedInitialProductConfigs(q);
   await seedRetailOfferTemplates(q);
@@ -190,7 +192,7 @@ async function seedRetailDemoReference(q: Db, ids: Record<string, string>) {
 }
 
 /**
- * Draft retail offer templates (HTML) per product and structure. Seeded ACTIVE but NOT approved:
+ * Retail offer templates (HTML) per product and structure (base wording; see the authorised letters below).
  * retail offers can be generated only after the Super Admin approves the bank's wording.
  */
 export const RETAIL_OFFER_TEMPLATE_HTML = `<h1>Offer of {{product}} facility</h1>
@@ -224,28 +226,49 @@ export const STAFF_OFFER_TEMPLATE_HTML = `<h1>Offer of Staff Personal Financing<
 <p>Return this letter signed by {{acceptance_deadline}}. After that time the offer lapses.</p>
 <p>DRAFT WORDING: replace with the bank-approved Legal and Shariah offer text before approving this template.</p>`;
 
-/** Draft staff offer template: ACTIVE but not approved, so no offer is issued until the bank approves its wording. */
+/** Authorised by the business owner (17 Nov 2026): the Qard (Staff Salary Advance) and Ijarah (Alt Drive) letters. */
+export const AUTHORISED_NOTE = "Approved for use by the business owner on 17 Nov 2026 (authorisation recorded in migrations 046 and 047).";
+export const STAFF_QARD_OFFER_HTML = STAFF_OFFER_TEMPLATE_HTML.replace("<h1>Offer of Staff Personal Financing</h1>", "<h1>Offer of Staff Salary Advance (Qard)</h1>").replace(
+  "<p>DRAFT WORDING: replace with the bank-approved Legal and Shariah offer text before approving this template.</p>",
+  `<p>By signing below, I accept this Qard (salary advance) and authorise the bank to recover it from my salary account as set out above.</p>
+<p>Accepted by: {{staff_name}}</p>
+<p>Signature: ______________________________ &nbsp; Date: ____________________</p>`,
+);
+const acceptance = (terms: string) => `<p>By signing below, the customer accepts this offer and the terms of the ${terms} facility.</p>
+<p>Accepted by: {{customer_name}}</p>
+<p>Signature: ______________________________ &nbsp; Date: ____________________</p>
+<p>For The Alternative Bank: ______________________________</p>`;
+const RETAIL_DRAFT_NOTE = "<p>DRAFT WORDING: replace with the bank-approved offer and contract text before approving this template.</p>";
+export const IJARAH_OFFER_HTML = RETAIL_OFFER_TEMPLATE_HTML.replace("({{structure}})", "(Ijarah)").replace(RETAIL_DRAFT_NOTE, acceptance("Ijarah (lease)"));
+export const MURABAHA_OFFER_HTML = RETAIL_OFFER_TEMPLATE_HTML.replace("({{structure}})", "(Murabaha)").replace(RETAIL_DRAFT_NOTE, acceptance("Murabaha (cost-plus sale)"));
+
+/** Staff (Qard) offer template: approved, so the offer is issued as soon as the request is approved. */
 export async function seedStaffOfferTemplate(q: Db) {
   await q.query(
-    `INSERT INTO offer_templates (name, version, format, applicant_type, body_html, status, production_approved, notes, activated_at)
-     SELECT 'Staff personal financing offer', 1, 'HTML', 'STAFF', $1, 'ACTIVE', false, 'Draft placeholder wording: approve only after replacing with the bank-approved text.', now()
+    `INSERT INTO offer_templates (name, version, format, applicant_type, body_html, status, production_approved, approved_at, notes, activated_at)
+     SELECT 'Staff personal financing offer', 1, 'HTML', 'STAFF', $1, 'ACTIVE', true, now(), $2, now()
       WHERE NOT EXISTS (SELECT 1 FROM offer_templates WHERE applicant_type = 'STAFF')`,
-    [STAFF_OFFER_TEMPLATE_HTML],
+    [STAFF_QARD_OFFER_HTML, AUTHORISED_NOTE],
   );
 }
 
+/** Retail offer letters, authorised by the business owner (17 Nov 2026); "Standard" structures use the Murabaha letter. */
 export async function seedRetailOfferTemplates(q: Db) {
   const combos = [
     ["VENDOR_FINANCING", "STANDARD"],
+    ["VENDOR_FINANCING", "MURABAHA"],
     ["ALT_DRIVE", "MURABAHA"],
     ["ALT_DRIVE", "IJARAH"],
+    ["ALT_POWER", "STANDARD"],
+    ["ALT_POWER", "MURABAHA"],
+    ["ALT_POWER", "IJARAH"],
   ];
   for (const [product, structure] of combos) {
     await q.query(
-      `INSERT INTO offer_templates (name, version, format, product_code, structure, body_html, status, production_approved, notes, activated_at)
-       SELECT $1, 1, 'HTML', $2, $3, $4, 'ACTIVE', false, 'Draft placeholder wording: approve only after replacing with the bank-approved text.', now()
+      `INSERT INTO offer_templates (name, version, format, product_code, structure, body_html, status, production_approved, approved_at, notes, activated_at)
+       SELECT $1, 1, 'HTML', $2, $3, $4, 'ACTIVE', true, now(), $5, now()
         WHERE NOT EXISTS (SELECT 1 FROM offer_templates WHERE product_code = $2 AND structure = $3)`,
-      [`${product.replace("_", " ")} ${structure} offer`, product, structure, RETAIL_OFFER_TEMPLATE_HTML],
+      [`${product.replace("_", " ")} ${structure} offer`, product, structure, structure === "IJARAH" ? IJARAH_OFFER_HTML : MURABAHA_OFFER_HTML, AUTHORISED_NOTE],
     );
   }
 }

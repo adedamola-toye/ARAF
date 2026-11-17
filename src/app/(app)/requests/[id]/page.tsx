@@ -27,6 +27,8 @@ function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: un
   return c.instalments.length > 0 && c.instalments.length !== tenor;
 }
 import { UploadPanel } from "@/components/UploadPanel";
+import { ClosingDocuments } from "./ClosingDocuments";
+import { RecordsCard } from "./RecordsCard";
 import { RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
@@ -251,6 +253,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         </section>
         <aside className="split-right" aria-label="Actions and preview">
           {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
+          <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} link={link} />
+          <RecordsCard appId={app.id} recordsStatus={app.records_status ?? null} roles={roles} />
           {retail && <RetailCaseTools c={c} staffId={session.staffId} roles={roles} />}
           {!myTask && c.openTask && (
             <div className="card">
