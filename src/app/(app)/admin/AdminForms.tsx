@@ -7,15 +7,61 @@ type Opt = { value: string; label: string };
 export function ProvisionForm({ regions, roles }: { regions: string[]; roles: Opt[] }) {
   return (
     <ActionForm action={A.provisionAction} refreshOnSuccess={false}>
-      <div className="grid-2">
-        <div className="field"><label htmlFor="email">Work email (@altbank.ng, must exist in bank directory)</label><input id="email" name="email" type="email" required /></div>
-        <div className="field"><label htmlFor="fullName">Full name</label><input id="fullName" name="fullName" required /></div>
-        <div className="field"><label htmlFor="role">Role</label><select id="role" name="role"><option value="">No role yet</option>{roles.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</select></div>
-        <div className="field"><label htmlFor="region">State</label><select id="region" name="region"><option value="">None</option>{regions.map((r) => <option key={r}>{r}</option>)}</select></div>
-        <div className="field"><label htmlFor="businessUnit">Business unit</label><input id="businessUnit" name="businessUnit" /></div>
-      </div>
-      <p className="small muted" style={{ margin: 0 }}>ANM roles require a state. Legal and Shariah reviewers must first be added to their recipient group.</p>
-      <div><SubmitButton>Provision staff</SubmitButton></div>
+      {(st) => (
+        <>
+          <div className="grid-2">
+            <div className="field">
+              <label htmlFor="email">Work email (@altbank.ng)</label>
+              <input id="email" name="email" type="email" required autoComplete="off" />
+              {st.fields?.email && <span className="err">{st.fields.email}</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="fullName">Full name</label>
+              <input id="fullName" name="fullName" required />
+              {st.fields?.fullName && <span className="err">{st.fields.fullName}</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="role">Role</label>
+              <select id="role" name="role">
+                <option value="">No role yet</option>
+                {roles.map((r) => (
+                  <option key={r.value} value={r.value}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="pteam">Team (routing scope)</label>
+              <input id="pteam" name="team" placeholder="e.g. RETAIL-LAGOS-1" />
+              <span className="hint">Required for Relationship Managers and Team Leads.</span>
+              {st.fields?.team && <span className="err">{st.fields.team}</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="region">State</label>
+              <select id="region" name="region">
+                <option value="">None</option>
+                {regions.map((r) => (
+                  <option key={r}>{r}</option>
+                ))}
+              </select>
+              {st.fields?.region && <span className="err">{st.fields.region}</span>}
+            </div>
+            <div className="field">
+              <label htmlFor="businessUnit">Business unit</label>
+              <input id="businessUnit" name="businessUnit" />
+            </div>
+          </div>
+          <label className="check">
+            <input type="checkbox" name="addToDirectory" defaultChecked />
+            <span>Add to the bank directory if the email is not there yet</span>
+          </label>
+          <p className="small muted" style={{ margin: 0 }}>The person can sign in with this email straight away. ANM roles require a state. Legal and Shariah reviewers must first be added to their recipient group.</p>
+          <div>
+            <SubmitButton>Provision staff</SubmitButton>
+          </div>
+        </>
+      )}
     </ActionForm>
   );
 }

@@ -30,12 +30,13 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
       <div className="page-head">
         <div>
           <h1>Staff &amp; roles</h1>
-          <p>Provision named staff against verified @altbank.ng entries in the <Link href="/admin/directory">bank directory</Link>. There is no public registration. Admin status does not grant approval powers.</p>
+          <p>Add named staff with their @altbank.ng email (they are added to the <Link href="/admin/directory">bank directory</Link> if needed). There is no public registration. Admin status does not grant approval powers.</p>
         </div>
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
-        <h2>Provision staff</h2>
-        <ProvisionForm regions={[...REGIONS]} roles={ROLES.map((r) => ({ value: r, label: ROLE_LABELS[r] }))} />
+        <h2>Add a staff member</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>Enter their email and name, and choose a role to assign now. For many people at once, use the bulk upload below.</p>
+        <ProvisionForm regions={[...REGIONS]} roles={roleOptions} />
       </div>
       <div className="card" style={{ marginBottom: 16 }}>
         <h2>Bulk upload staff</h2>

@@ -43,12 +43,23 @@ export async function directoryEntry(q: Db, email: string) {
   return (await q.query<{ email: string; full_name: string; is_group_mailbox: boolean; active: boolean }>("SELECT * FROM bank_directory WHERE email = $1", [email.toLowerCase()])).rows[0] ?? null;
 }
 
-export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null; role?: string | null }) {
+/**
+ * Provision one staff member (Super Admin) and, optionally, grant a role on the spot. With `addToDirectory`, an
+ * @altbank.ng address not yet in the bank directory is added to it (audited) instead of being refused.
+ */
+export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: string; region?: string | null; businessUnit?: string | null; role?: string | null; team?: string | null; addToDirectory?: boolean }) {
   return adminOp(ctx, "STAFF_PROVISIONED", async (tx) => {
     const email = p.email.trim().toLowerCase();
     if (!isStaffDomain(email) || !/^[a-z0-9._%+-]+@[a-z0-9.-]+$/.test(email)) throw invalid(`Staff must use a verified @${config.staffEmailDomain} email.`, { email: "Invalid email." });
-    const dir = await directoryEntry(tx, email);
-    if (!dir || !dir.active) throw invalid("This email is not in the bank directory (verification failed).", { email: "Not found in the bank directory." });
+    if (p.fullName.trim().length < 3) throw invalid("Enter the staff member's full name.", { fullName: "Enter the full name." });
+    let dir = await directoryEntry(tx, email);
+    if (!dir && p.addToDirectory) {
+      await tx.query("INSERT INTO bank_directory (email, full_name, source, updated_at) VALUES ($1,$2,'staff-manual-add',$3) ON CONFLICT (email) DO NOTHING", [email, p.fullName.trim(), ctx.now]);
+      await audit(tx, ctx, { action: "DIRECTORY_ENTRY_ADDED", actorRole: "SUPER_ADMIN", details: { email, source: "staff-manual-add" } });
+      dir = await directoryEntry(tx, email);
+    }
+    if (!dir) throw invalid("This email is not in the bank directory. Tick “Add to the bank directory” to add it now.", { email: "Not found in the bank directory." });
+    if (!dir.active) throw invalid("This email is marked inactive in the bank directory.", { email: "Inactive in the bank directory." });
     if (dir.is_group_mailbox) throw invalid("Group mailboxes cannot be provisioned as staff.", { email: "Group mailbox." });
     if (p.region && !isRegion(p.region)) throw invalid("Unknown state.", { region: "Unknown state." });
     if (p.role && !isRole(p.role)) throw invalid("Unknown role.", { role: "Unknown role." });
@@ -59,7 +70,7 @@ export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: str
       [email, p.fullName.trim() || dir.full_name, p.region || null, p.businessUnit?.trim() || null, ctx.actor!.staffId, ctx.now],
     );
     if (p.role) {
-      await grantRoleInTx(tx, ctx, { staffId: r.rows[0].id, role: p.role, region: p.region ?? null, businessUnit: p.businessUnit ?? null });
+      await grantRoleInTx(tx, ctx, { staffId: r.rows[0].id, role: p.role, region: p.region ?? null, businessUnit: p.businessUnit ?? null, team: p.team ?? null });
     }
     await audit(tx, ctx, { action: "STAFF_PROVISIONED", actorRole: "SUPER_ADMIN", details: { staffId: r.rows[0].id, email, region: p.region ?? null, role: p.role ?? null } });
     return r.rows[0].id;

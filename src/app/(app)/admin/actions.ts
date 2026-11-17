@@ -48,6 +48,8 @@ export async function provisionAction(_p: ActionState, fd: FormData): Promise<Ac
       region: s(fd, "region") || null,
       businessUnit: s(fd, "businessUnit") || null,
       role: s(fd, "role") || null,
+      team: s(fd, "team") || null,
+      addToDirectory: fd.get("addToDirectory") === "on",
     });
   } catch (e) {
     return toActionError(e);
