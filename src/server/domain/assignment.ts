@@ -1,4 +1,5 @@
 import type { Tx } from "../db";
+import { notifyExceptionReviewer } from "./credit-exception";
 import type { Ctx } from "../context";
 import { audit } from "../audit";
 import { securePick } from "../crypto";
@@ -322,6 +323,7 @@ export async function openTask(
   });
   if (chosen.staffId) {
     await notifyAssignment(tx, ctx, app, taskId, stage, chosen.staffId);
+    await notifyExceptionReviewer(tx, ctx, app, taskId, stage, chosen.staffId);
   } else {
     await notifyAdminsUnassigned(tx, ctx, app, taskId, stage, chosen.role);
   }

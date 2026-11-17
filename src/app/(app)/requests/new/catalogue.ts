@@ -84,3 +84,45 @@ export async function categoriesOffered(q: Db, p: OriginationProduct, now: Date)
 
 /** The customer-type step applies to retail originators (Relationship Managers, Team Leads, Unit Heads). */
 export const usesCustomerStep = (products: readonly OriginationProduct[]) => products.some((p) => p.kind === "RETAIL");
+
+export interface AccessLine {
+  product: string;
+  ok: boolean;
+  reason: string;
+  categories: string[];
+}
+
+/**
+ * Why a user can or cannot originate each product (Super Admin diagnostic). Uses the same checks as the product
+ * cards, the request pages and the server: provisioned roles, the product's origination roles, availability.
+ */
+export async function explainAccess(q: Db, email: string, now: Date): Promise<{ name: string | null; status: string | null; roles: string[]; lines: AccessLine[] } | null> {
+  const s = (await q.query<{ id: string; full_name: string; status: string }>("SELECT id, full_name, status FROM staff WHERE lower(email) = lower($1)", [email.trim()])).rows[0];
+  if (!s) return null;
+  const roles = (await q.query<{ role: string }>("SELECT DISTINCT role FROM role_assignments WHERE staff_id = $1 AND active", [s.id])).rows.map((r) => r.role);
+  const settings = await originationSettings(q);
+  const lines: AccessLine[] = [];
+  for (const p of ORIGINATION_PRODUCTS) {
+    const row = await getProduct(q, p.code);
+    const allowedByType: readonly string[] = p.kind === "WAKEELBOOST" ? LEGACY_INITIATOR_ROLES : RETAIL_INITIATOR_ROLES;
+    const held = roles.filter((r) => allowedByType.includes(r));
+    const configured = settings[p.code];
+    const cats = (await categoriesOffered(q, p, now)).map((c) => (c === "SALARY_EARNER" ? "Salaried Individual" : "Business Owner"));
+    let ok = false;
+    let reason: string;
+    if (s.status !== "ACTIVE") reason = `The user's profile is ${s.status.toLowerCase()}.`;
+    else if (!held.length) reason = `No role that originates ${p.name} (needs one of: ${allowedByType.join(", ")}).`;
+    else if (configured && !held.some((r) => configured.includes(r))) reason = `Product settings restrict origination to: ${configured.join(", ")}.`;
+    else {
+      const a = await availability(q, p, roles, now);
+      if (a.status === "UNAVAILABLE") reason = `Visible, but cannot be started: ${a.reason}`;
+      else {
+        ok = true;
+        reason = `Visible and open (as ${held.filter((r) => !configured || configured.includes(r)).join(", ")}).`;
+      }
+    }
+    if (!row) reason = `${p.name} is not set up in ARAF.`;
+    lines.push({ product: p.name, ok, reason, categories: cats });
+  }
+  return { name: s.full_name, status: s.status, roles, lines };
+}

@@ -38,7 +38,8 @@ import { creditBandForApp, definitionForApp, pinWorkflow } from "./approval-work
 import { nextBusinessStage, retailBusinessStages } from "@/lib/approval-workflow";
 import { STAGE_LABELS, stageLabel, type Stage } from "./stages";
 import { recordRequestLedger, noteLatestRequestedAmount } from "./wallet";
-import { retailCreditBlockers } from "./retail-credit";
+import { currentLowScores, retailCreditBlockers } from "./retail-credit";
+import { supersedeIfCleared } from "./credit-exception";
 import {
   activeCorrection,
   completeTask,
@@ -671,6 +672,8 @@ export async function submitRetail(tx: Tx, ctx: Ctx, app: AppRow): Promise<Actio
   const { cfg, rules, data } = await finaliseRetailVersion(tx, ctx, app);
   const credit = await retailCreditBlockers(tx, app.id, ctx.now);
   if (credit.length) throw gate(credit.join(" "));
+  // A justification recorded earlier is set aside (kept) when a later check cleared every person.
+  await supersedeIfCleared(tx, ctx, app.id, (await currentLowScores(tx, app.id, ctx.now)).length);
   const docs = await currentCleanDocuments(tx, app.id);
   await storeAssessment(tx, ctx, app, "PRELIMINARY", cfg, rules, preliminaryInput(app.applicant_type, data, docs), app.initiator_role);
   (app as { submitted_at: Date | null }).submitted_at = ctx.now;

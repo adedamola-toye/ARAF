@@ -94,7 +94,7 @@ export default async function ProductsAdmin() {
         {all.filter((p) => p.workflow === "WAKEELBOOST").map((p) => (
           <section key={p.code} className="card">
             <div className="card-head">
-              <h2>{p.name} (legacy) <span className="badge">{p.active ? "open" : "closed to new applications"}</span></h2>
+              <h2>{p.name} <span className="badge">{p.active ? "open" : "closed to new applications"}</span></h2>
               {isAdmin && <ProductToggle code={p.code} active={p.active} />}
             </div>
             <p className="small muted" style={{ margin: 0 }}>Historical WakeelBoost cases keep their label and workflow. Its pricing is managed under WakeelBoost pricing.</p>

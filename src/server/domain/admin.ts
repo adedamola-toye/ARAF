@@ -7,6 +7,7 @@ import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
 import { type AppRow, assignmentSpec, eligibleStaff, notifyAssignment } from "./assignment";
+import { notifyExceptionReviewer } from "./credit-exception";
 import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, normaliseNigerianState, type Role } from "./roles";
 import type { Stage } from "./stages";
 import { validateTemplate, DOCX_MIME } from "./offer";
@@ -192,6 +193,7 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     if (c) await tx.query(`UPDATE applications SET ${c} = $2, lock_version = lock_version + 1, updated_at = $3 WHERE id = $1`, [app.id, staffId, ctx.now]);
     await audit(tx, ctx, { action: "TASK_REASSIGNED", actorRole: "SUPER_ADMIN", applicationId: app.id, stage: task.stage, reason: note, assignmentFrom: task.assignee_id, assignmentTo: staffId, details: { taskId } });
     await notifyAssignment(tx, ctx, app, taskId, task.stage as Stage, staffId, `:admin:${ctx.now.getTime()}`);
+    await notifyExceptionReviewer(tx, ctx, app, taskId, task.stage as Stage, staffId);
   });
 }
 

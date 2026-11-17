@@ -1,7 +1,9 @@
 /**
  * SeedFi credit check on the Relationship Manager retail route. The initiator runs it before submission on the
  * applicant (individual or enterprise proprietor) or, for a limited company, on each director, using the BVN
- * already captured in the draft. Pass or Fair lets the request be submitted; Fail closes it (REJECTED).
+ * already captured in the draft. Pass or Fair lets the request be submitted. A low score (Fail) no longer closes
+ * the request: the RM may "Proceed with Reason" (credit-exception.ts), which submits it for Team Lead and Unit Head
+ * review with the original result kept. An unavailable result can never be bypassed.
  * A check counts only for the BVN currently on the draft and for 30 days.
  */
 import type { Db } from "../db";
@@ -10,9 +12,10 @@ import type { Ctx } from "../context";
 import { audit, auditOutsideTx } from "../audit";
 import { decryptField } from "../crypto";
 import { DomainError, forbidden, gate, invalid, notFound } from "../errors";
-import { assertCanEdit, lockApp, moveTo, persistApp, resolveAllCorrections } from "./workflow";
+import { assertCanEdit, lockApp } from "./workflow";
+import { openCreditException, type FailedCheck } from "./credit-exception";
 import { loadRetailState } from "./retail";
-import { bvnHash, callSeedfi, isCurrentPass, todayIn, validatePerson, type CreditCheckRow, type PersonInput } from "../credit/seedfi";
+import { bvnHash, callSeedfi, isCurrentPass, SCORE_VALID_DAYS, todayIn, validatePerson, type CreditCheckRow, type PersonInput } from "../credit/seedfi";
 
 export interface CreditPerson {
   key: string;
@@ -53,10 +56,33 @@ export async function retailCreditStatus(q: Db, appId: string, now: Date): Promi
   });
 }
 
-/** Blockers for submission (empty when every required person has a current Pass or Fair). */
+/** A completed low-score (Fail) check, for the BVN now on the draft, within the validity period. */
+export function isCurrentFail(c: CreditCheckRow | undefined, bvnHashNow: string | null, now: Date) {
+  if (!c || c.status !== "COMPLETED" || !bvnHashNow || c.bvn_hash !== bvnHashNow || c.outcome !== "FAIL") return false;
+  return now.getTime() - new Date(c.created_at).getTime() <= SCORE_VALID_DAYS * 86400_000;
+}
+
+/** People whose current SeedFi result is a low score (qualifies for Proceed with Reason). */
+export async function currentLowScores(q: Db, appId: string, now: Date): Promise<FailedCheck[]> {
+  return (await retailCreditStatus(q, appId, now))
+    .filter((p) => isCurrentFail(p.latest, p.bvnHash, now))
+    .map((p) => ({ checkId: p.latest!.id, person: p.label, score: p.latest!.score === null ? null : Number(p.latest!.score), outcome: "FAIL", checkedAt: new Date(p.latest!.created_at).toISOString() }));
+}
+
+/** Blockers for submission (empty when every person has a current Pass or Fair, or a low score covered by Proceed with Reason). */
 export async function retailCreditBlockers(q: Db, appId: string, now: Date): Promise<string[]> {
   const st = await retailCreditStatus(q, appId, now);
-  return st.filter((p) => p.bvnHash && !p.current).map((p) => `Run the SeedFi credit check for ${p.label}.`);
+  const exception = await openCreditException(q, appId);
+  const out: string[] = [];
+  for (const p of st) {
+    if (!p.bvnHash || p.current) continue;
+    if (isCurrentFail(p.latest, p.bvnHash, now)) {
+      if (!exception) out.push(`SeedFi returned a low credit score for ${p.label}. Use Proceed with Reason to submit the request for review, or withdraw it.`);
+      continue;
+    }
+    out.push(`Run the SeedFi credit check for ${p.label}.`);
+  }
+  return out;
 }
 
 export async function runRetailCreditCheck(ctx: Ctx, appId: string, personKey: string, p: PersonInput) {
@@ -98,17 +124,14 @@ export async function runRetailCreditCheck(ctx: Ctx, appId: string, personKey: s
       details: { person: label, bvnLast4: bvn.slice(-4), outcome: r.outcome, score: r.score, overallScore: r.overallScore, error: r.error },
     });
     if (r.outcome === "FAIL") {
-      await tx.query("UPDATE tasks SET status = 'CANCELLED', completed_at = $2, completed_by = $3, outcome = 'CREDIT_FAILED' WHERE application_id = $1 AND status = 'OPEN'", [app.id, ctx.now, actor.staffId]);
-      await resolveAllCorrections(tx, ctx, app, "CREDIT_FAILED");
-      await moveTo(tx, ctx, app, "REJECTED", null, `SeedFi credit check failed for ${label} (Seed Score ${r.score}).`);
-      await persistApp(tx, app, ctx.now);
-      await audit(tx, ctx, { action: "REQUEST_CLOSED_CREDIT_FAILED", actorRole: app.initiator_role, applicationId: app.id, reason: `Seed Score ${r.score} for ${label} is below the Fair threshold.` });
+      // Low score: the request stays open. The RM may Proceed with Reason; the original result is kept as returned.
+      await audit(tx, ctx, { action: "CREDIT_CHECK_LOW_SCORE", actorRole: app.initiator_role, applicationId: app.id, reason: `Seed Score ${r.score} for ${label} is in the low-score band.`, details: { person: label, score: r.score } });
     }
     const message =
       r.status === "UNAVAILABLE"
         ? `Integration unavailable — not assessed. ${r.error}`
         : r.outcome === "FAIL"
-          ? `Seed Score ${r.score} for ${label}: Fail. The request has been closed.`
+          ? `Credit assessment unsuccessful: SeedFi returned a low credit score (${r.score}) for ${label}. You may submit the request for further review by proceeding with a reason. Proceeding does not constitute credit approval.`
           : `Seed Score ${r.score} for ${label}: ${r.outcome === "PASS" ? "Pass" : "Fair"}.`;
     return { outcome: r.outcome ?? "UNAVAILABLE", message };
   });

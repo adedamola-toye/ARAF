@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { slaPolicy, slaStatus } from "@/server/domain/sla-reminders";
 import Link from "next/link";
 import { requireUser } from "../../_lib/auth";
 import { db } from "@/server/db";
@@ -35,6 +36,8 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
     pageSize: Number(sp.size ?? 20) || 20,
   });
   const now = Date.now();
+  const sla = await slaPolicy(db);
+  const exceptionIds = new Set((await db.query<{ application_id: string }>("SELECT application_id FROM credit_exceptions WHERE status = 'PENDING_REVIEW'")).rows.map((x) => x.application_id));
   const stages = [...new Set(q.facets.map((f) => f.stage))];
   const roles = [...new Set(q.facets.map((f) => f.assignee_role))];
   const filtered = q.total !== q.allTotal;
@@ -141,6 +144,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                     {r.product_label && <div className="small muted">{r.product_label}</div>}
                     {r.suspended && <span className="badge badge-red">Suspended</span>}
                     {r.photo_skipped && <span className="badge badge-warn">Business photo not uploaded</span>}
+                    {exceptionIds.has(r.application_id) && <span className="badge badge-red">Credit score exception</span>}
                   </td>
                   <td className="num" data-label="Requested amount">{formatKobo(r.requested_amount_kobo)}</td>
                   <td data-label="Stage">
@@ -150,6 +154,11 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                   <td className="small nowrap" data-label="Assigned">{formatLagos(r.assigned_at)}</td>
                   <td className="nowrap" data-label="Waiting">
                     <WaitChip ms={waited} label={formatDuration(waited)} />
+                    {slaStatus(r.assigned_at, new Date(now), sla)?.overdue && (
+                      <div>
+                        <span className="badge badge-red">SLA overdue</span>
+                      </div>
+                    )}
                   </td>
                   <td className="small" data-label="Next action">{r.required_action}</td>
                   <td className="row-actions">

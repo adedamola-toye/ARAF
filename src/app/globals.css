@@ -1052,3 +1052,14 @@ dialog.modal.modal-welcome h2 { margin: 4px 0 8px; font-size: 22px; }
 .customer-icon .icon { width: 22px; height: 22px; }
 .customer-text strong { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.02em; }
 .ps-update { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); margin-bottom: var(--space-4); }
+
+/* ------------------------------------------------------------------ Credit score exception */
+.credit-exception h2, .credit-exception-banner h2 { display: flex; align-items: center; gap: 8px; }
+.credit-exception { border-color: color-mix(in srgb, var(--warn) 55%, var(--line)); }
+.credit-exception-banner { border: 2px solid var(--danger); background: var(--danger-bg); color: var(--ink); border-radius: var(--radius); padding: var(--space-3) var(--space-4); }
+.credit-exception-banner h2 { margin: 0 0 6px; font-size: 15px; letter-spacing: .04em; color: var(--danger); }
+.ce-grid { display: grid; gap: 6px; margin: 0; }
+.ce-grid > div { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--space-2); font-size: 13.5px; }
+.ce-grid dt { font-weight: 700; }
+.ce-grid dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .ce-grid > div { grid-template-columns: minmax(0, 1fr); gap: 0; } }

@@ -11,6 +11,7 @@
  *   6. writes audit events and outbox notifications.
  * See docs/WORKFLOW.md for the state map.
  */
+import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
 import { checkVerification, recordVerification } from "./verification";
 import type { VerificationInput } from "@/lib/approval-checklists";
@@ -101,6 +102,7 @@ export async function moveTo(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, chosen
   app.stage = stage;
   app.status = statusForStage(stage, app.status);
   await audit(tx, ctx, { action: "STAGE_CHANGED", applicationId: app.id, stage, details: { from, to: stage } });
+  await settleCreditException(tx, app.id, stage, ctx.now);
   if (stage === "TEAM_LEAD_REVIEW") await enterTeamLeadReview(tx, app, ctx.now);
   if (chosen) return openTask(tx, ctx, app, stage, chosen, note);
   return null;
@@ -551,6 +553,7 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         ctx.actor = { ...actor, activeRole: task.assignee_role };
         const subject = { kind: "APPLICATION" as const, id: app.id, ref: app.ref, lockVersion: app.lock_version, versionId: task.version_id, stage: task.stage, action: input.action, role: task.assignee_role, policy: app.approval_policy ?? null, workflow: app.workflow, taskId: task.id };
         const checklist = checkVerification(subject, input.verification);
+        if (app.workflow === "RETAIL") await requireExceptionAck(tx, app, task);
         const message = await dispatch(tx, ctx, app, task, input, reason);
         await persistApp(tx, app, ctx.now);
         if (checklist) await recordVerification(tx, ctx, subject, checklist, app.stage);

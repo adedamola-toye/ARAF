@@ -7,7 +7,8 @@ import { submitApplication, performTaskAction } from "@/server/domain/workflow";
 import { proposeBeneficiary } from "@/server/domain/vendors";
 import { recordPaymentEvent, recordFulfilmentTask, recordRepayment, recordServicingAction, closeFacility, decideRestructure } from "@/server/domain/retail-ops";
 import { reviewDocument } from "@/server/domain/documents";
-import { runRetailCreditCheck } from "@/server/domain/retail-credit";
+import { currentLowScores, runRetailCreditCheck } from "@/server/domain/retail-credit";
+import { acknowledgeCreditException, proceedWithReason } from "@/server/domain/credit-exception";
 import { invalid } from "@/server/errors";
 import { parseNairaToKobo } from "@/server/money";
 import type { ApplicantType } from "@/server/domain/application-data";
@@ -325,6 +326,33 @@ export async function retailCreditAction(_p: ActionState, fd: FormData): Promise
       consent: fd.get("consent") === "on",
     });
     return { ok: r.outcome !== "UNAVAILABLE", error: r.outcome === "UNAVAILABLE" ? r.message : null, message: r.outcome === "UNAVAILABLE" ? null : r.message, nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/** SeedFi low score: the RM submits the request for review with a justification (not a credit approval). */
+export async function proceedWithReasonAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const appId = str(fd, "applicationId");
+  try {
+    const r = await proceedWithReason(ctx, appId, str(fd, "exceptionReason"), (q) => currentLowScores(q, appId, ctx.now));
+    return { ok: true, message: r.updated ? "Justification updated." : "Justification recorded. You can complete and submit the request; it will be reviewed as a credit score exception.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}
+
+/** Team Lead / Unit Head: acknowledge the credit score exception (recommendation and remarks) before deciding. */
+export async function acknowledgeExceptionAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  try {
+    await acknowledgeCreditException(ctx, str(fd, "applicationId"), {
+      acknowledged: fd.get("exceptionAcknowledged") === "on",
+      recommendation: str(fd, "exceptionRecommendation") as "PROCEED" | "RETURN" | "DECLINE",
+      remarks: str(fd, "exceptionRemarks"),
+    });
+    return { ok: true, message: "Exception acknowledged. You can now record your decision.", nonce: Date.now() };
   } catch (e) {
     return toActionError(e);
   }
