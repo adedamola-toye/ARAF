@@ -1076,3 +1076,7 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 520px) { dl.kv { grid-template-columns: 1fr; } dl.kv dd { margin-bottom: 6px; } }
 .ic-reassign { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; } .ic-reassign select, .ic-reassign input { min-width: 0; max-width: 200px; }
 .config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; } .config-tile { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: inherit; } .config-tile:hover { border-color: var(--accent, currentColor); } .config-tile .badge { align-self: flex-start; }
+.checklist { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.checklist li.ok { color: var(--success); }
+.checklist li.todo { color: var(--text, inherit); }
+.checklist li.opt { color: var(--muted); }

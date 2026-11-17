@@ -34,6 +34,7 @@ export default async function ConfigurationCentre() {
       "Documents",
       [
         { href: "/admin/templates", title: "Offer templates", body: "Bank-approved offer letters by product and structure (WakeelBoost by applicant type).", status: `${templates.filter((t) => t.production_approved).length} approved · ${templates.filter((t) => !t.production_approved).length} not approved` },
+        { href: "/admin/closing-checklists", title: "Closing checklists", body: "Documents required per product before the pack is submitted and before disbursement." },
         { href: "/admin/document-settings", title: "Document settings", body: "Bank and Remita beneficiary details, charges and VAT on the documents ARAF prepares.", status: waitingDocs ? `${waitingDocs} document(s) waiting` : "Nothing waiting" },
         { href: "/admin/invoice-confirmation", title: "Invoice confirmation", body: "Invoice Confirmation Officers and open confirmations.", status: `${officers} officer(s)${icFailed ? ` · ${icFailed} not dispatched` : ""}` },
       ],

@@ -38,6 +38,7 @@ import { creditBandForApp, definitionForApp, pinWorkflow } from "./approval-work
 import { nextBusinessStage, retailBusinessStages } from "@/lib/approval-workflow";
 import { STAGE_LABELS, stageLabel, type Stage } from "./stages";
 import { recordRequestLedger, noteLatestRequestedAmount } from "./wallet";
+import { disbursementBlockers, missingRequired } from "./closing-checklist";
 import { currentLowScores, retailCreditBlockers } from "./retail-credit";
 import { supersedeIfCleared } from "./credit-exception";
 import {
@@ -894,11 +895,8 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       if (contracting.length) throw gate(`The contractual sequence for this structure is not configured: ${contracting.map((g) => g.label).join("; ")}.`);
       const rules = profileRules(effective.config, app.customer_profile);
       const seq = structureRules(rules, app.financing_structure)?.contractSequence ?? [];
-      const docs = await currentCleanDocuments(tx, app.id);
-      const cats = new Set(docs.map((d) => d.category));
-      const missing = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED"].filter((c) => !cats.has(c));
-      if (seq.length && !cats.has("CONTRACT_EVIDENCE")) missing.push("CONTRACT_EVIDENCE");
-      if (missing.length) throw gate(`The offer and contract pack is incomplete. Missing: ${missing.map((m) => m.replace(/_/g, " ").toLowerCase()).join(", ")}.`);
+      const missing = await missingRequired(tx, app, seq.length > 0);
+      if (missing.length) throw gate(`The offer and contract pack is incomplete. Missing: ${missing.join(", ")}.`);
       if (seq.length && !input.contractStepsConfirmed) throw gate(`Confirm the contractual steps were completed in order: ${seq.join(" → ")}.`);
       await recordDecision(tx, ctx, app, task, "SUBMIT_PACK", reason);
       await completeTask(tx, ctx, task, "SUBMIT_PACK", { contractSequence: seq, contractStepsConfirmed: !!input.contractStepsConfirmed });
@@ -921,6 +919,13 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       const crms = (await currentCleanDocuments(tx, app.id)).filter((d) => d.category === "CRMS_EVIDENCE");
       if (!crms.length) throw gate("Upload the CRMS evidence before confirming the pre-disbursement checks.");
       if (!input.crmsLogged) throw gate('Confirm "Logged CRMS" (officer attestation) before selecting Okay.');
+      {
+        const { cfg: c2 } = await currentConfigFor(tx, app, ctx.now);
+        const eff = (await effectiveConfig(tx, app.product_code!, ctx.now)) ?? c2;
+        const seq2 = structureRules(profileRules(eff.config, app.customer_profile), app.financing_structure)?.contractSequence ?? [];
+        const blockers = await disbursementBlockers(tx, app, seq2.length > 0);
+        if (blockers.length) throw gate(`Not ready for disbursement. ${blockers.join(" ")}`);
+      }
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a, { crmsLogged: true, crmsSource: "OFFICER_ATTESTATION_WITH_EVIDENCE", crmsEvidence: crms.map((d) => ({ id: d.id, version: d.version_no })), attestedAt: ctx.now.toISOString() });
       const chosen = await chooseAssignee(tx, app, "DISBURSEMENT_BOOKING", { preferred: app.do2_id });

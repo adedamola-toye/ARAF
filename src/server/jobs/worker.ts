@@ -2,6 +2,7 @@ import { db } from "../db";
 import { runSlaReminders } from "../domain/sla-reminders";
 import { runDocumentGeneration } from "../domain/closing-docs";
 import { runInvoiceDispatch } from "../domain/invoice-confirmation";
+import { runFacilityArchives } from "../domain/facility-archive";
 import { systemCtx } from "../context";
 import { auditOutsideTx } from "../audit";
 import { config } from "../config";
@@ -51,6 +52,7 @@ export async function workerTick(now = new Date()) {
   results.slaReminders = await runSlaReminders(now);
   results.closingDocuments = await runDocumentGeneration(now);
   results.invoiceConfirmations = await runInvoiceDispatch(now);
+  results.facilityArchives = await runFacilityArchives(now);
   results.draftsExpired = await expireStaleDrafts(now);
   results.arrearsChanged = await refreshArrears(db, now);
   // Staff Personal Financing: server-side offer deadlines, reminders, blocked offers, scans, documentation.

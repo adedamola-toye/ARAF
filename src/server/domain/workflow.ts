@@ -12,6 +12,7 @@
  * See docs/WORKFLOW.md for the state map.
  */
 import { generateClosingDocuments, queueClosingDocuments } from "./closing-docs";
+import { disbursementBlockers, missingRequired } from "./closing-checklist";
 import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
 import { checkVerification, recordVerification } from "./verification";
@@ -43,7 +44,7 @@ import { type AppRow, chooseAssignee, openTask, type Chosen } from "./assignment
 import { holdsRole } from "./access";
 import { approvedAssessment, latestAssessment } from "./assessment";
 import { activeCalculator, calculatorUsableForApproval, findCalculator } from "./apr/registry";
-import { currentCleanDocuments, PACK } from "./documents";
+import { currentCleanDocuments } from "./documents";
 import { isInitiatorRole, isLegacyInitiatorRole, type InitiatorRole } from "./roles";
 import { routeForAmount } from "./routing";
 import { creditBandForApp, pinWorkflow } from "./approval-workflows";
@@ -702,10 +703,8 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
     case "INITIATOR_CORRECTION":
       return resubmitByInitiator(tx, ctx, app, task);
     case "OFFER_PREPARATION": {
-      const docs = await currentCleanDocuments(tx, app.id);
-      const cats = new Set(docs.map((d) => d.category));
-      const missing = ["GENERATED_OFFER", ...PACK].filter((c) => !cats.has(c));
-      if (missing.length) throw gate(`The offer pack is incomplete. Missing: ${missing.map((m) => m.replace(/_/g, " ").toLowerCase()).join(", ")}.`);
+      const missing = await missingRequired(tx, app);
+      if (missing.length) throw gate(`The offer pack is incomplete. Missing: ${missing.join(", ")}.`);
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       if (app.active_correction_id) {
@@ -747,6 +746,8 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
         return "Sent back to Credit Officer 3 for correction.";
       }
       if (!input.crmsLogged) throw gate('Toggle "Logged CRMS" before selecting Okay.');
+      const blockers = await disbursementBlockers(tx, app);
+      if (blockers.length) throw gate(`Not ready for disbursement. ${blockers.join(" ")}`);
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a, { crmsLogged: true, attestedAt: ctx.now.toISOString() });
       const chosen = await chooseAssignee(tx, app, "DISBURSEMENT_BOOKING", { preferred: app.do2_id });

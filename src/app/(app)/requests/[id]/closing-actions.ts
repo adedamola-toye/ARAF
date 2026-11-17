@@ -17,3 +17,16 @@ export async function saveRepaymentAccountAction(_p: ActionState, fd: FormData):
     return toActionError(e);
   }
 }
+
+export async function updateHandoverAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const appId = s(fd, "applicationId");
+  try {
+    const { updateHandover } = await import("@/server/domain/facility-archive");
+    await updateHandover(ctx, appId, s(fd, "group") as "LEGAL" | "SHARIAH", s(fd, "to") === "REVIEWED" ? "REVIEWED" : "RECEIVED", s(fd, "comments"));
+    revalidatePath(`/requests/${appId}`);
+    return { ok: true, message: "Records review updated.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

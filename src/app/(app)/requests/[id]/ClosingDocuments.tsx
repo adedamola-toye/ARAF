@@ -1,6 +1,7 @@
 import { FileDown, FileCheck2, Hourglass, PenLine } from "lucide-react";
 import { db } from "@/server/db";
 import { closingStatus } from "@/server/domain/closing-docs";
+import { checklistStatus } from "@/server/domain/closing-checklist";
 import { IC_STATUS_LABELS, icForApplication } from "@/server/domain/invoice-confirmation";
 import { RepaymentAccountForm } from "./RepaymentAccountForm";
 
@@ -13,6 +14,8 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
   const banks = canEdit ? (await db.query<{ name: string }>("SELECT name FROM financial_institutions ORDER BY name")).rows.map((r) => r.name) : [];
   const needsAccount = st.items.some((i) => i.state === "NEEDS_ACCOUNT");
   const conf = (await icForApplication(db, appId))[0] ?? null;
+  const app = (await db.query("SELECT id, workflow, product_code FROM applications WHERE id = $1", [appId])).rows[0];
+  const checklist = await checklistStatus(db, app);
   return (
     <section className="card" id="closing-documents" aria-labelledby="cd-h">
       <p className="eyebrow">After final approval</p>
@@ -40,6 +43,16 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
             ) : (
               <span className={`badge ${i.state === "PREPARING" ? "" : "badge-warn"}`}>{i.state === "PREPARING" ? "Being prepared" : i.state === "NEEDS_ACCOUNT" ? "Needs account" : "Manual form"}</span>
             )}
+          </li>
+        ))}
+      </ul>
+      <h3 style={{ margin: "14px 0 6px", fontSize: 14 }}>Closing checklist</h3>
+      <ul className="checklist small">
+        {checklist.map((c) => (
+          <li key={c.code} className={c.onFile ? "ok" : c.required ? "todo" : "opt"}>
+            <span aria-hidden="true">{c.onFile ? "✓" : c.required ? "○" : "–"}</span> {c.label}
+            {!c.required && <span className="muted"> (optional)</span>}
+            <span className="sr-only">{c.onFile ? " — on file" : " — not yet uploaded"}</span>
           </li>
         ))}
       </ul>

@@ -165,3 +165,11 @@ ALTER TABLE documents ALTER COLUMN uploaded_by DROP NOT NULL;
 -- 8. The customer's repayment (debit) account, used on the GSI mandate and the Remita set-up sheet.
 ALTER TABLE applications ADD COLUMN repayment_account jsonb;   -- {bankName, accountNumber, accountName, branch, townCity}
 ALTER TABLE document_settings ADD COLUMN remita_beneficiary_phone text;
+
+-- 9. Product-specific closing checklists (documents required before the pack is submitted and re-checked at disbursement).
+CREATE TABLE closing_checklists (
+  product_code text PRIMARY KEY,                 -- product code, or 'WAKEELBOOST'
+  items        jsonb NOT NULL,                   -- [{code, required}]
+  updated_by   uuid REFERENCES staff(id),
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
