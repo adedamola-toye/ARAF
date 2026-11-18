@@ -16,6 +16,7 @@ import { formatKobo } from "../money";
 import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail } from "../notify/templates";
 import { STAGE_LABELS, TERMINAL_STAGES, type Stage } from "../domain/stages";
+import { ROLE_LABELS, type Role } from "../domain/roles";
 import { financingFacts, groupFacts, type FinFact } from "../performance-report";
 import { addDaysToDateString, fromLagos, lagosDate, lagosWeekStart } from "../time";
 import { CATCH_UP_MS } from "./schedules";
@@ -255,6 +256,115 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
     ["Staff Salary Advance disbursed", `${sW.disb} · ${money(Number(sW.amt))}`, `${sM.disb} · ${money(Number(sM.amt))}`],
   ];
 
+  // ── 9. Unit Heads and their direct reports: everything each person did (from the audit trail).
+  const unitHeads = (
+    await q.query<{ id: string; name: string }>(
+      `SELECT DISTINCT s.id, s.full_name AS name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'UNIT_HEAD'
+        WHERE s.status = 'ACTIVE' ORDER BY s.full_name`,
+    )
+  ).rows;
+  const reportsOf = async (uh: string) =>
+    (
+      await q.query<{ id: string; name: string; roles: string[] }>(
+        `SELECT s.id, s.full_name AS name, coalesce(array_agg(DISTINCT ra.role) FILTER (WHERE ra.role IS NOT NULL), '{}') AS roles
+           FROM staff s LEFT JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active
+          WHERE s.status = 'ACTIVE' AND s.id <> $1 AND (
+                s.id IN (SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'UNIT_HEAD')
+             OR s.id IN (SELECT c.staff_id FROM routing_assignments x JOIN rm_classifications c ON c.segment = 'DBC'
+                          AND c.dbc_region = CASE x.key WHEN 'DBC_UNIT_HEAD_NORTH' THEN 'NORTH' WHEN 'DBC_UNIT_HEAD_SOUTH_WEST' THEN 'SOUTH_WEST' END
+                          WHERE x.staff_id = $1))
+          GROUP BY s.id, s.full_name ORDER BY s.full_name`,
+        [uh],
+      )
+    ).rows;
+  const people = new Set<string>(unitHeads.map((u) => u.id));
+  const teams = new Map<string, Awaited<ReturnType<typeof reportsOf>>>();
+  for (const u of unitHeads) {
+    const r = await reportsOf(u.id);
+    teams.set(u.id, r);
+    r.forEach((x) => people.add(x.id));
+  }
+  const ids = [...people];
+  const NOISE = "(VIEW|VIEWED|DOWNLOAD|LOGIN|LOGOUT|SESSION|SCAN|ASSIGNED|STAGE_CHANGED|VERIFIED|ACCESS_DENIED|OTP|ONBOARDING|EXPORTED)";
+  const DECISION = "^(TASK_(APPROVE|ENDORSE|RECOMMEND|PROCEED|REJECT|RETURN)|(ALTPHONES|STAFF_FIN)_.*(APPROVE|APPROVED|DECLINE|DECLINED|RETURN|RETURNED|FORWARD))$";
+  const activity = async (a: Date) =>
+    ids.length
+      ? (
+          await q.query<{ actor_id: string; action: string; n: number }>(
+            `SELECT actor_id, action, count(*)::int AS n FROM audit_events
+              WHERE actor_id = ANY($1::uuid[]) AND occurred_at >= $2 AND occurred_at < $3 AND outcome = 'SUCCESS' AND action !~ $4
+              GROUP BY 1, 2`,
+            [ids, a, end, NOISE],
+          )
+        ).rows
+      : [];
+  const actW = await activity(p.weekStart);
+  const actM = await activity(p.monthStart);
+  const openNow = ids.length
+    ? (
+        await q.query<{ assignee_id: string; n: number; overdue: number }>(
+          `SELECT t.assignee_id, count(*)::int AS n, count(*) FILTER (WHERE coalesce(t.assigned_at, t.entered_at) < $2::timestamptz - interval '3 hours')::int AS overdue
+             FROM tasks t WHERE t.status = 'OPEN' AND t.assignee_id = ANY($1::uuid[]) GROUP BY 1`,
+          [ids, end],
+        )
+      ).rows
+    : [];
+  const altBy = async (a: Date) =>
+    ids.length
+      ? (
+          await q.query<{ originator_id: string; n: number }>(
+            `SELECT originator_id, count(*)::int AS n FROM altphones_applications
+              WHERE NOT legacy AND status <> 'DRAFT' AND originator_id = ANY($1::uuid[]) AND coalesce(submitted_at, created_at) >= $2 AND coalesce(submitted_at, created_at) < $3 GROUP BY 1`,
+            [ids, a, end],
+          )
+        ).rows
+      : [];
+  const altW = await altBy(p.weekStart);
+  const altM = await altBy(p.monthStart);
+  const decisionRe = new RegExp(DECISION);
+  const cellFor = (id: string, w: Window, acts: { actor_id: string; action: string; n: number }[], alts: { originator_id: string; n: number }[]) => {
+    const mine = w.submitted.filter((x) => x.officerId === id);
+    const disb = w.disbursed.filter((x) => x.officerId === id);
+    const a = acts.filter((x) => x.actor_id === id);
+    const decisions = a.filter((x) => decisionRe.test(x.action)).reduce((t, x) => t + x.n, 0);
+    const total = a.reduce((t, x) => t + x.n, 0);
+    const phones = alts.find((x) => x.originator_id === id)?.n ?? 0;
+    const parts = [] as string[];
+    if (mine.length) parts.push(`${mine.length} req ${money(sum(mine, req))}`);
+    if (disb.length) parts.push(`disb ${money(sum(disb, (x) => x.disbursedKobo))}`);
+    if (phones) parts.push(`${phones} AltPhones`);
+    parts.push(`${decisions} decision${decisions === 1 ? "" : "s"}`, `${total} action${total === 1 ? "" : "s"}`);
+    return parts.join(" · ");
+  };
+  const actionLabel = (code: string) =>
+    code.replace(/^TASK_/, "").replace(/^STAFF_FIN_/, "Salary advance ").replace(/^ALTPHONES_/, "AltPhones ").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+  const topActions = (id: string) =>
+    actW
+      .filter((x) => x.actor_id === id)
+      .sort((a, b) => b.n - a.n)
+      .slice(0, 4)
+      .map((x) => `${actionLabel(x.action)} ×${x.n}`)
+      .join(", ");
+  const openLabel = (id: string) => {
+    const o = openNow.find((x) => x.assignee_id === id);
+    return o ? ` — ${o.n} open now${o.overdue ? `, ${o.overdue} over 3 h` : ""}` : "";
+  };
+  const roleName = (roles: string[]) => roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ") || "No active role";
+  const unitSections: (() => string[])[] = unitHeads.map((u, i) => () => {
+    const team = teams.get(u.id) ?? [];
+    const rows: [string, string, string][] = [
+      [`${u.name} (Unit Head, own work)${openLabel(u.id)}`, cellFor(u.id, W, actW, altW), cellFor(u.id, M, actM, altM)],
+      ...team.map((m): [string, string, string] => [`${m.name} (${roleName(m.roles)})${openLabel(m.id)}`, cellFor(m.id, W, actW, altW), cellFor(m.id, M, actM, altM)]),
+    ];
+    const lines = T(`9.${i + 1} ${u.name}, Unit Head (${team.length} direct report${team.length === 1 ? "" : "s"})`, rows);
+    const notes = [
+      ...(team.length ? [] : ["No direct reports are mapped yet (Administration → Reporting lines, or RM classification for DBC Unit Heads)."]),
+      ...[u, ...team].map((m) => (topActions(m.id) ? `${m.name} this week: ${topActions(m.id)}` : "")).filter(Boolean),
+    ];
+    if (notes.length) html.push(`<p style="margin:6px 0 0;font:12px/1.6 Arial,Helvetica,sans-serif;color:#5f6c87">${notes.map(esc).join("<br>")}</p>`);
+    return [...lines.slice(0, -1), ...notes.map((n) => `  ${n}`), ""];
+  });
+
   const link = `${config.appUrl}/reports/performance?from=${p.fromMonth}&to=${p.to}`;
   const summary = {
     week: { submitted: W.submitted.length, submittedKobo: sum(W.submitted, req), approved: W.approved.length, disbursed: W.disbursed.length, disbursedKobo: sum(W.disbursed, (x) => x.disbursedKobo), declined: W.declined.length },
@@ -271,6 +381,12 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
     ...L("6. TOP ORIGINATORS (month to date, by amount requested)", originatorItems, "None."),
     ...L("7. REVIEW AND APPROVAL DECISIONS THIS WEEK (by person)", reviewerItems, "None."),
     ...T(othersTitle, othersRows),
+    ...(unitHeads.length
+      ? [
+          ...L("9. UNIT HEADS AND THEIR DIRECT REPORTS", ["Each person: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, returns, declines) and all work actions recorded in the audit trail, this week and month to date; open tasks now."], ""),
+          ...unitSections.flatMap((f) => f()),
+        ]
+      : L("9. UNIT HEADS AND THEIR DIRECT REPORTS", [], "No active Unit Heads.")),
     `Full interactive report (month to date, drill down by business line, Unit Head / RBE, product, officer, location and facility): ${link}`,
   ];
   html.push(`<p style="margin:24px 0 0"><a href="${esc(link)}" style="display:inline-block;background:#1d438e;color:#ffffff;text-decoration:none;font:600 13px Arial,Helvetica,sans-serif;padding:10px 16px;border-radius:8px">Open the Performance Overview</a></p>`);

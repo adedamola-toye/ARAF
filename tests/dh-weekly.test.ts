@@ -4,6 +4,7 @@ import { audits, outbox, resetDb } from "./helpers";
 import { createSubmittedCase, ctxFor, driveToOffer } from "@/server/demo/scenario";
 import { dhPeriodFor, duePeriod, runDhWeeklyReport } from "@/server/jobs/dh-weekly";
 import { updateDhWeeklySchedule } from "@/server/domain/admin";
+import { setOrgLink } from "@/server/domain/org";
 
 const N = (n: number) => n * 100;
 const sid = async (email: string) => (await db.query("SELECT id FROM staff WHERE email = $1", [email])).rows[0].id as string;
@@ -52,6 +53,26 @@ describe("Weekly Divisional Head report: delivery", () => {
     expect((await runDhWeeklyReport(new Date(runAt.getTime() + 60_000))).ran).toBe(false);
     expect((await outbox("DH_WEEKLY_REPORT")).length).toBe(2);
     expect((await audits("DH_WEEKLY_REPORT_RUN")).length).toBe(1);
+  });
+
+  it("covers every Unit Head and each direct report: requests, decisions, work actions and open tasks", async () => {
+    const admin = await ctxFor("superadmin@altbank.ng");
+    const uh = await sid("unit.head@altbank.ng");
+    await setOrgLink(admin, { staffId: await sid("rm.ade@altbank.ng"), relation: "UNIT_HEAD", managerId: uh, reason: "Ade reports to Olu for reporting." });
+    const lonely = (await db.query("INSERT INTO staff (email, full_name) VALUES ('uh.two@altbank.ng','Second Unit-Head') RETURNING id")).rows[0].id;
+    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [lonely]);
+    const now = new Date();
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_500_000), now });
+    await driveToOffer(id, now); // includes a Unit Head approval
+    await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
+    const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
+    expect(body).toContain("9. UNIT HEADS AND THEIR DIRECT REPORTS");
+    expect(body).toMatch(/9\.\d Olu Unit-Head, Unit Head \(1 direct report\)/);
+    expect(body).toMatch(/Olu Unit-Head \(Unit Head, own work\)\s+1 decision · \d+ actions?/);
+    expect(body).toMatch(/Ade Okafor \(Relationship Manager\)[^\n]*1 req ₦1,500,000/);
+    expect(body).toMatch(/9\.\d Second Unit-Head, Unit Head \(0 direct reports\)/);
+    expect(body).toContain("No direct reports are mapped yet");
+    expect(body).toMatch(/Ade Okafor this week: [^\n]*Draft created ×1/);
   });
 
   it("the Super Admin can switch it off, change the time and add recipients", async () => {

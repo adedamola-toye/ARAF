@@ -87,6 +87,7 @@ export const DEFAULT_ORDER: FinDim[] = ["unitHead", "product", "officer", "locat
 export interface FinFact {
   id: string;
   ref: string;
+  officerId: string;
   /** DBC, Non-DBC, Merchant Officer line, RM (unclassified) or Other channels. */
   segment: string;
   businessUnit: string;
@@ -155,7 +156,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
             AND ($2::date IS NULL OR a.submitted_at >= $2::date)
             AND ($3::date IS NULL OR a.submitted_at < ($3::date + 1))
        )
-       SELECT a.id, a.ref, a.stage, a.status, a.product_code, coalesce(a.product_label, 'WakeelBoost') AS product, a.customer_profile, a.initiator_role,
+       SELECT a.id, a.ref, a.initiator_id, a.stage, a.status, a.product_code, coalesce(a.product_label, 'WakeelBoost') AS product, a.customer_profile, a.initiator_role,
               a.submitted_at, coalesce(a.requested_amount_kobo, 0) AS requested,
               o.full_name AS officer, uh.full_name AS unit_head, dh.full_name AS division,
               CASE WHEN a.initiator_role = 'MERCHANT_OFFICER' THEN en.full_name WHEN a.initiator_role = 'MERCHANT_OFFICER_LEAD' THEN o.full_name END AS mo_lead,
@@ -204,6 +205,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
     return {
       id: r.id,
       ref: r.ref,
+      officerId: r.initiator_id,
       segment,
       businessUnit: r.rm_unit ?? r.staff_unit ?? "Not set",
       region: r.dbc_region ? `DBC ${r.dbc_region === "NORTH" ? "North" : "South & West"}` : (r.staff_region ?? "Not set"),
