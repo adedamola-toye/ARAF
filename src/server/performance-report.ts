@@ -96,6 +96,7 @@ export interface FinFact {
   rbe: string;
   approvedAt: Date | null;
   disbursedAt: Date | null;
+  declinedAt: Date | null;
   division: string;
   unitHead: string;
   product: string;
@@ -163,7 +164,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
               o.business_unit AS staff_unit, o.region AS staff_region,
               coalesce(a.routing_segment, rc.segment) AS segment, rc.dbc_region, rc.business_unit AS rm_unit,
               CASE WHEN coalesce(a.routing_segment, rc.segment) = 'NON_DBC' THEN coalesce(CASE WHEN a.routing_segment = 'NON_DBC' THEN sr.full_name END, cr.full_name) END AS rbe,
-              rh.full_name AS routing_head, ds.disbursed_on,
+              rh.full_name AS routing_head, ds.disbursed_on, a.rejected_at,
               (SELECT max(d.created_at) FROM decisions d WHERE d.application_id = a.id AND d.invalidated_at IS NULL AND d.action IN ('APPROVE','PROCEED')
                   AND d.stage IN ('DIVISIONAL_HEAD_REVIEW','UNIT_HEAD_REVIEW')) AS approved_at,
               (SELECT coalesce((ra.inputs->>'principalKobo')::bigint, NULL) FROM retail_assessments ra WHERE ra.application_id = a.id AND ra.kind = 'FINAL' AND ra.superseded_at IS NULL ORDER BY ra.created_at DESC LIMIT 1) AS approved_principal,
@@ -209,6 +210,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       reportingHead: reportingHead ?? "Not mapped",
       rbe: r.rbe ?? "—",
       approvedAt: r.approved_at ?? null,
+      declinedAt: r.rejected_at ?? null,
       disbursedAt: r.disbursed_on ? new Date(`${r.disbursed_on instanceof Date ? r.disbursed_on.toISOString().slice(0, 10) : r.disbursed_on}T12:00:00Z`) : null,
       division: r.division ?? "Not mapped",
       unitHead: r.unit_head ?? "Not mapped",

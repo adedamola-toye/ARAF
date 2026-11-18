@@ -9,6 +9,8 @@ export interface EmailMessage {
   cc?: string[];
   subject: string;
   text: string;
+  /** Optional HTML alternative (the plain text is always sent too). */
+  html?: string | null;
   attachmentDocumentIds?: string[];
 }
 
@@ -21,10 +23,10 @@ export async function enqueueEmail(q: Db, now: Date, m: EmailMessage): Promise<{
   const cc = [...new Set((m.cc ?? []).map((x) => x.toLowerCase()))].filter((x) => x && !to.includes(x));
   const ins = await q.query<{ id: string }>(
     `INSERT INTO notification_outbox (kind, dedupe_key, application_id, to_addresses, cc_addresses, subject, body_text,
-        attachment_document_ids, next_attempt_at, created_at, staff_request_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)
+        attachment_document_ids, next_attempt_at, created_at, staff_request_id, body_html)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$10,$11)
      ON CONFLICT (dedupe_key) DO NOTHING RETURNING id`,
-    [m.kind, m.dedupeKey, m.applicationId ?? null, to, cc, m.subject, m.text, m.attachmentDocumentIds ?? [], now, m.staffRequestId ?? null],
+    [m.kind, m.dedupeKey, m.applicationId ?? null, to, cc, m.subject, m.text, m.attachmentDocumentIds ?? [], now, m.staffRequestId ?? null, m.html ?? null],
   );
   if (ins.rows[0]) return { id: ins.rows[0].id, created: true };
   const ex = await q.query<{ id: string }>("SELECT id FROM notification_outbox WHERE dedupe_key = $1", [m.dedupeKey]);

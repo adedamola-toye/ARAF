@@ -11,6 +11,7 @@ export interface OutgoingEmail {
   cc: string[];
   subject: string;
   text: string;
+  html?: string | null;
   attachments: OutgoingAttachment[];
   outboxId?: string | null;
 }
@@ -62,6 +63,7 @@ class SmtpTransport implements MailTransport {
       cc: m.cc.length ? m.cc : undefined,
       subject: m.subject,
       text: m.text,
+      ...(m.html ? { html: m.html } : {}),
       attachments: m.attachments.map((a) => ({ filename: a.filename, content: a.content, contentType: a.contentType })),
     });
     return { messageId: String(info.messageId) };
@@ -80,6 +82,7 @@ class ResendTransport implements MailTransport {
       subject: m.subject,
       text: m.text,
     };
+    if (m.html) body.html = m.html;
     if (m.cc.length) body.cc = m.cc;
     if (r.replyTo) body.reply_to = r.replyTo;
     if (m.attachments.length) {

@@ -147,6 +147,27 @@ export function ScheduleForm({ s, staff }: { s: { enabled: boolean; day_of_month
   );
 }
 
+export function DhScheduleForm({ s, staff }: { s: { enabled: boolean; hour: number; minute: number; recipient_staff_ids: string[] }; staff: Opt[] }) {
+  return (
+    <ActionForm action={A.dhScheduleAction}>
+      <label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} /> Weekly Divisional Head report enabled</label>
+      <div className="grid-2">
+        <div className="field"><label htmlFor="dh-hr">Sunday hour (Lagos, 0–23)</label><input id="dh-hr" name="hour" type="number" min={0} max={23} defaultValue={s.hour} /></div>
+        <div className="field"><label htmlFor="dh-mn">Minute</label><input id="dh-mn" name="minute" type="number" min={0} max={59} defaultValue={s.minute} /></div>
+      </div>
+      <fieldset style={{ border: "1px solid var(--line)", borderRadius: 8, padding: 12 }}>
+        <legend className="small" style={{ fontWeight: 700 }}>Also send to (every active Divisional Head always receives it)</legend>
+        <div className="grid-2">
+          {staff.map((x) => (
+            <label key={x.value} className="check"><input type="checkbox" name="recipients" value={x.value} defaultChecked={s.recipient_staff_ids.includes(x.value)} /> {x.label}</label>
+          ))}
+        </div>
+      </fieldset>
+      <div><SubmitButton className="btn btn-dark">Save weekly report</SubmitButton></div>
+    </ActionForm>
+  );
+}
+
 export function RetryButton({ id }: { id: string }) {
   return (
     <ActionForm action={A.retryOutboxAction} className="row" showMessages={false}>

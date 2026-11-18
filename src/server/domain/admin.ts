@@ -275,6 +275,22 @@ export async function updateMonthlySchedule(ctx: Ctx, p: { enabled: boolean; day
   });
 }
 
+/** Weekly Divisional Head report (Sundays): on/off, send time and extra recipients beyond the Divisional Heads. */
+export async function updateDhWeeklySchedule(ctx: Ctx, p: { enabled: boolean; hour: number; minute: number; recipientIds: string[] }) {
+  return adminOp(ctx, "SCHEDULE_UPDATED", async (tx) => {
+    if (!Number.isInteger(p.hour) || !Number.isInteger(p.minute) || p.hour < 0 || p.hour > 23 || p.minute < 0 || p.minute > 59) throw invalid("Invalid schedule.");
+    for (const id of p.recipientIds) {
+      const s = await tx.query("SELECT 1 FROM staff WHERE id = $1 AND status = 'ACTIVE'", [id]);
+      if (!s.rowCount) throw invalid("Recipients must be active provisioned staff.");
+    }
+    await tx.query(
+      `UPDATE schedule_settings SET enabled=$1, hour=$2, minute=$3, recipient_staff_ids=$4, updated_by=$5, updated_at=$6 WHERE code='DH_WEEKLY_REPORT'`,
+      [p.enabled, p.hour, p.minute, p.recipientIds, ctx.actor!.staffId, ctx.now],
+    );
+    await audit(tx, ctx, { action: "SCHEDULE_UPDATED", actorRole: "SUPER_ADMIN", details: { code: "DH_WEEKLY_REPORT", ...p } });
+  });
+}
+
 export async function isSuperAdmin(staffId: string) {
   return holdsRole(db, staffId, "SUPER_ADMIN");
 }

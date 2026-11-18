@@ -35,3 +35,17 @@ The classification, RBE and Unit Head are pinned on each request at submission. 
 1. Configuration centre → RM classification and routing: set the two DBC Unit Heads and the E-commerce Unit Head.
 2. Classify each RM (DBC + region, or Non-DBC + RBE). Provision any missing RBEs first.
 3. Make sure at least one active CX Credit Reviewer exists (Staff → grant role).
+
+## Weekly Divisional Head report (email)
+- Sent every **Sunday at 18:00 Africa/Lagos** to every active staff member holding the **Divisional Head** role (plus any extra recipients the Super Admin ticks). Bank-wide.
+- Covers **this week** (Monday 00:00 to the send time) and **month to date** (1st 00:00 to the send time), side by side:
+  1. Financing headlines: requests submitted, final approvals, disbursed (count and ₦), declined, approval rate, average turnaround.
+  2. Breakdown by business line (DBC / Non-DBC / Merchant Officer line / other) and by product.
+  3. Approval efficiency: tasks completed per stage with average hours, 3-hour SLA reminders sent.
+  4. Pipeline at the time of sending: open tasks per stage, how many are over 3 hours, oldest waiting.
+  5. Controls: SeedFi exceptions, invoice confirmations, requests awaiting RM disbursement confirmation (and missing evidence).
+  6. Top originators month to date. 7. Review and approval decisions this week by person.
+  8. AltPhones and Staff Salary Advance.
+  Plus a button to the Performance Overview filtered to month to date.
+- HTML email (tables that work in Outlook and on phones) with a plain-text copy. No customer identifiers.
+- Administration → Scheduled emails: switch it on or off, change the Sunday time, add recipients. Every run is recorded; a recipient never gets the same week twice; a run missed while the worker was down is sent within three days.
