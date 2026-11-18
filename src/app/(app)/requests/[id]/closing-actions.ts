@@ -30,3 +30,29 @@ export async function updateHandoverAction(_p: ActionState, fd: FormData): Promi
     return toActionError(e);
   }
 }
+
+export async function signOnDeviceAction(_p: ActionState, fd: FormData): Promise<ActionState> {
+  const { ctx } = await requireUser();
+  const appId = s(fd, "applicationId");
+  try {
+    const { signDocumentOnDevice } = await import("@/server/domain/signing");
+    const signatories = JSON.parse(String(fd.get("signatories") ?? "[]")) as { name: string; role: string; signaturePng: string }[];
+    await signDocumentOnDevice(
+      ctx,
+      {
+        applicationId: appId,
+        sourceDocumentId: s(fd, "sourceDocumentId"),
+        signatories,
+        consent: fd.get("consent") === "on",
+        idType: s(fd, "idType"),
+        idLast4: s(fd, "idLast4"),
+        idVerified: fd.get("idVerified") === "on",
+      },
+      ctx.userAgent,
+    );
+    revalidatePath(`/requests/${appId}`);
+    return { ok: true, message: "Signed. The signed copy is saved in Documents and counts towards the closing checklist.", nonce: Date.now() };
+  } catch (e) {
+    return toActionError(e);
+  }
+}

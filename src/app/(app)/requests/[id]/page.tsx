@@ -253,7 +253,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         </section>
         <aside className="split-right" aria-label="Actions and preview">
           {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
-          <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} link={link} />
+          <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} canSign={!!myTask && ["OFFER_PREPARATION", "DISBURSEMENT_CORRECTION"].includes(myTask.stage)} link={link} />
           <RecordsCard appId={app.id} recordsStatus={app.records_status ?? null} roles={roles} />
           {retail && <RetailCaseTools c={c} staffId={session.staffId} roles={roles} />}
           {!myTask && c.openTask && (
