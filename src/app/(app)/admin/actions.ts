@@ -21,6 +21,7 @@ import {
   updateDhWeeklySchedule,
 } from "@/server/domain/admin";
 import { retryOutbox } from "@/server/jobs/outbox";
+import { sendDhTestReport } from "@/server/jobs/dh-weekly";
 import { auditOutsideTx } from "@/server/audit";
 import { updatePricingSettings } from "@/server/domain/pricing";
 import { updateSecondSignatory } from "@/server/domain/signatory";
@@ -71,6 +72,11 @@ export const scheduleAction = async (_p: ActionState, fd: FormData) =>
       minute: Number(s(f, "minute")),
       recipientIds: f.getAll("recipients").map(String),
     }), "Monthly schedule saved.");
+export const dhTestSendAction = async (_p: ActionState, fd: FormData) =>
+  run(fd, async (f, ctx) => {
+    const r = await sendDhTestReport(ctx, s(f, "target") === "ME" ? "ME" : "DIVISIONAL_HEADS");
+    return `Test report queued for ${r.to.join(", ")}. It usually arrives within a minute or two.`;
+  }, "Test report queued.");
 export const dhScheduleAction = async (_p: ActionState, fd: FormData) =>
   run(fd, (f, ctx) =>
     updateDhWeeklySchedule(ctx, {

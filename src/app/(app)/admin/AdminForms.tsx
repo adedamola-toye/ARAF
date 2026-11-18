@@ -169,6 +169,19 @@ export function DhScheduleForm({ s, staff, teamEnabled }: { s: { enabled: boolea
   );
 }
 
+export function DhTestSendForm() {
+  return (
+    <ActionForm action={A.dhTestSendAction} className="row">
+      {() => (
+        <>
+          <SubmitButton className="btn" name="target" value="DIVISIONAL_HEADS">Send test to Divisional Head(s) now</SubmitButton>
+          <SubmitButton className="btn btn-ghost" name="target" value="ME">Send test to me</SubmitButton>
+        </>
+      )}
+    </ActionForm>
+  );
+}
+
 export function RetryButton({ id }: { id: string }) {
   return (
     <ActionForm action={A.retryOutboxAction} className="row" showMessages={false}>

@@ -3,7 +3,7 @@ import { db } from "@/server/db";
 import { currentMonthlyPeriod, currentWeeklyPeriod } from "@/server/jobs/schedules";
 import { formatLagos } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
-import { DhScheduleForm, ScheduleForm } from "../AdminForms";
+import { DhScheduleForm, DhTestSendForm, ScheduleForm } from "../AdminForms";
 import { dhPeriodFor, duePeriod } from "@/server/jobs/dh-weekly";
 
 export const metadata = { title: "Scheduled emails" };
@@ -62,6 +62,12 @@ export default async function Schedules() {
             Recipients: <strong>{dhs.length ? dhs.map((d) => d.full_name).join(", ") : "no active Divisional Head yet"}</strong>
             {dh.recipient_staff_ids?.length ? ` plus ${dh.recipient_staff_ids.length} additional` : ""}. Next send: <strong>{formatLagos(nextDh.sendAt)}</strong> (week {nextDh.weekLabel}).
           </p>
+          <div style={{ margin: "var(--space-3) 0" }}>
+            <p className="small" style={{ margin: "0 0 var(--space-2)" }}>
+              <strong>Test send:</strong> builds the report from live figures up to now and emails it marked [TEST]. It does not affect Sunday&apos;s report.
+            </p>
+            <DhTestSendForm />
+          </div>
           <DhScheduleForm teamEnabled={teamOn} s={dh} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
         </div>
       )}
