@@ -73,7 +73,7 @@ export interface Supervision {
   staffIds: string[];
   /** Retail teams in scope (Team Leads' teams). */
   teams: string[];
-  /** Request regions (states) in scope from the person's Unit Head role assignment. */
+  /** Regions (states / zones) in scope: a request is visible when its region, or its initiator's region, is one of these. */
   regions: string[];
   label: string;
 }
@@ -107,10 +107,16 @@ export async function supervision(q: Db, staffId: string): Promise<Supervision> 
     );
     dbc.forEach((x) => ids.add(x));
   };
+  // A Unit Head's or RBE's region: the region on that role, else the person's own region (staff profile). Requests
+  // whose initiator, or whose request region, is in that region are in scope; nothing else needs configuring.
+  if (has("UNIT_HEAD") || has("RBE")) {
+    const { expandRegions } = await import("./roles");
+    const own = (await q.query<{ region: string | null }>("SELECT region FROM staff WHERE id = $1", [staffId])).rows[0]?.region ?? null;
+    const fromRoles = roles.filter((x) => (x.role === "UNIT_HEAD" || x.role === "RBE") && x.region).map((x) => x.region!);
+    for (const r of expandRegions(fromRoles.length ? fromRoles : own ? [own] : [])) regions.add(r);
+  }
   if (has("UNIT_HEAD")) {
     await unit(staffId);
-    const { expandRegions } = await import("./roles");
-    for (const r of expandRegions(roles.filter((x) => x.role === "UNIT_HEAD" && x.region).map((x) => x.region!))) regions.add(r);
     labels.push("your unit");
   }
   if (has("DIVISIONAL_HEAD")) {

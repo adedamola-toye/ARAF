@@ -128,7 +128,10 @@ describe("Business lines, RBE and DBC Unit Head reporting", () => {
     await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.lagos@altbank.ng"), reason: "Ade reports to Tunde as RBE." });
     const a = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
     await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: N(700_000) });
-    const facts = await financingFacts(db, await reportScope(db, await sid("rbe.lagos@altbank.ng")));
+    // The RBE's region is South: the Merchant Officer request (also from the South) is in scope too; take the RM's.
+    const all = await financingFacts(db, await reportScope(db, await sid("rbe.lagos@altbank.ng")));
+    expect(all.map((f) => f.id)).toContain(a);
+    const facts = all.filter((f) => f.officer === "Ade Okafor");
     expect(facts.map((f) => f.id)).toEqual([a]);
     const rows = officerPerformance(facts);
     expect(rows).toHaveLength(1);

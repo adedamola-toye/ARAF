@@ -108,9 +108,9 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
     const sv = await supervision(q, staffId);
     if (sv.staffIds.length || sv.teams.length || sv.regions.length || (await holdsRole(q, staffId, "UNIT_HEAD"))) {
       const hit = await q.query(
-        `SELECT 1 FROM applications a WHERE a.id = $1 AND a.stage <> 'DRAFT' AND (
+        `SELECT 1 FROM applications a JOIN staff i ON i.id = a.initiator_id WHERE a.id = $1 AND a.stage <> 'DRAFT' AND (
             a.initiator_id = ANY($2::uuid[]) OR a.assigned_rm_id = ANY($2::uuid[]) OR a.team = ANY($3::text[])
-         OR a.region = ANY($4::text[]) OR a.routing_unit_head_id = $5)`,
+         OR a.region = ANY($4::text[]) OR i.region = ANY($4::text[]) OR a.routing_unit_head_id = $5)`,
         [appId, sv.staffIds, sv.teams, sv.regions, staffId],
       );
       if (hit.rowCount) capacities.push("SUPERVISOR");

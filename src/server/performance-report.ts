@@ -123,7 +123,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       `WITH apps AS (
          SELECT a.* FROM applications a
           WHERE a.submitted_at IS NOT NULL
-            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1) OR a.assigned_rm_id = ANY($1) OR a.team = ANY($4::text[]) OR a.region = ANY($5::text[]) OR a.routing_unit_head_id = $6 OR a.selected_rbe_id = $6
+            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1) OR a.assigned_rm_id = ANY($1) OR a.team = ANY($4::text[]) OR a.region = ANY($5::text[]) OR a.initiator_id IN (SELECT id FROM staff WHERE region = ANY($5::text[])) OR a.routing_unit_head_id = $6 OR a.selected_rbe_id = $6
                  OR EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = a.id AND d.actor_id = $6))
             AND ($2::date IS NULL OR a.submitted_at >= $2::date)
             AND ($3::date IS NULL OR a.submitted_at < ($3::date + 1))

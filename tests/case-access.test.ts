@@ -115,5 +115,20 @@ describe("Who can open a request", () => {
     await adminAssignTask(await ctxFor(ADMIN), t.id, others[0].staff_id, "Rebalancing the credit queue for leave.");
     expect(await view(first, id)).toContain("APPROVER");
   });
+
+  it("a Unit Head or RBE sees requests whose initiator is in their region, with nothing configured", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) }); // rm.ade, region SOUTH
+    const south = (await db.query("INSERT INTO staff (email, full_name, region) VALUES ('uh.south@altbank.ng','South Unit-Head','LAGOS') RETURNING id")).rows[0].id as string;
+    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [south]);
+    await db.query("UPDATE staff SET region = 'LAGOS' WHERE email = 'rm.ade@altbank.ng'");
+    expect(await view(south, id)).toContain("SUPERVISOR");
+    const north = (await db.query("INSERT INTO staff (email, full_name, region) VALUES ('uh.north@altbank.ng','North Unit-Head','KANO') RETURNING id")).rows[0].id as string;
+    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [north]);
+    expect(await view(north, id)).toEqual([]);
+    // A zone-wide region covers its states; an RBE's region works the same way.
+    const zone = await staff("rbe.zone@altbank.ng", "Zone RBE", "RBE", { region: "SOUTH" });
+    expect(await view(zone, id)).toContain("SUPERVISOR");
+    expect((await financingFacts(db, await reportScope(db, south))).map((f) => f.id)).toEqual([id]);
+  });
 });
 
