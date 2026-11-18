@@ -290,7 +290,7 @@ export default async function Performance({ searchParams }: { searchParams: Prom
       {kpis.length > 0 ? (
         <section className="po-kpis" aria-label="Executive summary">
           {kpis.map((x) => (
-            <div key={x.label} className="po-kpi">
+            <div key={x.label} className={`po-kpi${x.value.startsWith("₦") ? " po-kpi-money" : ""}`}>
               <div className="po-kpi-label">{x.label}</div>
               <div className="po-kpi-value">{x.value}</div>
               <div className={`po-kpi-note${x.tone ? " po-warn" : ""}`}>{x.note}</div>
@@ -345,7 +345,9 @@ export default async function Performance({ searchParams }: { searchParams: Prom
                     <td className="num">{g.requests}</td>
                     <td className="po-share-col">
                       <span className="po-share">
-                        <span className="po-share-bar" style={{ width: `${Math.max(2, (100 * g.requestedKobo) / maxGroup)}%` }} aria-hidden="true" />
+                        <span className="po-share-track" aria-hidden="true">
+                          <span className="po-share-bar" style={{ width: `${Math.max(3, (100 * g.requestedKobo) / maxGroup)}%` }} />
+                        </span>
                         <span className="num">{k(g.requestedKobo)}</span>
                       </span>
                     </td>

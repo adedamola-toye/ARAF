@@ -1171,3 +1171,9 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 .po-panel .table-wrap { overflow-x: auto; }
 .po-tip { max-width: min(260px, 90%); }
 .po-tip-row .num { white-space: nowrap; padding-left: 12px; }
+@media (max-width: 560px) { .po-kpi-money { grid-column: 1 / -1; } .po-kpi-money .po-kpi-value { font-size: clamp(15px, 7.5cqi, 22px); } }
+.po-share-track { flex: 0 0 64px; height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.po-share-track .po-share-bar { max-width: none; min-width: 0; height: 100%; }
+.po-tip { transform: none; }
+.po-tip-right { margin-left: 12px; }
+.po-tip-left { transform: translateX(calc(-100% - 12px)); }

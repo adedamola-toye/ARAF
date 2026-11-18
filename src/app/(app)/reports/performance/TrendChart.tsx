@@ -114,7 +114,7 @@ export function TrendChart({ data, grain }: { data: TrendDatum[]; grain: "day" |
           </svg>
         )}
         {h && hover !== null && (
-          <div className="po-tip" style={{ left: `${Math.min(Math.max(x(hover), 90), W - 90)}px` }} role="status">
+          <div className={`po-tip ${x(hover) > W / 2 ? "po-tip-left" : "po-tip-right"}`} style={{ left: `${x(hover)}px` }} role="status">
             <strong>{h.label}</strong>
             {SERIES.map((s) => (
               <span key={s.key} className="po-tip-row">
