@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { audits, outbox, resetDb } from "./helpers";
-import { createSubmittedCase, ctxFor, driveToOffer } from "@/server/demo/scenario";
+import { act, approveFirstReview, createSubmittedCase, ctxFor, driveToOffer } from "@/server/demo/scenario";
 import { dhPeriodFor, duePeriod, runDhWeeklyReport } from "@/server/jobs/dh-weekly";
 import { updateDhWeeklySchedule } from "@/server/domain/admin";
 import { setOrgLink } from "@/server/domain/org";
+import { setRmClassification } from "@/server/domain/rm-routing";
 
 const N = (n: number) => n * 100;
 const sid = async (email: string) => (await db.query("SELECT id FROM staff WHERE email = $1", [email])).rows[0].id as string;
@@ -59,20 +60,47 @@ describe("Weekly Divisional Head report: delivery", () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     const uh = await sid("unit.head@altbank.ng");
     await setOrgLink(admin, { staffId: await sid("rm.ade@altbank.ng"), relation: "UNIT_HEAD", managerId: uh, reason: "Ade reports to Olu for reporting." });
-    const lonely = (await db.query("INSERT INTO staff (email, full_name) VALUES ('uh.two@altbank.ng','Second Unit-Head') RETURNING id")).rows[0].id;
-    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [lonely]);
     const now = new Date();
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_500_000), now });
     await driveToOffer(id, now); // includes a Unit Head approval
+    const lonely = (await db.query("INSERT INTO staff (email, full_name) VALUES ('uh.two@altbank.ng','Second Unit-Head') RETURNING id")).rows[0].id;
+    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [lonely]);
     await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
     const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
     expect(body).toContain("9. UNIT HEADS AND THEIR DIRECT REPORTS");
     expect(body).toMatch(/9\.\d Olu Unit-Head, Unit Head \(1 direct report\)/);
     expect(body).toMatch(/Olu Unit-Head \(Unit Head, own work\)\s+1 decision · \d+ actions?/);
-    expect(body).toMatch(/Ade Okafor \(Relationship Manager\)[^\n]*1 req ₦1,500,000/);
+    expect(body).toMatch(/Ade Okafor \(Relationship Manager · not yet classified\)[^\n]*1 req ₦1,500,000/);
     expect(body).toMatch(/9\.\d Second Unit-Head, Unit Head \(0 direct reports\)/);
     expect(body).toContain("No direct reports are mapped yet");
     expect(body).toMatch(/Ade Okafor this week: [^\n]*Draft created ×1/);
+  });
+
+  it("registers Non-DBC RMs under their RBE, the Merchant Officer line, and everyone else who worked", async () => {
+    const admin = await ctxFor("superadmin@altbank.ng");
+    await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.lagos@altbank.ng"), reason: "Ade is a Non-DBC RM under Tunde." });
+    const now = new Date();
+    const cx = (await db.query("INSERT INTO staff (email, full_name) VALUES ('cx.r@altbank.ng','Ada CX-Reviewer') RETURNING id")).rows[0].id;
+    await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'CX_CREDIT_REVIEWER')", [cx]);
+    const nd = await createSubmittedCase({ initiator: "RM", amountKobo: N(2_000_000), now });
+    await act(nd, "ENDORSE", { reason: "RBE review complete." }, now);
+    await act(nd, "RECOMMEND", { reason: "CX review complete; recommend." }, now);
+    await approveFirstReview(nd, now);
+    await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
+    const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
+    expect(body).toMatch(/10\. NON-DBC BUSINESS[^\n]*\n[^\n]*\n\s+Non-DBC total\s+1 req · ₦2,000,000/);
+    expect(body).toMatch(/10\.\d Tunde Adeyemi, Regional Business Executive \(1 RM\)/);
+    expect(body).toMatch(/Tunde Adeyemi \(RBE, own work\)\s+1 decision/);
+    expect(body).toMatch(/Ade Okafor \(Relationship Manager · Non-DBC\)[^\n]*1 req ₦2,000,000/);
+    expect(body).toMatch(/Relationship Managers not yet classified as DBC or Non-DBC/);
+    expect(body).toMatch(/11\.\d Alexander Olasinde, Merchant Officer Head \(1 Lead/);
+    expect(body).toMatch(/12\. EVERYONE ELSE WHO WORKED ON ARAF THIS MONTH/);
+    expect(body).toMatch(/\(Credit Officer 1\)[^\n]*1 decision/);
+    expect(body).toMatch(/Ada CX-Reviewer \(CX Credit Reviewer \(retail\)\)[^\n]*1 decision/);
+    // Nobody appears twice in section 12 if already registered under a leader.
+    const s12 = body.slice(body.indexOf("12. EVERYONE ELSE"));
+    expect(s12).not.toContain("Tunde Adeyemi (");
+    expect(s12).not.toContain("Ade Okafor (");
   });
 
   it("the Super Admin can switch it off, change the time and add recipients", async () => {

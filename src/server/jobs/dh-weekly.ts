@@ -277,48 +277,37 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
         [uh],
       )
     ).rows;
-  const people = new Set<string>(unitHeads.map((u) => u.id));
   const teams = new Map<string, Awaited<ReturnType<typeof reportsOf>>>();
-  for (const u of unitHeads) {
-    const r = await reportsOf(u.id);
-    teams.set(u.id, r);
-    r.forEach((x) => people.add(x.id));
-  }
-  const ids = [...people];
+  for (const u of unitHeads) teams.set(u.id, await reportsOf(u.id));
   const NOISE = "(VIEW|VIEWED|DOWNLOAD|LOGIN|LOGOUT|SESSION|SCAN|ASSIGNED|STAGE_CHANGED|VERIFIED|ACCESS_DENIED|OTP|ONBOARDING|EXPORTED)";
   const DECISION = "^(TASK_(APPROVE|ENDORSE|RECOMMEND|PROCEED|REJECT|RETURN)|(ALTPHONES|STAFF_FIN)_.*(APPROVE|APPROVED|DECLINE|DECLINED|RETURN|RETURNED|FORWARD))$";
+  // Everyone's activity (all staff), so that every person can be registered in exactly one place below.
   const activity = async (a: Date) =>
-    ids.length
-      ? (
-          await q.query<{ actor_id: string; action: string; n: number }>(
-            `SELECT actor_id, action, count(*)::int AS n FROM audit_events
-              WHERE actor_id = ANY($1::uuid[]) AND occurred_at >= $2 AND occurred_at < $3 AND outcome = 'SUCCESS' AND action !~ $4
-              GROUP BY 1, 2`,
-            [ids, a, end, NOISE],
-          )
-        ).rows
-      : [];
+    (
+      await q.query<{ actor_id: string; action: string; n: number }>(
+        `SELECT e.actor_id, e.action, count(*)::int AS n FROM audit_events e JOIN staff s ON s.id = e.actor_id
+          WHERE e.occurred_at >= $1 AND e.occurred_at < $2 AND e.outcome = 'SUCCESS' AND e.action !~ $3
+          GROUP BY 1, 2`,
+        [a, end, NOISE],
+      )
+    ).rows;
   const actW = await activity(p.weekStart);
   const actM = await activity(p.monthStart);
-  const openNow = ids.length
-    ? (
-        await q.query<{ assignee_id: string; n: number; overdue: number }>(
-          `SELECT t.assignee_id, count(*)::int AS n, count(*) FILTER (WHERE coalesce(t.assigned_at, t.entered_at) < $2::timestamptz - interval '3 hours')::int AS overdue
-             FROM tasks t WHERE t.status = 'OPEN' AND t.assignee_id = ANY($1::uuid[]) GROUP BY 1`,
-          [ids, end],
-        )
-      ).rows
-    : [];
+  const openNow = (
+    await q.query<{ assignee_id: string; n: number; overdue: number }>(
+      `SELECT t.assignee_id, count(*)::int AS n, count(*) FILTER (WHERE coalesce(t.assigned_at, t.entered_at) < $1::timestamptz - interval '3 hours')::int AS overdue
+         FROM tasks t WHERE t.status = 'OPEN' AND t.assignee_id IS NOT NULL GROUP BY 1`,
+      [end],
+    )
+  ).rows;
   const altBy = async (a: Date) =>
-    ids.length
-      ? (
-          await q.query<{ originator_id: string; n: number }>(
-            `SELECT originator_id, count(*)::int AS n FROM altphones_applications
-              WHERE NOT legacy AND status <> 'DRAFT' AND originator_id = ANY($1::uuid[]) AND coalesce(submitted_at, created_at) >= $2 AND coalesce(submitted_at, created_at) < $3 GROUP BY 1`,
-            [ids, a, end],
-          )
-        ).rows
-      : [];
+    (
+      await q.query<{ originator_id: string; n: number }>(
+        `SELECT originator_id, count(*)::int AS n FROM altphones_applications
+          WHERE NOT legacy AND status <> 'DRAFT' AND coalesce(submitted_at, created_at) >= $1 AND coalesce(submitted_at, created_at) < $2 GROUP BY 1`,
+        [a, end],
+      )
+    ).rows;
   const altW = await altBy(p.weekStart);
   const altM = await altBy(p.monthStart);
   const decisionRe = new RegExp(DECISION);
@@ -350,20 +339,89 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
     return o ? ` — ${o.n} open now${o.overdue ? `, ${o.overdue} over 3 h` : ""}` : "";
   };
   const roleName = (roles: string[]) => roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ") || "No active role";
-  const unitSections: (() => string[])[] = unitHeads.map((u, i) => () => {
-    const team = teams.get(u.id) ?? [];
+  type Person = { id: string; name: string; roles: string[] };
+  // Every Relationship Manager is shown with their classification, so DBC and Non-DBC work is always distinguishable.
+  const segOf = new Map(
+    (await q.query<{ staff_id: string; segment: string; dbc_region: string | null }>("SELECT staff_id, segment, dbc_region FROM rm_classifications")).rows.map((r) => [
+      r.staff_id,
+      r.segment === "NON_DBC" ? "Non-DBC" : `DBC ${r.dbc_region === "NORTH" ? "North" : "South & West"}`,
+    ]),
+  );
+  const personLabel = (m: Person) => `${m.name} (${roleName(m.roles)}${m.roles.includes("RM") ? ` · ${segOf.get(m.id) ?? "not yet classified"}` : ""})`;
+  /** Who has been registered in a section already (each person appears under one leader at most once per section). */
+  const listed = new Set<string>();
+  /** A leader's table: their own work first (if any), then each member, with each person's most frequent actions. */
+  const teamTable = (title: string, leader: { id: string; name: string; label: string } | null, members: Person[], emptyNote: string) => {
     const rows: [string, string, string][] = [
-      [`${u.name} (Unit Head, own work)${openLabel(u.id)}`, cellFor(u.id, W, actW, altW), cellFor(u.id, M, actM, altM)],
-      ...team.map((m): [string, string, string] => [`${m.name} (${roleName(m.roles)})${openLabel(m.id)}`, cellFor(m.id, W, actW, altW), cellFor(m.id, M, actM, altM)]),
+      ...(leader ? [[`${leader.name} (${leader.label}, own work)${openLabel(leader.id)}`, cellFor(leader.id, W, actW, altW), cellFor(leader.id, M, actM, altM)] as [string, string, string]] : []),
+      ...members.map((m): [string, string, string] => [`${personLabel(m)}${openLabel(m.id)}`, cellFor(m.id, W, actW, altW), cellFor(m.id, M, actM, altM)]),
     ];
-    const lines = T(`9.${i + 1} ${u.name}, Unit Head (${team.length} direct report${team.length === 1 ? "" : "s"})`, rows);
-    const notes = [
-      ...(team.length ? [] : ["No direct reports are mapped yet (Administration → Reporting lines, or RM classification for DBC Unit Heads)."]),
-      ...[u, ...team].map((m) => (topActions(m.id) ? `${m.name} this week: ${topActions(m.id)}` : "")).filter(Boolean),
-    ];
+    if (leader) listed.add(leader.id);
+    members.forEach((m) => listed.add(m.id));
+    const lines = T(title, rows);
+    const who = [...(leader ? [{ id: leader.id, name: leader.name }] : []), ...members];
+    const notes = [...(members.length ? [] : [emptyNote]), ...who.map((m) => (topActions(m.id) ? `${m.name} this week: ${topActions(m.id)}` : "")).filter(Boolean)];
     if (notes.length) html.push(`<p style="margin:6px 0 0;font:12px/1.6 Arial,Helvetica,sans-serif;color:#5f6c87">${notes.map(esc).join("<br>")}</p>`);
     return [...lines.slice(0, -1), ...notes.map((n) => `  ${n}`), ""];
+  };
+  const unitSections: (() => string[])[] = unitHeads.map((u, i) => () => {
+    const team = teams.get(u.id) ?? [];
+    return teamTable(`9.${i + 1} ${u.name}, Unit Head (${team.length} direct report${team.length === 1 ? "" : "s"})`, { id: u.id, name: u.name, label: "Unit Head" }, team, "No direct reports are mapped yet (Administration → Reporting lines, or RM classification for DBC Unit Heads).");
   });
+
+  // ── 10. Non-DBC: each Regional Business Executive and the Relationship Managers assigned to them.
+  const staffWithRoles = async (where: string, params: unknown[]) =>
+    (
+      await q.query<Person>(
+        `SELECT s.id, s.full_name AS name, coalesce(array_agg(DISTINCT ra.role) FILTER (WHERE ra.role IS NOT NULL), '{}') AS roles
+           FROM staff s LEFT JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active
+          WHERE s.status = 'ACTIVE' AND (${where}) GROUP BY s.id, s.full_name ORDER BY s.full_name`,
+        params,
+      )
+    ).rows;
+  const rbes = await staffWithRoles("s.id IN (SELECT staff_id FROM role_assignments WHERE role = 'RBE' AND active)", []);
+  const rbeTeams = new Map<string, Person[]>();
+  for (const r of rbes) rbeTeams.set(r.id, await staffWithRoles("s.id IN (SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'RBE')", [r.id]));
+  const unclassified = await staffWithRoles("s.id IN (SELECT staff_id FROM role_assignments WHERE role = 'RM' AND active) AND s.id NOT IN (SELECT staff_id FROM rm_classifications)", []);
+  const nonDbcLine = (w: Window) => {
+    const f = (xs: FinFact[]) => xs.filter((x) => x.segment === "Non-DBC");
+    return `${f(w.submitted).length} req · ${money(sum(f(w.submitted), req))} · ${f(w.approved).length} approved · disb ${money(sum(f(w.disbursed), (x) => x.disbursedKobo))}`;
+  };
+  const nonDbcSections = () => [
+    ...T("10. NON-DBC BUSINESS (Relationship Managers outside DBC, reviewed by their RBE)", [["Non-DBC total", nonDbcLine(W), nonDbcLine(M)]]),
+    ...(rbes.length
+      ? rbes.flatMap((r, i) => {
+          const team = rbeTeams.get(r.id) ?? [];
+          return teamTable(`10.${i + 1} ${r.name}, Regional Business Executive (${team.length} RM${team.length === 1 ? "" : "s"})`, { id: r.id, name: r.name, label: "RBE" }, team, "No Relationship Managers are assigned to this RBE yet (Configuration centre → RM classification and routing).");
+        })
+      : L("10.1 Regional Business Executives", [], "No active Regional Business Executives.")),
+    ...(unclassified.length
+      ? teamTable(`10.${rbes.length + 1} Relationship Managers not yet classified as DBC or Non-DBC (${unclassified.length})`, null, unclassified, "")
+      : []),
+  ];
+
+  // ── 11. Merchant Officer line: each Head, their Leads and the Leads' officers.
+  const moHeads = await staffWithRoles("s.id IN (SELECT staff_id FROM role_assignments WHERE role = 'MERCHANT_OFFICER_HEAD' AND active)", []);
+  const moSections = async () => {
+    const out: string[] = [];
+    let i = 0;
+    for (const h of moHeads) {
+      const leads = await staffWithRoles("s.id IN (SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'MO_HEAD')", [h.id]);
+      const officers = leads.length ? await staffWithRoles("s.id IN (SELECT staff_id FROM org_links WHERE manager_id = ANY($1::uuid[]) AND relation = 'MO_LEAD')", [leads.map((l) => l.id)]) : [];
+      out.push(...teamTable(`11.${++i} ${h.name}, Merchant Officer Head (${leads.length} Lead${leads.length === 1 ? "" : "s"}, ${officers.length} officer${officers.length === 1 ? "" : "s"})`, { id: h.id, name: h.name, label: "Merchant Officer Head" }, [...leads, ...officers], "No Leads are mapped to this Head yet (Administration → Reporting lines)."));
+    }
+    const unmapped = (await staffWithRoles("s.id IN (SELECT staff_id FROM role_assignments WHERE role IN ('MERCHANT_OFFICER','MERCHANT_OFFICER_LEAD') AND active)", [])).filter((x) => !listed.has(x.id));
+    if (unmapped.length) out.push(...teamTable(`11.${++i} Merchant Officers and Leads without a reporting line (${unmapped.length})`, null, unmapped, ""));
+    return out.length ? out : L("11. MERCHANT OFFICER LINE", [], "No Merchant Officer Head or officers.");
+  };
+
+  // ── 12. Everyone else who did work in the month (credit, CX, operations, AltPhones, support …), so nobody is left out.
+  const otherSection = async () => {
+    const active = [...new Set(actM.map((x) => x.actor_id))].filter((id) => !listed.has(id));
+    const people = active.length ? await staffWithRoles("s.id = ANY($1::uuid[])", [active]) : [];
+    people.sort((a, b) => roleName(a.roles).localeCompare(roleName(b.roles)) || a.name.localeCompare(b.name));
+    return teamTable(`12. EVERYONE ELSE WHO WORKED ON ARAF THIS MONTH (${people.length})`, null, people, "Nobody else recorded work this month.");
+  };
 
   const link = `${config.appUrl}/reports/performance?from=${p.fromMonth}&to=${p.to}`;
   const summary = {
@@ -383,10 +441,14 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
     ...T(othersTitle, othersRows),
     ...(unitHeads.length
       ? [
-          ...L("9. UNIT HEADS AND THEIR DIRECT REPORTS", ["Each person: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, returns, declines) and all work actions recorded in the audit trail, this week and month to date; open tasks now."], ""),
+          ...L("9. UNIT HEADS AND THEIR DIRECT REPORTS", ["Sections 9 to 12 register what every person did. For each person: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, endorsements, recommendations, returns, declines) and all work actions recorded in the audit trail, this week and month to date; open tasks now."], ""),
           ...unitSections.flatMap((f) => f()),
         ]
       : L("9. UNIT HEADS AND THEIR DIRECT REPORTS", [], "No active Unit Heads.")),
+    ...nonDbcSections(),
+    ...L("11. MERCHANT OFFICER LINE", ["Each Merchant Officer Head, their Leads and the Leads' officers."], ""),
+    ...(await moSections()),
+    ...(await otherSection()),
     `Full interactive report (month to date, drill down by business line, Unit Head / RBE, product, officer, location and facility): ${link}`,
   ];
   html.push(`<p style="margin:24px 0 0"><a href="${esc(link)}" style="display:inline-block;background:#1d438e;color:#ffffff;text-decoration:none;font:600 13px Arial,Helvetica,sans-serif;padding:10px 16px;border-radius:8px">Open the Performance Overview</a></p>`);
@@ -396,8 +458,8 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
 
 /** The HTML email: a simple, table-based layout that renders in Outlook and on phones. */
 export function dhEmailHtml(name: string, p: DhPeriod, time: string, sections: string) {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f7f9ff"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f9ff"><tr><td style="padding:24px 12px">
-<table role="presentation" cellspacing="0" cellpadding="0" style="width:100%;max-width:800px;margin:0 auto;background:#ffffff;border:1px solid #dee5f3;border-radius:12px"><tr><td style="padding:24px 24px 28px">
+  return `<!doctype html><html><body style="margin:0;padding:0;background:#f7f9ff"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f9ff"><tr><td style="padding:24px 8px">
+<table role="presentation" cellspacing="0" cellpadding="0" style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid #dee5f3;border-radius:12px"><tr><td style="padding:24px 24px 28px">
 <p style="margin:0 0 4px;font:600 11px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#5f6c87">Retail Asset Factory · Weekly report</p>
 <h1 style="margin:0 0 12px;font:700 20px/1.3 Arial,Helvetica,sans-serif;color:#152b59">Week ${esc(p.weekLabel)} and ${esc(p.monthLabel.split(" (")[0])}</h1>
 <p style="margin:0 0 4px;font:14px/1.5 Arial,Helvetica,sans-serif;color:#2b3f69">Dear ${esc(name)},</p>

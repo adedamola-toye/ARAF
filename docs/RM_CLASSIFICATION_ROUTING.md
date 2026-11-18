@@ -47,6 +47,10 @@ The classification, RBE and Unit Head are pinned on each request at submission. 
   6. Top originators month to date. 7. Review and approval decisions this week by person.
   8. AltPhones and Staff Salary Advance.
   9. Every Unit Head and their direct reports: one table per Unit Head with their own work, then each person who reports to them (Reporting lines, plus the DBC RMs of a configured DBC Unit Head's region). For each person, this week and month to date: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, endorsements, recommendations, returns, declines across all products) and all work actions recorded in the audit trail (screen views and system events excluded), open tasks now and how many are over 3 hours, and their most frequent actions this week.
+  10. Non-DBC business: the Non-DBC total, then one table per Regional Business Executive (their own approvals, then each Relationship Manager assigned to them), and a table of Relationship Managers not yet classified as DBC or Non-DBC.
+  11. Merchant Officer line: one table per Merchant Officer Head (the Head, their Leads and the Leads' officers), plus any officers or Leads without a reporting line.
+  12. Everyone else who did work in the month and is not already listed above (Credit Officers, CX, Credit Leads, disbursement and invoice officers, AltPhones staff, Product Managers, support roles …), named with their role.
+  Every Relationship Manager is labelled "DBC South & West", "DBC North", "Non-DBC" or "not yet classified".
   Plus a button to the Performance Overview filtered to month to date.
 - HTML email (tables that work in Outlook and on phones) with a plain-text copy. No customer identifiers.
 - Administration → Scheduled emails: switch it on or off, change the Sunday time, add recipients. Every run is recorded; a recipient never gets the same week twice; a run missed while the worker was down is sent within three days.
