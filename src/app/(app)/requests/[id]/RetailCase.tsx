@@ -489,7 +489,6 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       const contracting = gapsBlocking(gapsNow, "CONTRACTING");
       const seq = structureRules(effective ? profileRules(effective.config, app.customer_profile) : null, app.financing_structure)?.contractSequence ?? [];
       const missing = ["GENERATED_OFFER", ...PACK].filter((p) => !has(p));
-      if (seq.length && !has("CONTRACT_EVIDENCE")) missing.push("CONTRACT_EVIDENCE");
       if (finalOut) body.push(<div key="terms" className="summary-box small"><p className="eyebrow">Approved terms</p>{finalOut.structureLabel} · {finalOut.rateLabel}<br />Principal {formatKobo((b.final.inputs as AffordabilityInput).principalKobo)} · total payable {formatKobo(finalOut.totalPayableKobo)} · monthly {finalOut.proposedMonthlyDisplay}<br /><strong>{finalOut.insurance}</strong></div>);
       if (offerBlocked.length) body.push(<Blocked key="ob">Offer generation blocked until configured: {offerBlocked.map((g) => g.label).join("; ")}.</Blocked>);
       else if (!tpl) body.push(<Blocked key="nt">No active offer template for this product and structure.</Blocked>);
@@ -497,8 +496,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       else body.push(<GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={`${tpl.name} v${tpl.version}`} />);
       if (contracting.length) body.push(<Blocked key="cs">Contractual sequence not configured: {contracting.map((g) => g.label).join("; ")}.</Blocked>);
       else if (seq.length) body.push(<div key="seq" className="small"><strong>Contract sequence ({STRUCTURE_LABELS[app.financing_structure as StructureCode]}):</strong><ol>{seq.map((s) => <li key={s}>{s}</li>)}</ol></div>);
-      body.push(<ul key="cl" className="checklist"><Check ok={has("GENERATED_OFFER")}>Offer generated from the approved template</Check>{PACK.map((p) => <Check key={p} ok={has(p)}>{CATEGORY_LABEL[p]}</Check>)}{seq.length > 0 && <Check ok={has("CONTRACT_EVIDENCE")}>{CATEGORY_LABEL.CONTRACT_EVIDENCE}</Check>}</ul>);
-      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack or contract document" categories={[...PACK, "CONTRACT_EVIDENCE", "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
+      body.push(<ul key="cl" className="checklist"><Check ok={has("GENERATED_OFFER")}>Offer generated from the approved template</Check>{PACK.map((p) => <Check key={p} ok={has(p)}>{CATEGORY_LABEL[p]}</Check>)}</ul>);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack document" categories={[...PACK, "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
       if (missing.length) body.push(<Blocked key="miss">Missing: {missing.map((m) => CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
       body.push(<SubmitPack key="sp" hidden={hidden} doneHref={doneHref} disabled={missing.length > 0 || contracting.length > 0} sequence={seq} />);
       break;
@@ -544,13 +543,14 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
     }
     case "FULFILMENT": {
       const evidence = docs.filter((d) => d.category === "FULFILMENT_EVIDENCE").map((d) => ({ id: d.id, label: `${d.filename} (v${d.version_no})` }));
-      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload fulfilment evidence" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload Evidence of Delivery / Acquisition" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      if (!evidence.length) body.push(<Blocked key="ev-missing">Please upload evidence of delivery or acquisition before confirming disbursement.</Blocked>);
       for (const f of b.fulfilment) {
         if (f.status === "DONE") body.push(<p key={f.kind} className="small" style={{ margin: 0 }}>✓ {FULFILMENT_LABELS[f.kind as FulfilmentKind]}: {f.note}</p>);
         else body.push(<FulfilmentForm key={f.kind} applicationId={app.id} kind={f.kind} label={FULFILMENT_LABELS[f.kind as FulfilmentKind]} evidence={evidence} />);
       }
       const open = b.fulfilment.filter((f: { status: string }) => f.status !== "DONE").length;
-      body.push(<TaskButton key="cf" hidden={hidden} action="COMPLETE_FULFILMENT" label="Complete application" disabled={open > 0} doneHref={doneHref} />);
+      body.push(<TaskButton key="cf" hidden={hidden} action="COMPLETE_FULFILMENT" label="Confirm Disbursement" disabled={open > 0 || !evidence.length} doneHref={doneHref} />);
       body.push(<p key="n" className="small muted" style={{ margin: 0 }}>Completing the application does not close the facility; it stays active until fully settled.</p>);
       break;
     }

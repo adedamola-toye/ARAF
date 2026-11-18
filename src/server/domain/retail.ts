@@ -901,7 +901,7 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       if (contracting.length) throw gate(`The contractual sequence for this structure is not configured: ${contracting.map((g) => g.label).join("; ")}.`);
       const rules = profileRules(effective.config, app.customer_profile);
       const seq = structureRules(rules, app.financing_structure)?.contractSequence ?? [];
-      const missing = await missingRequired(tx, app, seq.length > 0);
+      const missing = await missingRequired(tx, app);
       if (missing.length) throw gate(`The offer and contract pack is incomplete. Missing: ${missing.join(", ")}.`);
       if (seq.length && !input.contractStepsConfirmed) throw gate(`Confirm the contractual steps were completed in order: ${seq.join(" → ")}.`);
       await recordDecision(tx, ctx, app, task, "SUBMIT_PACK", reason);
@@ -929,7 +929,8 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
         const { cfg: c2 } = await currentConfigFor(tx, app, ctx.now);
         const eff = (await effectiveConfig(tx, app.product_code!, ctx.now)) ?? c2;
         const seq2 = structureRules(profileRules(eff.config, app.customer_profile), app.financing_structure)?.contractSequence ?? [];
-        const blockers = await disbursementBlockers(tx, app, seq2.length > 0);
+        void seq2;
+        const blockers = await disbursementBlockers(tx, app);
         if (blockers.length) throw gate(`Not ready for disbursement. ${blockers.join(" ")}`);
       }
       await recordDecision(tx, ctx, app, task, a, reason);

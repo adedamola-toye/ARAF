@@ -13,6 +13,8 @@
  */
 import { generateClosingDocuments, queueClosingDocuments } from "./closing-docs";
 import { disbursementBlockers, missingRequired } from "./closing-checklist";
+import { hasAcquisitionEvidence } from "./retail-ops";
+import { ACQUISITION_EVIDENCE_MESSAGE } from "./documents";
 import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
 import { checkVerification, recordVerification } from "./verification";
@@ -791,6 +793,7 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
     case "VENDOR_CONFIRMATION": {
       const st = (await tx.query("SELECT process_completed_at FROM applications WHERE id = $1", [app.id])).rows[0];
       if (!st.process_completed_at) throw gate("Credit Officer 3 must complete the process first.");
+      if (!(await hasAcquisitionEvidence(tx, app.id))) throw gate(ACQUISITION_EVIDENCE_MESSAGE);
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       await tx.query(

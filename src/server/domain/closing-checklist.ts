@@ -16,7 +16,7 @@ export interface ChecklistItem {
   required: boolean;
 }
 /** Documents a checklist may include. */
-export const CHECKLIST_CANDIDATES = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "INSURANCE_SIGNED", "CONTRACT_EVIDENCE"];
+export const CHECKLIST_CANDIDATES = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "INSURANCE_SIGNED"];
 export const STANDARD_CHECKLIST: ChecklistItem[] = [
   { code: "GENERATED_OFFER", required: true },
   { code: "SIGNED_OFFER", required: true },
@@ -52,8 +52,9 @@ export interface ChecklistStatus {
 
 /** The checklist for a request with what is on file (contract evidence is added when the structure has a contract sequence). */
 export async function checklistStatus(q: Db, app: { id: string; workflow: string; product_code: string | null }, contractSequence = false): Promise<ChecklistStatus[]> {
-  const items = [...(await checklistItems(q, checklistKey(app)))];
-  if (contractSequence && !items.some((i) => i.code === "CONTRACT_EVIDENCE")) items.push({ code: "CONTRACT_EVIDENCE", required: true });
+  // Contracting / acquisition evidence is not part of the pack: it is taken at RM disbursement confirmation.
+  void contractSequence;
+  const items = (await checklistItems(q, checklistKey(app))).filter((i) => i.code !== "CONTRACT_EVIDENCE");
   const cats = new Set((await currentCleanDocuments(q, app.id)).map((d) => d.category));
   return items.map((i) => ({ code: i.code, label: CHECKLIST_LABELS[i.code] ?? i.code, required: i.required, onFile: cats.has(i.code) }));
 }

@@ -9,6 +9,7 @@
  *    net of reversals equal the booked principal, and the Disbursement team reconciles it;
  *  - completing the application's operational steps never closes an outstanding facility.
  */
+import { ACQUISITION_EVIDENCE_MESSAGE } from "./documents";
 import type { Db, Tx } from "../db";
 import { withTx } from "../db";
 import type { Ctx } from "../context";
@@ -292,7 +293,14 @@ export async function recordFulfilmentTask(ctx: Ctx, appId: string, kind: Fulfil
   });
 }
 
+/** A clean evidence-of-delivery / acquisition document is on file for the request. */
+export async function hasAcquisitionEvidence(q: Tx, appId: string): Promise<boolean> {
+  return !!(await q.query("SELECT 1 FROM documents WHERE application_id = $1 AND category = 'FULFILMENT_EVIDENCE' AND scan_status = 'CLEAN' AND superseded_at IS NULL LIMIT 1", [appId])).rowCount;
+}
+
 export async function completeFulfilment(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
+  // RM disbursement confirmation: evidence of delivery / acquisition is mandatory (server-enforced).
+  if (!(await hasAcquisitionEvidence(tx, app.id))) throw gate(ACQUISITION_EVIDENCE_MESSAGE);
   const open = (await tx.query<{ kind: FulfilmentKind }>("SELECT kind FROM fulfilment_tasks WHERE application_id = $1 AND status = 'OPEN'", [app.id])).rows;
   if (open.length) throw gate(`Complete with evidence: ${open.map((o) => FULFILMENT_LABELS[o.kind]).join(", ")}.`);
   await recordDecision(tx, ctx, app, task, "COMPLETE_FULFILMENT", null);

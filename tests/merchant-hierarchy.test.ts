@@ -119,3 +119,28 @@ describe("Merchant Officer Lead / Head originating retail products", () => {
     expect((await openTaskOf(id)).stage).toBe("FIRST_CREDIT_REVIEW");
   });
 });
+
+describe("Acquisition evidence at RM disbursement confirmation", () => {
+  it("origination and approval never ask for it; the RM cannot confirm without it (server-enforced); uploading it enables confirmation", async () => {
+    const { driveToOffer, preparePack, appRow } = await import("@/server/demo/scenario");
+    const { lagosDate, addDaysToDateString } = await import("@/server/time");
+    const { uploadDocument } = await import("@/server/domain/documents");
+    const { makePdf } = await import("@/server/demo/scenario");
+    const id = await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: N(1_000_000) });
+    await driveToOffer(id); // business review, credit and approvals: no acquisition evidence involved
+    await preparePack(id);
+    await act(id, "SUBMIT_PACK"); // the pack does not need contract / acquisition evidence
+    const co3 = await openTaskOf(id);
+    await uploadDocument(await ctxFor(co3.email!), { applicationId: id, category: "INSURANCE_EVIDENCE", filename: "ins.pdf", data: makePdf("ins") });
+    await act(id, "FORWARD");
+    await act(id, "OKAY", { crmsLogged: true }); // authorised disbursement readiness does not need it either
+    const a = await appRow(id);
+    const today = lagosDate(new Date());
+    await act(id, "DISBURSED", { booking: { amountKobo: Number(a.requested_amount_kobo), disbursedOn: today, transactionRef: `T${Date.now()}`, schedule: [{ dueDate: addDaysToDateString(today, 30), amountKobo: Number(a.requested_amount_kobo) }] } });
+    await act(id, "COMPLETE_PROCESS");
+    expect((await openTaskOf(id)).stage).toBe("VENDOR_CONFIRMATION");
+    await expect(act(id, "CONFIRM_VENDOR_PAYMENT", { withEvidence: false })).rejects.toThrow("Please upload evidence of delivery or acquisition before confirming disbursement.");
+    await act(id, "CONFIRM_VENDOR_PAYMENT"); // helper uploads the evidence first, as the RM would
+    expect((await appRow(id)).status).toBe("CLOSED");
+  });
+});

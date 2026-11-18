@@ -58,7 +58,7 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "CONTRACT_EVIDENCE", label: "Structure-specific contracting / acquisition evidence", multiple: true },
   { code: "CRMS_EVIDENCE", label: "CRMS evidence", multiple: true },
   { code: "PAYMENT_EVIDENCE", label: "Payment / disbursement evidence", multiple: true },
-  { code: "FULFILMENT_EVIDENCE", label: "Delivery, installation, handover or POS deployment evidence", multiple: true },
+  { code: "FULFILMENT_EVIDENCE", label: "Evidence of delivery / acquisition", multiple: true },
   { code: "REPAYMENT_EVIDENCE", label: "Repayment evidence", multiple: true },
 ];
 
@@ -85,6 +85,8 @@ export const REVIEW_PENDING_CATEGORIES = ["SALARY_EVIDENCE", "EMPLOYMENT_LETTER"
 export const CATEGORY_LABEL = Object.fromEntries(DOC_CATEGORIES.map((c) => [c.code, c.label])) as Record<string, string>;
 
 /** Invoices sent to the Invoice Confirmation Officer after final approval. */
+/** Required before the RM confirms disbursement (never at origination or approval). */
+export const ACQUISITION_EVIDENCE_MESSAGE = "Please upload evidence of delivery or acquisition before confirming disbursement.";
 export const INVOICE_CATEGORIES = ["SUPPLIER_INVOICE", "VEHICLE_INVOICE", "SUPPLIER_QUOTATION"];
 
 const INITIAL = ["BANK_STATEMENT", "CAC_CERTIFICATE", "SUPPLIER_INVOICE", "APPLICATION_FORM", "CONSENT_FORM", "RENT_RECEIPT", "SUPPORTING"];
@@ -106,10 +108,10 @@ export const RETAIL_UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   HEAD_OF_UNIT_APPROVAL: ["SUPPORTING"],
   FIRST_CREDIT_REVIEW: ["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"],
   CREDIT_CORRECTION: ["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"],
-  OFFER_PREPARATION: [...PACK_LIST(), "CONTRACT_EVIDENCE", ...INVOICE_CATEGORIES, "SUPPORTING"],
+  OFFER_PREPARATION: [...PACK_LIST(), ...INVOICE_CATEGORIES, "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
   DISBURSEMENT_CHECK: ["CRMS_EVIDENCE", "SUPPORTING"],
-  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK_LIST(), "CONTRACT_EVIDENCE", ...INVOICE_CATEGORIES, "SUPPORTING"],
+  DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK_LIST(), ...INVOICE_CATEGORIES, "SUPPORTING"],
   DISBURSEMENT_BOOKING: ["SUPPORTING"],
   PAYMENT_RECONCILIATION: ["PAYMENT_EVIDENCE", "SUPPORTING"],
   FULFILMENT: ["FULFILMENT_EVIDENCE", "SUPPORTING"],
@@ -127,6 +129,7 @@ export const UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   OFFER_PREPARATION: [...PACK, "REMITA_MANDATE", "SUPPLIER_INVOICE", "SUPPORTING"],
   CO3_PACK_REVIEW: ["INSURANCE_EVIDENCE", "SUPPORTING"],
   DISBURSEMENT_CORRECTION: ["INSURANCE_EVIDENCE", ...PACK, "REMITA_MANDATE", "SUPPLIER_INVOICE", "SUPPORTING"],
+  VENDOR_CONFIRMATION: ["FULFILMENT_EVIDENCE", "SUPPORTING"],
 };
 
 export interface DocumentRow {

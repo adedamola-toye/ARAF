@@ -984,9 +984,14 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator. The initiator then confirms vendor payment separately.</p>);
       body.push(<TaskButton key="c" hidden={hidden} action="COMPLETE_PROCESS" label="Complete Process" confirm="Send the closure pack to Legal and Shariah Compliance and hand the request to the initiator for vendor payment confirmation?" doneHref={doneHref} />);
       break;
-    case "VENDOR_CONFIRMATION":
+    case "VENDOR_CONFIRMATION": {
+      const ev = c.documents.filter((d) => d.category === "FULFILMENT_EVIDENCE" && !d.superseded_at && d.scan_status === "CLEAN");
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Confirm the vendor has been paid. This closes the request and activates repayment prompts.</p>);
-      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" confirm="Confirm that the vendor has been paid and close this request?" doneHref={doneHref} />);
+      body.push(<UploadPanel key="u" compact applicationId={c.app.id} title="Upload Evidence of Delivery / Acquisition" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      if (!ev.length) body.push(<p key="ev" className="small" style={{ margin: 0, color: "var(--danger)" }}>Please upload evidence of delivery or acquisition before confirming disbursement.</p>);
+      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" disabled={!ev.length} confirm="Confirm that the vendor has been paid and close this request?" doneHref={doneHref} />);
+      break;
+    }
       break;
   }
 
