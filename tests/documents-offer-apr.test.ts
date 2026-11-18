@@ -24,7 +24,7 @@ beforeEach(async () => {
 });
 
 describe("shared case documents", () => {
-  it("every stakeholder on the case can view/download all retained documents; outsiders cannot", async () => {
+  it("every stakeholder on the case and the Super Admin can view/download all retained documents; outsiders cannot", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000_000) });
     await act(id, "ENDORSE");
     await approveFirstReview(id);
@@ -37,11 +37,12 @@ describe("shared case documents", () => {
       expect((await readDocumentForActor(ctx, report.id, "download")).data.subarray(0, 5).toString()).toBe("%PDF-");
       expect((await readDocumentForActor(ctx, statement.id, "view")).doc.id).toBe(statement.id);
     }
-    // An officer never assigned to the case cannot - not even the Super Admin.
-    for (const email of ["do1@altbank.ng", "superadmin@altbank.ng", "rbe.abuja@altbank.ng"]) {
+    // The Super Admin sees every request; an officer never assigned to it, outside its region, cannot.
+    expect((await readDocumentForActor(await ctxFor("superadmin@altbank.ng"), report.id, "download")).doc.id).toBe(report.id);
+    for (const email of ["do1@altbank.ng", "rbe.abuja@altbank.ng"]) {
       await expect(readDocumentForActor(await ctxFor(email), report.id, "download")).rejects.toThrow(/do not have access/);
     }
-    expect((await audits("DOCUMENT_DOWNLOAD")).filter((a) => a.outcome === "DENIED")).toHaveLength(3);
+    expect((await audits("DOCUMENT_DOWNLOAD")).filter((a) => a.outcome === "DENIED")).toHaveLength(2);
     expect((await audits("DOCUMENT_VIEW")).filter((a) => a.outcome === "SUCCESS").length).toBeGreaterThanOrEqual(3);
   });
 
