@@ -25,6 +25,14 @@ export default async function SignPage({ params }: { params: Promise<{ id: strin
       </p>
       <div className="split">
         <section style={{ minWidth: 0 }}>
+          <p className="small" style={{ marginTop: 0 }}>
+            <a className="btn btn-sm" href={signDocumentLink(doc.id, session.staffId, session.sessionId, "view")} target="_blank" rel="noopener noreferrer">
+              Open the full document
+            </a>{" "}
+            <span className="muted">
+              {CATEGORY_LABEL[doc.category]} · version {doc.version_no}
+            </span>
+          </p>
           <iframe title="Document to sign" src={signDocumentLink(doc.id, session.staffId, session.sessionId, "view")} className="sign-preview" />
         </section>
         <aside className="split-right">

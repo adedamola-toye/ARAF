@@ -1083,4 +1083,5 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 /* Tablet signing */
 .sig-pad { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .sig-pad canvas { width: 100%; max-width: 520px; height: 180px; background: #fff; border: 1px dashed var(--line); border-radius: 8px; touch-action: none; cursor: crosshair; }
-.sign-preview { width: 100%; height: 70vh; min-height: 420px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.sign-preview { width: 100%; height: 60vh; min-height: 360px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+@media (max-width: 1024px) { .sign-preview { height: 45vh; } }
