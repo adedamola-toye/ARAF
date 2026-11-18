@@ -12,6 +12,15 @@ const sid = async (email: string) => (await db.query("SELECT id FROM staff WHERE
 
 beforeEach(resetDb);
 
+/** The Week and MTD figures under a person's name row in the plain-text report: [requests, requested, disbursed, (altphones), decisions, actions]. */
+function figures(body: string, label: string, from = 0) {
+  const lines = body.slice(from).split("\n");
+  const i = lines.findIndex((l) => l.trim().startsWith(label));
+  if (i < 0) throw new Error(`No row for ${label}`);
+  const nums = (l: string) => l.trim().split(/\s{2,}/).slice(1);
+  return { label: lines[i].trim(), week: nums(lines[i + 1]), mtd: nums(lines[i + 2]) };
+}
+
 describe("Weekly Divisional Head report: timing", () => {
   it("is due every Sunday at 18:00 Africa/Lagos (17:00 UTC), covering Monday to Sunday and month to date", () => {
     const p = dhPeriodFor(new Date("2026-11-18T10:00:00Z"), 18, 0); // a Wednesday
@@ -69,11 +78,15 @@ describe("Weekly Divisional Head report: delivery", () => {
     const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
     expect(body).toContain("9. UNIT HEADS AND THEIR DIRECT REPORTS");
     expect(body).toMatch(/9\.\d Olu Unit-Head, Unit Head \(1 direct report\)/);
-    expect(body).toMatch(/Olu Unit-Head \(Unit Head, own work\)\s+1 decision · \d+ actions?/);
-    expect(body).toMatch(/Ade Okafor \(Relationship Manager · not yet classified\)[^\n]*1 req ₦1,500,000/);
+    const olu = figures(body, "Olu Unit-Head — Unit Head, own work");
+    expect(olu.week.slice(0, 4)).toEqual(["0", "₦0", "₦0", "1"]); // one Unit Head decision
+    const ade = figures(body, "Ade Okafor — Relationship Manager · not yet classified");
+    expect(ade.week.slice(0, 3)).toEqual(["1", "₦1,500,000", "₦0"]);
+    expect(Number(ade.week[4])).toBeGreaterThan(3); // draft, uploads, submission
+    const total = figures(body, "TEAM TOTAL", body.indexOf("Olu Unit-Head, Unit Head"));
+    expect(total.week[0]).toBe("1");
     expect(body).toMatch(/9\.\d Second Unit-Head, Unit Head \(0 direct reports\)/);
     expect(body).toContain("No direct reports are mapped yet");
-    expect(body).toMatch(/Ade Okafor this week: [^\n]*Draft created ×1/);
   });
 
   it("registers Non-DBC RMs under their RBE, the Merchant Officer line, and everyone else who worked", async () => {
@@ -90,17 +103,18 @@ describe("Weekly Divisional Head report: delivery", () => {
     const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
     expect(body).toMatch(/10\. NON-DBC BUSINESS[^\n]*\n[^\n]*\n\s+Non-DBC total\s+1 req · ₦2,000,000/);
     expect(body).toMatch(/10\.\d Tunde Adeyemi, Regional Business Executive \(1 RM\)/);
-    expect(body).toMatch(/Tunde Adeyemi \(RBE, own work\)\s+1 decision/);
-    expect(body).toMatch(/Ade Okafor \(Relationship Manager · Non-DBC\)[^\n]*1 req ₦2,000,000/);
+    expect(figures(body, "Tunde Adeyemi — RBE, own work").week[3]).toBe("1");
+    expect(figures(body, "Ade Okafor — Relationship Manager · Non-DBC").week.slice(0, 2)).toEqual(["1", "₦2,000,000"]);
     expect(body).toMatch(/Relationship Managers not yet classified as DBC or Non-DBC/);
     expect(body).toMatch(/11\.\d Alexander Olasinde, Merchant Officer Head \(1 Lead/);
     expect(body).toMatch(/12\. EVERYONE ELSE WHO WORKED ON ARAF THIS MONTH/);
-    expect(body).toMatch(/\(Credit Officer 1\)[^\n]*1 decision/);
-    expect(body).toMatch(/Ada CX-Reviewer \(CX Credit Reviewer \(retail\)\)[^\n]*1 decision/);
+    const s12at = body.indexOf("12. EVERYONE ELSE");
+    expect(figures(body, "Bola Credit-One — Credit Officer 1", s12at).week[3]).toBe("1");
+    expect(figures(body, "Ada CX-Reviewer — CX Credit Reviewer (retail)", s12at).week[3]).toBe("1");
     // Nobody appears twice in section 12 if already registered under a leader.
     const s12 = body.slice(body.indexOf("12. EVERYONE ELSE"));
-    expect(s12).not.toContain("Tunde Adeyemi (");
-    expect(s12).not.toContain("Ade Okafor (");
+    expect(s12).not.toContain("Tunde Adeyemi —");
+    expect(s12).not.toContain("Ade Okafor —");
   });
 
   it("the Super Admin can switch it off, change the time and add recipients", async () => {

@@ -70,6 +70,16 @@ export function duePeriod(now: Date, hour: number, minute: number): DhPeriod | n
 
 const inWin = (d: Date | null, a: Date, b: Date) => !!d && new Date(d) >= a && new Date(d) < b;
 const money = (k: number) => formatKobo(k).replace(/\.00$/, "");
+/** Column headings on narrow screens. */
+const SHORT_HEAD: Record<string, string> = { Requests: "Req", Requested: "Req ₦", Disbursed: "Disb ₦", AltPhones: "Alt", Decisions: "Dec", Actions: "Act" };
+/** Short naira for narrow screens: ₦950k, ₦77.0m, ₦2.33bn. */
+const shortNaira = (k: number) => {
+  const n = k / 100;
+  if (n >= 1e9) return `₦${(n / 1e9).toFixed(2)}bn`;
+  if (n >= 1e6) return `₦${(n / 1e6).toFixed(1)}m`;
+  if (n >= 1e3) return `₦${Math.round(n / 1e3)}k`;
+  return `₦${Math.round(n)}`;
+};
 const hrs = (h: number | null) => (h === null ? "—" : h < 48 ? `${h.toFixed(1)} h` : `${(h / 24).toFixed(1)} days`);
 
 interface Window {
@@ -311,32 +321,70 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
   const altW = await altBy(p.weekStart);
   const altM = await altBy(p.monthStart);
   const decisionRe = new RegExp(DECISION);
-  const cellFor = (id: string, w: Window, acts: { actor_id: string; action: string; n: number }[], alts: { originator_id: string; n: number }[]) => {
+  interface Stats {
+    req: number;
+    reqK: number;
+    disbK: number;
+    phones: number;
+    dec: number;
+    act: number;
+  }
+  const statsFor = (id: string, w: Window, acts: { actor_id: string; action: string; n: number }[], alts: { originator_id: string; n: number }[]): Stats => {
     const mine = w.submitted.filter((x) => x.officerId === id);
-    const disb = w.disbursed.filter((x) => x.officerId === id);
     const a = acts.filter((x) => x.actor_id === id);
-    const decisions = a.filter((x) => decisionRe.test(x.action)).reduce((t, x) => t + x.n, 0);
-    const total = a.reduce((t, x) => t + x.n, 0);
-    const phones = alts.find((x) => x.originator_id === id)?.n ?? 0;
-    const parts = [] as string[];
-    if (mine.length) parts.push(`${mine.length} req ${money(sum(mine, req))}`);
-    if (disb.length) parts.push(`disb ${money(sum(disb, (x) => x.disbursedKobo))}`);
-    if (phones) parts.push(`${phones} AltPhones`);
-    parts.push(`${decisions} decision${decisions === 1 ? "" : "s"}`, `${total} action${total === 1 ? "" : "s"}`);
-    return parts.join(" · ");
+    return {
+      req: mine.length,
+      reqK: sum(mine, req),
+      disbK: sum(w.disbursed.filter((x) => x.officerId === id), (x) => x.disbursedKobo),
+      phones: alts.find((x) => x.originator_id === id)?.n ?? 0,
+      dec: a.filter((x) => decisionRe.test(x.action)).reduce((t, x) => t + x.n, 0),
+      act: a.reduce((t, x) => t + x.n, 0),
+    };
   };
-  const actionLabel = (code: string) =>
-    code.replace(/^TASK_/, "").replace(/^STAFF_FIN_/, "Salary advance ").replace(/^ALTPHONES_/, "AltPhones ").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
-  const topActions = (id: string) =>
-    actW
-      .filter((x) => x.actor_id === id)
-      .sort((a, b) => b.n - a.n)
-      .slice(0, 4)
-      .map((x) => `${actionLabel(x.action)} ×${x.n}`)
-      .join(", ");
+  const addStats = (xs: Stats[]): Stats => xs.reduce((t, x) => ({ req: t.req + x.req, reqK: t.reqK + x.reqK, disbK: t.disbK + x.disbK, phones: t.phones + x.phones, dec: t.dec + x.dec, act: t.act + x.act }), { req: 0, reqK: 0, disbK: 0, phones: 0, dec: 0, act: 0 });
+  /** A people table of figures: per person a name row, then This week and Month to date rows; team total last. */
+  const numTable = (title: string, entries: { label: string; w: Stats; m: Stats }[], emptyNote: string) => {
+    const phones = entries.some((e) => e.w.phones || e.m.phones);
+    const head = ["", "Requests", "Requested", "Disbursed", ...(phones ? ["AltPhones"] : []), "Decisions", "Actions"];
+    const fig = (x: Stats) => [String(x.req), money(x.reqK), money(x.disbK), ...(phones ? [String(x.phones)] : []), String(x.dec), String(x.act)];
+    // On phones the money columns show a short form (₦77.0m); the exact amount is shown everywhere else.
+    const figHtml = (x: Stats) => fig(x).map((v, i) => (i === 1 || i === 2 ? `<span class="nfull">${esc(v)}</span><span class="nshort" style="display:none;max-height:0;overflow:hidden">${esc(shortNaira(i === 1 ? x.reqK : x.disbK))}</span>` : esc(v)));
+    const all = entries.length > 1 ? [...entries, { label: "TEAM TOTAL", w: addStats(entries.map((e) => e.w)), m: addStats(entries.map((e) => e.m)) }] : entries;
+    // HTML
+    const C = "padding:5px 6px;border-bottom:1px solid #eef2f9;font:12px/1.35 Arial,Helvetica,sans-serif;color:#152b59;text-align:right;white-space:nowrap";
+    const NAME = "padding:9px 6px 3px;font:600 12.5px/1.35 Arial,Helvetica,sans-serif;color:#152b59;text-align:left";
+    const PER = "padding:5px 6px;border-bottom:1px solid #eef2f9;font:12px/1.35 Arial,Helvetica,sans-serif;color:#5f6c87;text-align:left;white-space:nowrap";
+    html.push(H2(title));
+    if (!entries.length) html.push(`<p style="font:13px Arial,sans-serif;color:#5f6c87">${esc(emptyNote)}</p>`);
+    else
+      html.push(
+        `<table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;width:100%;max-width:760px"><tr>${head
+          .map((h, i) => `<th class="nx" style="${TH};${i ? "text-align:right;" : ""}padding:6px;white-space:nowrap"><span class="nfull">${esc(h)}</span><span class="nshort" style="display:none;max-height:0;overflow:hidden">${esc(SHORT_HEAD[h] ?? h)}</span></th>`)
+          .join("")}</tr>${all
+          .map((e) => {
+            const total = e.label === "TEAM TOTAL";
+            const bg = total ? "background:#f3f6fc;" : "";
+            return `<tr><td colspan="${head.length}" style="${NAME};${bg}${total ? "border-top:2px solid #c4cee2" : ""}">${esc(e.label)}</td></tr>${(
+              [
+                ["Week", e.w],
+                ["MTD", e.m],
+              ] as const
+            )
+              .map(([per, st]) => `<tr><td class="nx" style="${PER};${bg}">${per}</td>${figHtml(st).map((v) => `<td class="nx" style="${C};${bg}${total ? "font-weight:700" : ""}">${v}</td>`).join("")}</tr>`)
+              .join("")}`;
+          })
+          .join("")}</table>`,
+      );
+    if (entries.length && emptyNote) html.push(`<p style="margin:6px 0 0;font:12px/1.5 Arial,Helvetica,sans-serif;color:#5f6c87">${esc(emptyNote)}</p>`);
+    // Text
+    const rows = all.flatMap((e) => [[e.label], ["  Week", ...fig(e.w)], ["  MTD", ...fig(e.m)]]);
+    const widths = head.map((h, i) => Math.max(h.length, ...rows.filter((r) => r.length > 1).map((r) => (r[i] ?? "").length)));
+    const line = (r: string[]) => "  " + r.map((v, i) => (i ? v.padStart(widths[i]) : v.padEnd(widths[0]))).join("  ");
+    return [title, ...(entries.length ? [line(head), ...rows.map((r) => (r.length === 1 ? `  ${r[0]}` : line(r)))] : [`  ${emptyNote}`]), ...(entries.length && emptyNote ? [`  ${emptyNote}`] : []), ""];
+  };
   const openLabel = (id: string) => {
     const o = openNow.find((x) => x.assignee_id === id);
-    return o ? ` — ${o.n} open now${o.overdue ? `, ${o.overdue} over 3 h` : ""}` : "";
+    return o ? ` · ${o.n} open now${o.overdue ? ` (${o.overdue} over 3 h)` : ""}` : "";
   };
   const roleName = (roles: string[]) => roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ") || "No active role";
   type Person = { id: string; name: string; roles: string[] };
@@ -347,22 +395,18 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
       r.segment === "NON_DBC" ? "Non-DBC" : `DBC ${r.dbc_region === "NORTH" ? "North" : "South & West"}`,
     ]),
   );
-  const personLabel = (m: Person) => `${m.name} (${roleName(m.roles)}${m.roles.includes("RM") ? ` · ${segOf.get(m.id) ?? "not yet classified"}` : ""})`;
+  const personLabel = (m: Person) => `${m.name} — ${roleName(m.roles)}${m.roles.includes("RM") ? ` · ${segOf.get(m.id) ?? "not yet classified"}` : ""}`;
   /** Who has been registered in a section already (each person appears under one leader at most once per section). */
   const listed = new Set<string>();
   /** A leader's table: their own work first (if any), then each member, with each person's most frequent actions. */
   const teamTable = (title: string, leader: { id: string; name: string; label: string } | null, members: Person[], emptyNote: string) => {
-    const rows: [string, string, string][] = [
-      ...(leader ? [[`${leader.name} (${leader.label}, own work)${openLabel(leader.id)}`, cellFor(leader.id, W, actW, altW), cellFor(leader.id, M, actM, altM)] as [string, string, string]] : []),
-      ...members.map((m): [string, string, string] => [`${personLabel(m)}${openLabel(m.id)}`, cellFor(m.id, W, actW, altW), cellFor(m.id, M, actM, altM)]),
-    ];
     if (leader) listed.add(leader.id);
     members.forEach((m) => listed.add(m.id));
-    const lines = T(title, rows);
-    const who = [...(leader ? [{ id: leader.id, name: leader.name }] : []), ...members];
-    const notes = [...(members.length ? [] : [emptyNote]), ...who.map((m) => (topActions(m.id) ? `${m.name} this week: ${topActions(m.id)}` : "")).filter(Boolean)];
-    if (notes.length) html.push(`<p style="margin:6px 0 0;font:12px/1.6 Arial,Helvetica,sans-serif;color:#5f6c87">${notes.map(esc).join("<br>")}</p>`);
-    return [...lines.slice(0, -1), ...notes.map((n) => `  ${n}`), ""];
+    const entries = [
+      ...(leader ? [{ id: leader.id, label: `${leader.name} — ${leader.label}, own work` }] : []),
+      ...members.map((m) => ({ id: m.id, label: personLabel(m) })),
+    ].map((e) => ({ label: `${e.label}${openLabel(e.id)}`, w: statsFor(e.id, W, actW, altW), m: statsFor(e.id, M, actM, altM) }));
+    return numTable(title, entries, members.length ? "" : emptyNote);
   };
   const unitSections: (() => string[])[] = unitHeads.map((u, i) => () => {
     const team = teams.get(u.id) ?? [];
@@ -441,7 +485,7 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
     ...T(othersTitle, othersRows),
     ...(unitHeads.length
       ? [
-          ...L("9. UNIT HEADS AND THEIR DIRECT REPORTS", ["Sections 9 to 12 register what every person did. For each person: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, endorsements, recommendations, returns, declines) and all work actions recorded in the audit trail, this week and month to date; open tasks now."], ""),
+          ...L("9. UNIT HEADS AND THEIR DIRECT REPORTS", ["Sections 9 to 12 give every person's figures for this week (Week) and month to date (MTD): Requests (originated), Requested (₦), Disbursed (₦), AltPhones sales, Decisions (approvals, endorsements, recommendations, returns and declines on any product) and Actions (all work recorded in the audit trail). Open tasks now are shown next to each name; each team ends with its total. On a phone, amounts are shortened (₦77.0m) and headings abbreviated (Req, Req ₦, Disb ₦, Alt, Dec, Act)."], ""),
           ...unitSections.flatMap((f) => f()),
         ]
       : L("9. UNIT HEADS AND THEIR DIRECT REPORTS", [], "No active Unit Heads.")),
@@ -458,8 +502,8 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
 
 /** The HTML email: a simple, table-based layout that renders in Outlook and on phones. */
 export function dhEmailHtml(name: string, p: DhPeriod, time: string, sections: string) {
-  return `<!doctype html><html><body style="margin:0;padding:0;background:#f7f9ff"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f9ff"><tr><td style="padding:24px 8px">
-<table role="presentation" cellspacing="0" cellpadding="0" style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid #dee5f3;border-radius:12px"><tr><td style="padding:24px 24px 28px">
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media only screen and (max-width:480px){.nx{font-size:10.5px !important;padding:4px 2px !important}.card{padding:18px 10px 22px !important}.nfull{display:none !important}.nshort{display:inline !important;max-height:none !important}}</style></head><body style="margin:0;padding:0;background:#f7f9ff"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f9ff"><tr><td style="padding:24px 8px">
+<table role="presentation" cellspacing="0" cellpadding="0" style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid #dee5f3;border-radius:12px"><tr><td class="card" style="padding:24px 24px 28px">
 <p style="margin:0 0 4px;font:600 11px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#5f6c87">Retail Asset Factory · Weekly report</p>
 <h1 style="margin:0 0 12px;font:700 20px/1.3 Arial,Helvetica,sans-serif;color:#152b59">Week ${esc(p.weekLabel)} and ${esc(p.monthLabel.split(" (")[0])}</h1>
 <p style="margin:0 0 4px;font:14px/1.5 Arial,Helvetica,sans-serif;color:#2b3f69">Dear ${esc(name)},</p>
