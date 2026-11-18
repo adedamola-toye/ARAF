@@ -8,58 +8,29 @@
  */
 import type { Db } from "./db";
 import { activeRoles } from "./domain/access";
+import { supervision } from "./domain/org";
 import { STAGE_LABELS, type Stage } from "./domain/stages";
 
 export const REPORT_ROLES = ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN", "DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"] as const;
 
-export type Scope = { kind: "ALL" } | { kind: "STAFF"; staffIds: string[]; label: string } | { kind: "NONE"; reason: string };
+export type Scope =
+  | { kind: "ALL" }
+  | { kind: "STAFF"; staffIds: string[]; teams?: string[]; regions?: string[]; viewerId?: string; label: string }
+  | { kind: "NONE"; reason: string };
 
-/** What the viewer may see. */
+/**
+ * What the viewer may see. Uses the same supervision rule as case access (domain/org.ts), so every facility in a
+ * viewer's report can be opened by them.
+ */
 export async function reportScope(q: Db, staffId: string): Promise<Scope> {
   const roles = (await activeRoles(q, staffId)).map((r) => r.role);
   if (roles.some((r) => ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN"].includes(r))) return { kind: "ALL" };
-  const ids = new Set<string>();
-  let label = "";
-  if (roles.includes("DIVISIONAL_HEAD")) {
-    const uhs = (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'DIVISIONAL_HEAD'", [staffId])).rows.map((r) => r.staff_id);
-    for (const uh of uhs) {
-      ids.add(uh);
-      for (const r of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'UNIT_HEAD'", [uh])).rows) ids.add(r.staff_id);
-    }
-    label = "your division";
-  }
-  if (roles.includes("UNIT_HEAD")) {
-    for (const r of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'UNIT_HEAD'", [staffId])).rows) ids.add(r.staff_id);
-    // A DBC Unit Head also sees the DBC Relationship Managers of their configured region (South & West or North).
-    for (const r of (
-      await q.query<{ staff_id: string }>(
-        `SELECT c.staff_id FROM routing_assignments ra JOIN rm_classifications c ON c.segment = 'DBC'
-            AND c.dbc_region = CASE ra.key WHEN 'DBC_UNIT_HEAD_NORTH' THEN 'NORTH' WHEN 'DBC_UNIT_HEAD_SOUTH_WEST' THEN 'SOUTH_WEST' END
-          WHERE ra.staff_id = $1`,
-        [staffId],
-      )
-    ).rows)
-      ids.add(r.staff_id);
-    label = label || "your unit";
-  }
-  if (roles.includes("RBE")) {
-    // The Relationship Managers assigned to this RBE.
-    for (const r of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'RBE'", [staffId])).rows) ids.add(r.staff_id);
-    label = label || "your Relationship Managers";
-  }
-  if (roles.includes("MERCHANT_OFFICER_HEAD")) {
-    // The Merchant Officer hierarchy: the Head, their Leads and the Leads' officers.
-    ids.add(staffId);
-    for (const lead of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'MO_HEAD'", [staffId])).rows) {
-      ids.add(lead.staff_id);
-      for (const mo of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'MO_LEAD'", [lead.staff_id])).rows) ids.add(mo.staff_id);
-    }
-    label = label || "the Merchant Officer business line";
-  }
   if (!["DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"].some((r) => roles.includes(r as never)))
     return { kind: "NONE", reason: "Reports are available to God's Eye, Super Admin, Reporting Admin, Divisional Heads, Unit Heads, Regional Business Executives and the Merchant Officer Head." };
-  if (!ids.size) return { kind: "NONE", reason: "No staff are mapped to you yet. The Super Admin sets reporting lines under Administration → Reporting lines." };
-  return { kind: "STAFF", staffIds: [...ids], label };
+  // Always includes every request the viewer reviewed or approved (or is the designated RBE / Unit Head for), so it
+  // works with no setup; reporting lines, where set, add the requests of the people who report to them.
+  const sv = await supervision(q, staffId);
+  return { kind: "STAFF", staffIds: sv.staffIds, teams: sv.teams, regions: sv.regions, viewerId: staffId, label: sv.label || "requests you reviewed or approved, and your team" };
 }
 
 // ─────────────────────────── financing facts ───────────────────────────
@@ -152,7 +123,8 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       `WITH apps AS (
          SELECT a.* FROM applications a
           WHERE a.submitted_at IS NOT NULL
-            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1))
+            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1) OR a.assigned_rm_id = ANY($1) OR a.team = ANY($4::text[]) OR a.region = ANY($5::text[]) OR a.initiator_id IN (SELECT id FROM staff WHERE region = ANY($5::text[])) OR a.routing_unit_head_id = $6 OR a.selected_rbe_id = $6
+                 OR EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = a.id AND d.actor_id = $6))
             AND ($2::date IS NULL OR a.submitted_at >= $2::date)
             AND ($3::date IS NULL OR a.submitted_at < ($3::date + 1))
        )
@@ -190,7 +162,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
          LEFT JOIN staff cr ON cr.id = lr.manager_id
          LEFT JOIN staff sr ON sr.id = a.selected_rbe_id
          LEFT JOIN staff rh ON rh.id = a.routing_unit_head_id`,
-      [scope.kind === "STAFF" ? scope.staffIds : null, f.from || null, f.to || null],
+      [scope.kind === "STAFF" ? scope.staffIds : null, f.from || null, f.to || null, scope.kind === "STAFF" ? (scope.teams ?? []) : [], scope.kind === "STAFF" ? (scope.regions ?? []) : [], scope.kind === "STAFF" ? (scope.viewerId ?? null) : null],
     )
   ).rows;
   const facts: FinFact[] = rows.map((r) => {

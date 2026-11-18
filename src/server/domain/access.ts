@@ -1,5 +1,6 @@
 import type { Db } from "../db";
 import type { Role } from "./roles";
+import { supervision } from "./org";
 
 export interface CaseAccess {
   canView: boolean;
@@ -32,7 +33,9 @@ export async function holdsRole(q: Db, staffId: string, role: string): Promise<b
  *     disbursement officers) - handoffs never remove historical access;
  *   - a member of an approved Legal / Shariah Compliance closure group whose group received the
  *     case's closure pack (requires the LEGAL_REVIEWER / SHARIAH_REVIEWER role).
- * Admin status alone does not grant case or document access.
+ *   - the Super Admin (every request);
+ *   - a supervisor of the originator (Team Lead, Unit Head, Divisional Head, RBE, Merchant Officer Head), or a
+ *     Unit Head for requests in their region or pinned to them (see supervision()).
  */
 export async function caseAccess(q: Db, staffId: string, appId: string): Promise<CaseAccess> {
   const r = await q.query<{ initiator: boolean; assigned: boolean; legal: boolean; shariah: boolean }>(
@@ -87,5 +90,31 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
     [staffId, appId],
   );
   if (ico.rowCount) capacities.push("INVOICE_CONFIRMATION");
+  // Anyone who reviewed or approved the request, or was ever assigned it (even if later reassigned), and the RBE /
+  // Unit Head designated as its approver, can follow it to disbursement and beyond. Nothing needs configuring.
+  const approver = await q.query(
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = $2 AND d.actor_id = $1)
+        OR EXISTS (SELECT 1 FROM assignment_changes ac JOIN tasks t ON t.id = ac.task_id WHERE t.application_id = $2 AND (ac.to_staff_id = $1 OR ac.from_staff_id = $1))
+        OR EXISTS (SELECT 1 FROM applications a WHERE a.id = $2 AND a.stage <> 'DRAFT' AND (a.routing_unit_head_id = $1 OR a.selected_rbe_id = $1))`,
+    [staffId, appId],
+  );
+  if (approver.rowCount) capacities.push("APPROVER");
+  // The Super Admin sees every request.
+  if (await holdsRole(q, staffId, "SUPER_ADMIN")) capacities.push("SUPER_ADMIN");
+  // Supervisors see the submitted requests of the people they oversee (RM → Team Lead → Unit Head → Divisional
+  // Head; RBE; Merchant Officer Head), requests in the regions of their Unit Head role, and requests on which they
+  // are the pinned Unit Head. Viewing never grants an action: actions still require the assigned task.
+  if (!capacities.includes("SUPER_ADMIN")) {
+    const sv = await supervision(q, staffId);
+    if (sv.staffIds.length || sv.teams.length || sv.regions.length || (await holdsRole(q, staffId, "UNIT_HEAD"))) {
+      const hit = await q.query(
+        `SELECT 1 FROM applications a JOIN staff i ON i.id = a.initiator_id WHERE a.id = $1 AND a.stage <> 'DRAFT' AND (
+            a.initiator_id = ANY($2::uuid[]) OR a.assigned_rm_id = ANY($2::uuid[]) OR a.team = ANY($3::text[])
+         OR a.region = ANY($4::text[]) OR i.region = ANY($4::text[]) OR a.routing_unit_head_id = $5)`,
+        [appId, sv.staffIds, sv.teams, sv.regions, staffId],
+      );
+      if (hit.rowCount) capacities.push("SUPERVISOR");
+    }
+  }
   return { canView: capacities.length > 0, capacities };
 }

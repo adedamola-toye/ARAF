@@ -114,6 +114,33 @@ export async function initiatorRequests(q: Db, staffId: string) {
   ).rows;
 }
 
+/** Requests a person reviewed, approved or was assigned (not their own): where each one is now, through disbursement. */
+export async function reviewedRequests(q: Db, staffId: string) {
+  return (
+    await q.query(
+      `WITH mine AS (
+         SELECT DISTINCT application_id FROM decisions WHERE actor_id = $1
+         UNION SELECT DISTINCT t.application_id FROM tasks t WHERE t.assignee_id = $1
+         UNION SELECT DISTINCT t.application_id FROM assignment_changes ac JOIN tasks t ON t.id = ac.task_id WHERE ac.to_staff_id = $1
+         UNION SELECT id FROM applications WHERE stage <> 'DRAFT' AND (routing_unit_head_id = $1 OR selected_rbe_id = $1)
+       )
+       SELECT a.id, a.ref, a.customer_name, a.requested_amount_kobo, a.stage, a.status, a.product_label, a.workflow, a.updated_at,
+              (SELECT json_build_object('stage', d.stage, 'action', d.action, 'at', d.created_at) FROM decisions d
+                WHERE d.application_id = a.id AND d.actor_id = $1 ORDER BY d.created_at DESC LIMIT 1) AS my_decision,
+              t.assignee_id AS owner_id, s.full_name AS owner_name, t.assigned_at,
+              ds.amount_kobo AS disbursed_kobo, ds.disbursed_on
+         FROM mine JOIN applications a ON a.id = mine.application_id
+         LEFT JOIN tasks t ON t.application_id = a.id AND t.status = 'OPEN'
+         LEFT JOIN staff s ON s.id = t.assignee_id
+         LEFT JOIN disbursements ds ON ds.application_id = a.id
+        WHERE a.initiator_id <> $1
+        ORDER BY a.updated_at DESC
+        LIMIT 500`,
+      [staffId],
+    )
+  ).rows;
+}
+
 export async function bookedRequests(q: Db, opts: { initiatorId?: string | null }) {
   const params: unknown[] = [];
   let where = "TRUE";

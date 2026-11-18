@@ -58,3 +58,16 @@ Each Unit Head (their direct reports from Reporting lines, plus the DBC RMs of t
 - Administration → Scheduled emails: switch the Divisional Head report on or off, switch the Unit Head / Team Lead reports on or off, change the Sunday time, add recipients.
 - HTML email that works in Outlook and on phones (on phones amounts are shortened, e.g. ₦77.0m, and headings abbreviated), with a plain-text copy. No customer identifiers.
 - Every run is recorded; nobody receives the same week twice; a run missed while the worker was down is sent within three days.
+
+## Who can open a request (read access)
+Viewing a request never lets anyone act on it: actions still need the task to be assigned to them.
+- The originator, every officer ever assigned a task on it, Legal / Shariah recipients after closure, the Invoice Confirmation Officer, and the existing retail scopes (assigned RM, Team Lead's team, outlet supervisor, retail leadership, exception authority, collections).
+- **Anyone who reviewed, approved or was ever assigned a request** (even if it was later reassigned), and the RBE / Unit Head named as its approver: that request, permanently, through documentation, disbursement and RM confirmation. Nothing needs configuring. Their requests are listed under **Requests I approved** with the stage each is at now, and their Performance Overview includes them.
+- **Unit Heads and RBEs by region** (nothing to configure): submitted requests whose initiator is in their region, or whose request region is in it. Their region is the region on their Unit Head / RBE role, or otherwise the region on their staff profile; a zone (North / South) covers its states.
+- **Super Admin:** every request, including drafts.
+- **Supervisors, where reporting lines are set** (optional; submitted requests only), following the hierarchy RM → Team Lead → Unit Head → Divisional Head:
+  - Team Lead: the requests of the RMs on their team, on every product.
+  - Unit Head: the requests of everyone mapped to them in Reporting lines, of the RMs on the teams of the Team Leads mapped to them, of the DBC RMs of their region if they are a configured DBC Unit Head, of the states on their Unit Head role assignment, and of any request on which they are the pinned Unit Head.
+  - Divisional Head: everything in the units of the Unit Heads mapped to them.
+  - RBE: the requests of the RMs assigned to them. Merchant Officer Head: their Leads' and officers' requests.
+- The Performance Overview uses the same rule, so every facility in a person's report can be opened by them.

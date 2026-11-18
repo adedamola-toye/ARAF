@@ -49,6 +49,12 @@ export default async function Schedules() {
           <ScheduleForm s={s} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
         </div>
       </div>
+      {!dh && (
+        <div className="alert alert-warn" role="alert">
+          The weekly Divisional Head and team reports are not set up in the database yet: database updates 050 and 051 have not run. They are applied by the
+          background worker when it deploys (Render: araf-worker). Check that its latest deploy is Live and its log shows &quot;applied 050_divisional_head_weekly_report.sql&quot;.
+        </div>
+      )}
       {dh && (
         <div className="card">
           <h2>Weekly Divisional Head report</h2>

@@ -104,6 +104,10 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         <div className="card" role="alert" style={{ maxWidth: 560 }}>
           <h1>Access denied</h1>
           <p className="muted">Request details and documents are visible only to officers authorised on this request. This attempt was recorded in the audit trail.</p>
+          <p className="small muted">
+            Unit Heads, Team Leads, Divisional Heads and RBEs can open the requests of the people who report to them. If this request belongs to your team or region, ask the Super Admin to set your reporting line under
+            Administration → Reporting lines (or RM classification and routing).
+          </p>
           <Link className="btn btn-primary" href="/queue">
             My Action Queue
           </Link>
