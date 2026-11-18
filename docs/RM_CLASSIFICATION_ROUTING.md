@@ -36,22 +36,25 @@ The classification, RBE and Unit Head are pinned on each request at submission. 
 2. Classify each RM (DBC + region, or Non-DBC + RBE). Provision any missing RBEs first.
 3. Make sure at least one active CX Credit Reviewer exists (Staff → grant role).
 
-## Weekly Divisional Head report (email)
-- Sent every **Sunday at 18:00 Africa/Lagos** to every active staff member holding the **Divisional Head** role (plus any extra recipients the Super Admin ticks). Bank-wide.
-- Covers **this week** (Monday 00:00 to the send time) and **month to date** (1st 00:00 to the send time), side by side:
-  1. Financing headlines: requests submitted, final approvals, disbursed (count and ₦), declined, approval rate, average turnaround.
-  2. Breakdown by business line (DBC / Non-DBC / Merchant Officer line / other) and by product.
-  3. Approval efficiency: tasks completed per stage with average hours, 3-hour SLA reminders sent.
-  4. Pipeline at the time of sending: open tasks per stage, how many are over 3 hours, oldest waiting.
-  5. Controls: SeedFi exceptions, invoice confirmations, requests awaiting RM disbursement confirmation (and missing evidence).
-  6. Top originators month to date. 7. Review and approval decisions this week by person.
-  8. AltPhones and Staff Salary Advance.
-  9. Every Unit Head and their direct reports: one table per Unit Head with their own work, then each person who reports to them (Reporting lines, plus the DBC RMs of a configured DBC Unit Head's region). For each person, this week and month to date: requests originated and amount, amount disbursed, AltPhones sales, decisions (approvals, endorsements, recommendations, returns, declines across all products) and all work actions recorded in the audit trail (screen views and system events excluded), and open tasks now (how many over 3 hours).
-  10. Non-DBC business: the Non-DBC total, then one table per Regional Business Executive (their own approvals, then each Relationship Manager assigned to them), and a table of Relationship Managers not yet classified as DBC or Non-DBC.
-  11. Merchant Officer line: one table per Merchant Officer Head (the Head, their Leads and the Leads' officers), plus any officers or Leads without a reporting line.
-  12. Everyone else who did work in the month and is not already listed above (Credit Officers, CX, Credit Leads, disbursement and invoice officers, AltPhones staff, Product Managers, support roles …), named with their role.
-  Sections 9–12 are number grids: for each person a Week row and an MTD row with Requests, Requested (₦), Disbursed (₦), AltPhones (when used), Decisions and Actions; each team ends with a TEAM TOTAL. On phones the amounts are shortened (₦77.0m) and headings abbreviated so every figure stays on one line; on desktop the exact amounts are shown.
-  Every Relationship Manager is labelled "DBC South & West", "DBC North", "Non-DBC" or "not yet classified".
-  Plus a button to the Performance Overview filtered to month to date.
-- HTML email (tables that work in Outlook and on phones) with a plain-text copy. No customer identifiers.
-- Administration → Scheduled emails: switch it on or off, change the Sunday time, add recipients. Every run is recorded; a recipient never gets the same week twice; a run missed while the worker was down is sent within three days.
+## Weekly reports (email, every Sunday at 18:00 Africa/Lagos)
+
+Both cover **this week** (Monday 00:00 to the send time, "Week") and **month to date** (1st 00:00 to the send time, "MTD").
+
+### Divisional Head: totals only (bank-wide)
+Sent to every active Divisional Head plus any extra recipients the Super Admin ticks. No individual rows.
+1. Financing headlines: requests submitted, final approvals, disbursed (count and ₦), declined, approval rate, average turnaround.
+2. Breakdown by business line (DBC / Non-DBC / Merchant Officer line / other) and by product.
+3. Approval efficiency: tasks completed per stage with average hours, 3-hour SLA reminders sent.
+4. Pipeline at the time of sending: open tasks per stage, how many are over 3 hours, oldest waiting.
+5. Controls: SeedFi exceptions, invoice confirmations, requests awaiting RM disbursement confirmation (and missing evidence).
+6. Decisions by stage: approvals, returns and declines.
+7. AltPhones and Staff Salary Advance.
+8. Units and teams, cumulative: one row per unit, adding up everyone in it — each Unit Head's unit (Unit Head + direct reports), each RBE's Non-DBC team, Relationship Managers not yet classified, each Merchant Officer line (Head + Leads + officers), Merchant Officers without a reporting line, and every other person who worked that month grouped by function (Credit, Operations, Retail business review, AltPhones, Agency banking, DBC RMs not in a unit, Staff Salary Advance, Management and control). Columns: Requests, Requested (₦), Disbursed (₦), AltPhones (when used), Decisions, Actions. The last row is **ALL STAFF**, each person counted once.
+
+### Unit Heads and Team Leads: individual figures for their own team
+Each Unit Head (their direct reports from Reporting lines, plus the DBC RMs of their region if they are a configured DBC Unit Head) and each Team Lead (the Relationship Managers on their team) receives a table with their own work, then one Week / MTD pair of rows per person, then a TEAM TOTAL. Each name shows the person's role, DBC / Non-DBC classification for RMs, and open tasks now (how many over 3 hours).
+
+### Settings and delivery
+- Administration → Scheduled emails: switch the Divisional Head report on or off, switch the Unit Head / Team Lead reports on or off, change the Sunday time, add recipients.
+- HTML email that works in Outlook and on phones (on phones amounts are shortened, e.g. ₦77.0m, and headings abbreviated), with a plain-text copy. No customer identifiers.
+- Every run is recorded; nobody receives the same week twice; a run missed while the worker was down is sent within three days.

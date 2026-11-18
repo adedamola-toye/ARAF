@@ -147,10 +147,11 @@ export function ScheduleForm({ s, staff }: { s: { enabled: boolean; day_of_month
   );
 }
 
-export function DhScheduleForm({ s, staff }: { s: { enabled: boolean; hour: number; minute: number; recipient_staff_ids: string[] }; staff: Opt[] }) {
+export function DhScheduleForm({ s, staff, teamEnabled }: { s: { enabled: boolean; hour: number; minute: number; recipient_staff_ids: string[] }; staff: Opt[]; teamEnabled: boolean }) {
   return (
     <ActionForm action={A.dhScheduleAction}>
-      <label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} /> Weekly Divisional Head report enabled</label>
+      <label className="check"><input type="checkbox" name="enabled" defaultChecked={s.enabled} /> Weekly Divisional Head report enabled (unit totals)</label>
+      <label className="check"><input type="checkbox" name="teamEnabled" defaultChecked={teamEnabled} /> Also send each Unit Head and Team Lead their own team&apos;s individual figures</label>
       <div className="grid-2">
         <div className="field"><label htmlFor="dh-hr">Sunday hour (Lagos, 0–23)</label><input id="dh-hr" name="hour" type="number" min={0} max={23} defaultValue={s.hour} /></div>
         <div className="field"><label htmlFor="dh-mn">Minute</label><input id="dh-mn" name="minute" type="number" min={0} max={59} defaultValue={s.minute} /></div>

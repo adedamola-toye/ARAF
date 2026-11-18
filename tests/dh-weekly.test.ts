@@ -49,7 +49,7 @@ describe("Weekly Divisional Head report: delivery", () => {
     const mails = await outbox("DH_WEEKLY_REPORT");
     expect(mails.map((m) => m.to_addresses[0]).sort()).toEqual(["dh.two@altbank.ng", "div.head@altbank.ng"]);
     const body: string = mails[0].body_text;
-    for (const section of ["1. FINANCING HEADLINES", "2a. BY BUSINESS LINE", "2b. BY PRODUCT", "3. APPROVAL EFFICIENCY", "4. PIPELINE NOW", "5. CONTROLS", "6. TOP ORIGINATORS", "7. REVIEW AND APPROVAL DECISIONS", "8. ALTPHONES AND STAFF SALARY ADVANCE"])
+    for (const section of ["1. FINANCING HEADLINES", "2a. BY BUSINESS LINE", "2b. BY PRODUCT", "3. APPROVAL EFFICIENCY", "4. PIPELINE NOW", "5. CONTROLS", "6. DECISIONS BY STAGE", "7. ALTPHONES AND STAFF SALARY ADVANCE", "8. UNITS AND TEAMS — CUMULATIVE FIGURES"])
       expect(body).toContain(section);
     expect(body).toMatch(/Requests submitted\s+2 · ₦3,000,000\s+2 · ₦3,000,000/);
     expect(body).toMatch(/Final approvals\s+1 · ₦1,000,000/);
@@ -65,7 +65,7 @@ describe("Weekly Divisional Head report: delivery", () => {
     expect((await audits("DH_WEEKLY_REPORT_RUN")).length).toBe(1);
   });
 
-  it("covers every Unit Head and each direct report: requests, decisions, work actions and open tasks", async () => {
+  it("the Divisional Head gets unit totals only; each Unit Head gets their team's individual figures", async () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     const uh = await sid("unit.head@altbank.ng");
     await setOrgLink(admin, { staffId: await sid("rm.ade@altbank.ng"), relation: "UNIT_HEAD", managerId: uh, reason: "Ade reports to Olu for reporting." });
@@ -74,22 +74,37 @@ describe("Weekly Divisional Head report: delivery", () => {
     await driveToOffer(id, now); // includes a Unit Head approval
     const lonely = (await db.query("INSERT INTO staff (email, full_name) VALUES ('uh.two@altbank.ng','Second Unit-Head') RETURNING id")).rows[0].id;
     await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'UNIT_HEAD')", [lonely]);
-    await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
+    const r = await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
+    // Divisional Head: the unit as a whole (Unit Head + Ade), no individual rows.
     const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
-    expect(body).toContain("9. UNIT HEADS AND THEIR DIRECT REPORTS");
-    expect(body).toMatch(/9\.\d Olu Unit-Head, Unit Head \(1 direct report\)/);
-    const olu = figures(body, "Olu Unit-Head — Unit Head, own work");
-    expect(olu.week.slice(0, 4)).toEqual(["0", "₦0", "₦0", "1"]); // one Unit Head decision
-    const ade = figures(body, "Ade Okafor — Relationship Manager · not yet classified");
+    const unit = figures(body, "Olu Unit-Head's unit — Unit Head + 1 direct report");
+    expect(unit.week.slice(0, 3)).toEqual(["1", "₦1,500,000", "₦0"]);
+    expect(Number(unit.week[3])).toBeGreaterThanOrEqual(1); // the Unit Head's approval
+    expect(body).toContain("Second Unit-Head's unit — Unit Head + 0 direct reports");
+    expect(body).not.toContain("Ade Okafor —");
+    expect(body).not.toContain("own work");
+    const all = figures(body, "ALL STAFF");
+    expect(all.week.slice(0, 2)).toEqual(["1", "₦1,500,000"]);
+    // Unit Heads and Team Leads: individual figures for their own team.
+    const team = await outbox("TEAM_WEEKLY_REPORT");
+    expect(r.teamSent).toBe(team.length);
+    const olu = team.find((m) => m.to_addresses[0] === "unit.head@altbank.ng")!;
+    expect(figures(olu.body_text, "Olu Unit-Head — Unit Head, own work").week[3]).toBe("1");
+    const ade = figures(olu.body_text, "Ade Okafor — Relationship Manager · not yet classified");
     expect(ade.week.slice(0, 3)).toEqual(["1", "₦1,500,000", "₦0"]);
-    expect(Number(ade.week[4])).toBeGreaterThan(3); // draft, uploads, submission
-    const total = figures(body, "TEAM TOTAL", body.indexOf("Olu Unit-Head, Unit Head"));
-    expect(total.week[0]).toBe("1");
-    expect(body).toMatch(/9\.\d Second Unit-Head, Unit Head \(0 direct reports\)/);
-    expect(body).toContain("No direct reports are mapped yet");
+    expect(figures(olu.body_text, "TEAM TOTAL").week[0]).toBe("1");
+    expect(olu.body_html).toContain("YOUR TEAM");
+    const second = team.find((m) => m.to_addresses[0] === "uh.two@altbank.ng")!;
+    expect(second.body_text).toContain("No direct reports are mapped to you yet");
+    // Team Leads: the Relationship Managers on their team.
+    const tl = team.find((m) => m.to_addresses[0] === "tl.lagos@altbank.ng")!;
+    expect(tl.body_text).toMatch(/Bola Adisa — Relationship Manager/);
+    // Reruns never send a second copy.
+    await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 120_000));
+    expect((await outbox("TEAM_WEEKLY_REPORT")).length).toBe(team.length);
   });
 
-  it("registers Non-DBC RMs under their RBE, the Merchant Officer line, and everyone else who worked", async () => {
+  it("unit totals cover Non-DBC teams, the Merchant Officer line and every other function, with an all-staff total", async () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.lagos@altbank.ng"), reason: "Ade is a Non-DBC RM under Tunde." });
     const now = new Date();
@@ -101,20 +116,17 @@ describe("Weekly Divisional Head report: delivery", () => {
     await approveFirstReview(nd, now);
     await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000));
     const body: string = (await outbox("DH_WEEKLY_REPORT"))[0].body_text;
-    expect(body).toMatch(/10\. NON-DBC BUSINESS[^\n]*\n[^\n]*\n\s+Non-DBC total\s+1 req · ₦2,000,000/);
-    expect(body).toMatch(/10\.\d Tunde Adeyemi, Regional Business Executive \(1 RM\)/);
-    expect(figures(body, "Tunde Adeyemi — RBE, own work").week[3]).toBe("1");
-    expect(figures(body, "Ade Okafor — Relationship Manager · Non-DBC").week.slice(0, 2)).toEqual(["1", "₦2,000,000"]);
+    const rbe = figures(body, "Tunde Adeyemi's Non-DBC team — RBE + 1 Relationship Manager");
+    expect(rbe.week.slice(0, 2)).toEqual(["1", "₦2,000,000"]);
+    expect(rbe.week[3]).toBe("1"); // the RBE's approval
     expect(body).toMatch(/Relationship Managers not yet classified as DBC or Non-DBC/);
-    expect(body).toMatch(/11\.\d Alexander Olasinde, Merchant Officer Head \(1 Lead/);
-    expect(body).toMatch(/12\. EVERYONE ELSE WHO WORKED ON ARAF THIS MONTH/);
-    const s12at = body.indexOf("12. EVERYONE ELSE");
-    expect(figures(body, "Bola Credit-One — Credit Officer 1", s12at).week[3]).toBe("1");
-    expect(figures(body, "Ada CX-Reviewer — CX Credit Reviewer (retail)", s12at).week[3]).toBe("1");
-    // Nobody appears twice in section 12 if already registered under a leader.
-    const s12 = body.slice(body.indexOf("12. EVERYONE ELSE"));
-    expect(s12).not.toContain("Tunde Adeyemi —");
-    expect(s12).not.toContain("Ade Okafor —");
+    expect(body).toMatch(/Alexander Olasinde's Merchant Officer line — Head \+ 1 Lead/);
+    const credit = figures(body, "Credit (Credit Officers, Credit Leads, CX)");
+    expect(credit.week[3]).toBe("2"); // CX recommendation + Credit Officer approval
+    expect(figures(body, "ALL STAFF").week.slice(0, 2)).toEqual(["1", "₦2,000,000"]);
+    expect(body).not.toContain("Ada CX-Reviewer");
+    expect(body).not.toContain("Ade Okafor —");
+    expect(body).toMatch(/6\. DECISIONS BY STAGE[\s\S]*Business endorsement\s+1 approved · 0 returned · 0 declined/);
   });
 
   it("the Super Admin can switch it off, change the time and add recipients", async () => {

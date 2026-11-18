@@ -78,7 +78,8 @@ export const dhScheduleAction = async (_p: ActionState, fd: FormData) =>
       hour: Number(s(f, "hour")),
       minute: Number(s(f, "minute")),
       recipientIds: f.getAll("recipients").map(String),
-    }), "Weekly Divisional Head report saved.");
+      teamEnabled: f.get("teamEnabled") === "on",
+    }), "Weekly reports saved.");
 export const retryOutboxAction = async (_p: ActionState, fd: FormData) =>
   run(fd, async (f, ctx) => {
     if (!(await isSuperAdmin(ctx.actor!.staffId))) throw new Error("forbidden");

@@ -20,6 +20,7 @@ export default async function Schedules() {
     )
   ).rows;
   const dh = (await db.query("SELECT * FROM schedule_settings WHERE code = 'DH_WEEKLY_REPORT'")).rows[0];
+  const teamOn = !!(await db.query("SELECT enabled FROM schedule_settings WHERE code = 'TEAM_WEEKLY_REPORT'")).rows[0]?.enabled;
   const dhs = (await db.query<{ full_name: string }>("SELECT s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'DIVISIONAL_HEAD' WHERE s.status = 'ACTIVE' ORDER BY s.full_name")).rows;
   const now = new Date();
   const thisWeek = dhPeriodFor(now, dh?.hour ?? 18, dh?.minute ?? 0);
@@ -53,14 +54,15 @@ export default async function Schedules() {
           <h2>Weekly Divisional Head report</h2>
           <p className="small">
             Every Sunday at {String(dh.hour).padStart(2, "0")}:{String(dh.minute).padStart(2, "0")} (Africa/Lagos): the week just ending and month to date, bank-wide. Financing headlines, business line and product breakdown,
-            approval turnaround by stage, SLA reminders, the pipeline at the time of sending, credit exceptions, invoice and disbursement confirmations, top originators, review decisions by person,
-            AltPhones and Staff Salary Advance, with a link to the Performance Overview.
+            approval turnaround by stage, SLA reminders, the pipeline at the time of sending, controls, decisions by stage, AltPhones and Staff Salary Advance, and the cumulative figures of every unit and team
+            (each Unit Head&apos;s unit, each RBE&apos;s Non-DBC team, the Merchant Officer line and every other function, plus an all-staff total). At the same time each Unit Head and Team Lead
+            can receive their own team&apos;s individual figures.
           </p>
           <p className="small">
             Recipients: <strong>{dhs.length ? dhs.map((d) => d.full_name).join(", ") : "no active Divisional Head yet"}</strong>
             {dh.recipient_staff_ids?.length ? ` plus ${dh.recipient_staff_ids.length} additional` : ""}. Next send: <strong>{formatLagos(nextDh.sendAt)}</strong> (week {nextDh.weekLabel}).
           </p>
-          <DhScheduleForm s={dh} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
+          <DhScheduleForm teamEnabled={teamOn} s={dh} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
         </div>
       )}
       <div className="card">
