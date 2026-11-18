@@ -1161,3 +1161,13 @@ dl.kv dd { margin: 0; overflow-wrap: anywhere; }
   .po-filter-actions { margin-left: 0; width: 100%; }
   .po-range input[type="date"] { width: calc(50% - 12px); }
 }
+/* Performance Overview: large figures always fit (no overlap, no clipping) */
+.po-kpi { container-type: inline-size; }
+.po-kpi-value { font-size: clamp(15px, 8.5cqi, 22px); white-space: nowrap; overflow-wrap: normal; }
+.po-table td.num, .po-table th.num { white-space: nowrap; }
+.po-table td:first-child { min-width: 140px; }
+.po-table td { overflow-wrap: break-word; }
+.po-share .num { font-variant-numeric: tabular-nums; }
+.po-panel .table-wrap { overflow-x: auto; }
+.po-tip { max-width: min(260px, 90%); }
+.po-tip-row .num { white-space: nowrap; padding-left: 12px; }

@@ -17,6 +17,7 @@ const SERIES = [
 /** Compact naira for axis ticks and tooltips (values are naira, not kobo). */
 export function compactNaira(n: number): string {
   const a = Math.abs(n);
+  if (a >= 1e12) return `₦${(n / 1e12).toFixed(a >= 1e13 ? 0 : 1)}tn`;
   if (a >= 1e9) return `₦${(n / 1e9).toFixed(a >= 1e10 ? 0 : 1)}bn`;
   if (a >= 1e6) return `₦${(n / 1e6).toFixed(a >= 1e7 ? 0 : 1)}m`;
   if (a >= 1e3) return `₦${(n / 1e3).toFixed(0)}k`;
@@ -45,10 +46,12 @@ export function TrendChart({ data, grain }: { data: TrendDatum[]; grain: "day" |
     return () => ro.disconnect();
   }, []);
   const H = 260;
-  const m = { t: 12, r: 16, b: 28, l: 56 };
+  const maxRaw = Math.max(0, ...data.flatMap((d) => [d.requested, d.approved, d.disbursed]));
+  // Left margin sized to the widest y-axis label so tick text never overlaps the plot.
+  const m = { t: 12, r: 16, b: 28, l: 14 + 7 * compactNaira(niceMax(maxRaw)).length };
   const iw = W - m.l - m.r;
   const ih = H - m.t - m.b;
-  const max = niceMax(Math.max(0, ...data.flatMap((d) => [d.requested, d.approved, d.disbursed])));
+  const max = niceMax(maxRaw);
   const x = (i: number) => m.l + (data.length <= 1 ? iw / 2 : (i * iw) / (data.length - 1));
   const y = (v: number) => m.t + ih - (v / max) * ih;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => t * max);
