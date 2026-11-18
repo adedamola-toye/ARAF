@@ -7,7 +7,7 @@ import { retailReadiness } from "@/server/domain/retail";
 import { locationActivity, rmOriginationLocations, saveLocation } from "@/server/domain/locations";
 
 const N = (n: number) => n * 100;
-const SIX = ["AltLounge Allen Lagos 1", "AltLounge Allen Lagos 2", "AltLounge Jericho Ibadan", "AltLounge Tanke Ilorin", "Altbank Kano", "Altbank Abuja"];
+const SIX = ["AltLounge Allen Lagos 1", "AltLounge Alaba Lagos", "AltLounge Jericho Ibadan", "AltLounge Tanke Ilorin", "Altbank Kano", "Altbank Abuja"];
 
 beforeEach(async () => {
   await resetDb();

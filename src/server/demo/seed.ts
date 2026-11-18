@@ -125,6 +125,10 @@ export async function seedReferenceData(q: Db, opts: { includeDemo?: boolean } =
       );
     }
   }
+  // Demo reporting lines for the synthetic Merchant Officer team (routing is deterministic in demos and tests).
+  if (includeDemo && ids["mo.chi@altbank.ng"] && ids["mo.lead@altbank.ng"] && ids["mo.head@altbank.ng"]) {
+    await q.query("INSERT INTO org_links (staff_id, relation, manager_id, reason) VALUES ($1,'MO_LEAD',$2,'Synthetic demo team'), ($2,'MO_HEAD',$3,'Synthetic demo team') ON CONFLICT DO NOTHING", [ids["mo.chi@altbank.ng"], ids["mo.lead@altbank.ng"], ids["mo.head@altbank.ng"]]);
+  }
   for (const [g, emails] of [
     ["LEGAL", ["legal@altbank.ng", ...(includeDemo ? ["legal.officer@altbank.ng"] : [])]],
     ["SHARIAH", ["shariah@altbank.ng", ...(includeDemo ? ["shariah.officer@altbank.ng"] : [])]],
