@@ -4,6 +4,7 @@ export const STAGES = [
   "DRAFT",
   "BUSINESS_ENDORSEMENT",
   "MO_HEAD_REVIEW",
+  "CX_CREDIT_REVIEW",
   "INITIATOR_CORRECTION",
   "FIRST_CREDIT_REVIEW",
   "CREDIT_CORRECTION",
@@ -36,6 +37,7 @@ export const STAGE_LABELS: Record<Stage, string> = {
   DRAFT: "Draft",
   BUSINESS_ENDORSEMENT: "Business endorsement",
   MO_HEAD_REVIEW: "Merchant Officer Head review",
+  CX_CREDIT_REVIEW: "CX credit review",
   INITIATOR_CORRECTION: "Correction by initiator",
   FIRST_CREDIT_REVIEW: "First credit review",
   CREDIT_CORRECTION: "Credit correction (first reviewer)",
@@ -66,6 +68,7 @@ export const REQUIRED_ACTION: Record<Stage, string> = {
   DRAFT: "Complete and submit request",
   BUSINESS_ENDORSEMENT: "Endorse, reject or return the request",
   MO_HEAD_REVIEW: "Merchant Officer Head review: endorse, return or decline",
+  CX_CREDIT_REVIEW: "CX credit review: eligibility, credit assessment, documents and exceptions; recommend, return or decline",
   INITIATOR_CORRECTION: "Correct and resubmit the request",
   FIRST_CREDIT_REVIEW: "Upload 3 credit reports, complete APR/DSR, log invoice and decide",
   CREDIT_CORRECTION: "Resolve the correction or request documents from the initiator",
@@ -99,6 +102,7 @@ export const BUSINESS_REVIEW_STAGES: readonly Stage[] = ["BUSINESS_ENDORSEMENT",
 
 /** Stages whose approval decisions are credit approvals invalidated by material changes. */
 export const CREDIT_APPROVAL_STAGES: readonly Stage[] = [
+  "CX_CREDIT_REVIEW",
   "FIRST_CREDIT_REVIEW",
   "SECOND_CREDIT_REVIEW",
   "UNIT_HEAD_REVIEW",
@@ -149,7 +153,7 @@ export const ACTION_LABELS: Record<TaskAction, string> = {
 /** Actions requiring a reason. */
 export const REASON_REQUIRED: readonly TaskAction[] = ["REJECT", "RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"];
 /** Business review decisions also require supporting comments. */
-export const COMMENT_REQUIRED_STAGES: readonly Stage[] = ["MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
+export const COMMENT_REQUIRED_STAGES: readonly Stage[] = ["MO_HEAD_REVIEW", "CX_CREDIT_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
 
 /** Allowed actions per stage. Second review depends on the route (Proceed/Reject for routes 2 and 3). */
 export function allowedActions(stage: Stage, route: number | null, workflow: string = "WAKEELBOOST"): TaskAction[] {
@@ -157,7 +161,10 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
     switch (stage) {
       case "OSS_REVIEW":
       case "TEAM_LEAD_REVIEW":
+      case "CX_CREDIT_REVIEW":
         return ["RECOMMEND", "RETURN", "REJECT"];
+      case "BUSINESS_ENDORSEMENT":
+        return ["ENDORSE", "RETURN", "REJECT"];
       case "HRS_REVIEW":
       case "MO_HEAD_REVIEW":
         return ["ENDORSE", "RETURN", "REJECT"];
@@ -179,6 +186,8 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
     case "BUSINESS_ENDORSEMENT":
     case "MO_HEAD_REVIEW":
       return ["ENDORSE", "REJECT", "RETURN"];
+    case "CX_CREDIT_REVIEW":
+      return ["RECOMMEND", "REJECT", "RETURN"];
     case "INITIATOR_CORRECTION":
       return ["RESUBMIT"];
     case "FIRST_CREDIT_REVIEW":

@@ -37,8 +37,8 @@ const k2s = (k: number | string | null | undefined) => (k === null || k === unde
 
 export const RETAIL_MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
-  { label: "Business review", stages: ["MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
-  { label: "Credit", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
+  { label: "Business review", stages: ["BUSINESS_ENDORSEMENT", "MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
+  { label: "Credit", stages: ["CX_CREDIT_REVIEW", "FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & contract", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
   { label: "Pre-disbursement & booking", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
   { label: "Payment", stages: ["PAYMENT_RECONCILIATION", "COMPLETION"] },
@@ -357,6 +357,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
   const prelimOut = b.prelim?.outputs as AffordabilityOutput | undefined;
   const finalOut = b.final?.outputs as AffordabilityOutput | undefined;
   switch (stage) {
+    case "BUSINESS_ENDORSEMENT":
+    case "CX_CREDIT_REVIEW":
     case "MO_HEAD_REVIEW":
     case "OSS_REVIEW":
     case "TEAM_LEAD_REVIEW":
@@ -365,7 +367,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       const pre = await preliminaryOk(db, app);
       const photos = rules ? checkPhotos(c.documents, rules, app.initiator_role === "DELIGHT_OFFICER" ? app.assigned_rm_id : app.initiator_id) : null;
       const tlBlocked = stage === "TEAM_LEAD_REVIEW" ? gapsBlocking(gapsNow, "TEAM_LEAD_REVIEW") : [];
-      const priorDecisions = c.decisions.filter((d: { decision_kind: string | null; invalidated_at: Date | null }) => d.decision_kind === "BUSINESS_REVIEW" && !d.invalidated_at);
+      const priorDecisions = c.decisions.filter((d: { decision_kind: string | null; invalidated_at: Date | null; action: string }) => (d.decision_kind === "BUSINESS_REVIEW" || (stage === "CX_CREDIT_REVIEW" && d.decision_kind === "CREDIT")) && !d.invalidated_at);
       body.push(
         <ul key="cl" className="checklist">
           <Check ok={pre.ok}>Preliminary DSR {prelimOut?.dsr ? `${prelimOut.dsr.percent}% (≤ ${prelimOut.dsr.maxPercent}%)` : "—"}{pre.ok ? "" : `: ${pre.message}`}</Check>
@@ -407,6 +409,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
         }
       }
       const actionMap: Record<string, [string, string, string]> = {
+        BUSINESS_ENDORSEMENT: ["ENDORSE", "Approve and send to CX credit review", "Regional Business Executive review: customer, product eligibility, amount, documents, SeedFi assessment and any credit exception."],
+        CX_CREDIT_REVIEW: ["RECOMMEND", "Recommend to the Credit Officer", "CX credit review: eligibility, credit assessment, facility details, supporting documents and any credit exception. The request then goes directly to the Credit Officer for the amount."],
         MO_HEAD_REVIEW: ["ENDORSE", "Endorse for credit", "Merchant Officer Head review of the request before credit."],
         OSS_REVIEW: ["RECOMMEND", "Recommend to Team Lead", "Completeness, outlet and state details, Altbox/Altshop location and evidence."],
         TEAM_LEAD_REVIEW: ["RECOMMEND", "Recommend to Head of Retail Sales", "Your independent view of the appraisal, proposal, financial evidence, DSR and commercial viability."],
