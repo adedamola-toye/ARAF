@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { audits, outbox, resetDb } from "./helpers";
 import { act, approveFirstReview, createSubmittedCase, ctxFor, driveToOffer } from "@/server/demo/scenario";
-import { dhPeriodFor, duePeriod, runDhWeeklyReport } from "@/server/jobs/dh-weekly";
+import { dhPeriodFor, duePeriod, runDhWeeklyReport, sendDhTestReport } from "@/server/jobs/dh-weekly";
 import { updateDhWeeklySchedule } from "@/server/domain/admin";
 import { setOrgLink } from "@/server/domain/org";
 import { setRmClassification } from "@/server/domain/rm-routing";
@@ -127,6 +127,23 @@ describe("Weekly Divisional Head report: delivery", () => {
     expect(body).not.toContain("Ada CX-Reviewer");
     expect(body).not.toContain("Ade Okafor —");
     expect(body).toMatch(/6\. DECISIONS BY STAGE[\s\S]*Business endorsement\s+1 approved · 0 returned · 0 declined/);
+  });
+
+  it("the Super Admin can send a [TEST] report now, to the Divisional Heads or to themself, without affecting Sunday's run", async () => {
+    const now = new Date();
+    await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000), now });
+    const admin = await ctxFor("superadmin@altbank.ng", now);
+    expect(await sendDhTestReport(admin, "ME")).toMatchObject({ sent: 1 });
+    expect(await sendDhTestReport(admin, "DIVISIONAL_HEADS")).toMatchObject({ sent: 1, to: ["Grace Divisional-Head"] });
+    const tests = await outbox("DH_WEEKLY_REPORT_TEST");
+    expect(tests.map((m) => m.to_addresses[0]).sort()).toEqual(["div.head@altbank.ng", "superadmin@altbank.ng"]);
+    expect(tests[0].subject).toMatch(/^\[TEST\]/);
+    expect(tests[0].body_text).toContain("TEST REPORT");
+    expect(figures(tests[0].body_text, "ALL STAFF").week.slice(0, 2)).toEqual(["1", "₦1,000,000"]);
+    expect((await audits("DH_TEST_REPORT_SENT")).length).toBe(2);
+    await expect(sendDhTestReport(await ctxFor("div.head@altbank.ng"), "ME")).rejects.toThrow();
+    // Sunday's real report still goes out.
+    expect((await runDhWeeklyReport(new Date(dhPeriodFor(now, 18, 0).sendAt.getTime() + 60_000))).sent).toBe(1);
   });
 
   it("the Super Admin can switch it off, change the time and add recipients", async () => {

@@ -20,6 +20,9 @@ import { ROLE_LABELS, type Role } from "../domain/roles";
 import { financingFacts, type FinFact } from "../performance-report";
 import { addDaysToDateString, fromLagos, lagosDate, lagosWeekStart } from "../time";
 import { CATCH_UP_MS } from "./schedules";
+import type { Ctx } from "../context";
+import { forbidden, invalid } from "../errors";
+import { holdsRole } from "../domain/access";
 
 export const DH_CODE = "DH_WEEKLY_REPORT";
 export const TEAM_CODE = "TEAM_WEEKLY_REPORT";
@@ -542,6 +545,45 @@ ${sections}
 }
 
 // ─────────────────────────── the scheduled run ───────────────────────────
+
+/**
+ * Super Admin test send: the Divisional Head report built from live data up to now (this week so far and month to
+ * date), marked [TEST]. Not recorded as the weekly run, so the Sunday report still goes out as normal.
+ */
+export async function sendDhTestReport(ctx: Ctx, target: "DIVISIONAL_HEADS" | "ME"): Promise<{ sent: number; to: string[] }> {
+  const actor = ctx.actor;
+  if (!actor) throw forbidden();
+  return withTx(async (tx) => {
+    if (!(await holdsRole(tx, actor.staffId, "SUPER_ADMIN"))) throw forbidden();
+    const now = ctx.now;
+    const p = { ...dhPeriodFor(now, 18, 0), sendAt: new Date(now.getTime() + 1000) }; // up to and including now
+    const recipients = (
+      target === "ME"
+        ? await tx.query<{ id: string; email: string; full_name: string }>("SELECT id, email, full_name FROM staff WHERE id = $1", [actor.staffId])
+        : await tx.query<{ id: string; email: string; full_name: string }>(
+            `SELECT DISTINCT s.id, s.email, s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'DIVISIONAL_HEAD'
+              WHERE s.status = 'ACTIVE' ORDER BY s.full_name`,
+          )
+    ).rows;
+    if (!recipients.length) throw invalid("No active Divisional Head is profiled yet. Grant the Divisional Head role first, or send the test to yourself.");
+    const { body, html } = await buildDhReport(tx, p, now);
+    const asAt = now.toLocaleString("en-GB", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const intro = `TEST REPORT, sent by ${actor.name} from Scheduled emails. Live figures as at ${asAt} (Africa/Lagos): this week so far and month to date. The regular report goes out on Sunday at 18:00.`;
+    const stamp = now.getTime();
+    for (const r of recipients) {
+      await enqueueEmail(tx, now, {
+        kind: "DH_WEEKLY_REPORT_TEST",
+        dedupeKey: `dh-weekly-test:${stamp}:${r.id}`,
+        to: [r.email],
+        subject: `[TEST] Retail Asset Factory weekly report: week ${p.weekLabel} and ${p.monthLabel.split(" (")[0]} so far`,
+        html: dhEmailHtml(r.full_name, p, asAt, html, { intro }),
+        text: simpleEmail([`Dear ${r.full_name},`, "", intro, "", ...body]),
+      });
+    }
+    await audit(tx, ctx, { action: "DH_TEST_REPORT_SENT", actorRole: "SUPER_ADMIN", details: { target, recipients: recipients.map((r) => r.id) } });
+    return { sent: recipients.length, to: recipients.map((r) => r.full_name) };
+  });
+}
 
 export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolean; sent: number; teamSent?: number; period: string | null }> {
   const s = (await db.query("SELECT * FROM schedule_settings WHERE code = $1", [DH_CODE])).rows[0];
