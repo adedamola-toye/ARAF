@@ -1,0 +1,37 @@
+# RM classification, Non-DBC routing and the Performance Overview
+
+## What changed
+
+### RM classification (Configuration centre → RM classification and routing)
+- The Super Admin classifies every Relationship Manager: **Yes — DBC** (with a DBC region: South & West or North) or **No — Non-DBC** (with an assigned Regional Business Executive). A reason is mandatory; every change is audited (`RM_CLASSIFICATION_CHANGED`) with the previous and new values.
+- Nothing is inferred from location. RMs not yet classified are listed under "Needs your attention" and keep the route in force before classification.
+- A new RBE can be provisioned on the same page (email + name; added to the bank directory if needed; only the RBE role is granted, no product origination). Existing staff are never duplicated.
+- Configured Unit Heads: DBC Unit Head — South & West, DBC Unit Head — North, E-commerce Unit Head. Each must hold the Unit Head (credit approval) role. If one is not set, a request reaching that stage waits in the assignment exception queue; no other Unit Head is substituted.
+- Migration 049 maps "Seun Oladesu" and "Abubakar Musa 2" automatically **only** if exactly one active staff member with that exact name already holds the Unit Head role. Otherwise the Super Admin sets them on this page.
+
+### Non-DBC route (confirmed)
+RM → assigned RBE → CX credit review → Credit Officer for the amount (with the existing concurrence) → E-commerce Unit Head → Divisional Head → documentation.
+- The RM cannot pick another RBE: the request goes to the RBE the Super Admin assigned (the WakeelBoost form shows it read-only).
+- CX credit review records remarks (mandatory) and goes directly to the Credit Officer. There is no Product Manager stage.
+- Credit Officer selection uses the configured credit bands (Approval workflows): CO1 up to ₦5,000,000, CO2 ₦5,000,000.01–₦20,000,000, CO3 ₦20,000,000.01–₦50,000,000, exact boundaries. Amounts outside the bands are refused at submission.
+- A Non-DBC RM whose RBE is not active cannot submit.
+- Applies to WakeelBoost, Vendor Financing, AltDrive and AltPower originated by Non-DBC RMs.
+
+### DBC route
+Unchanged stage order. The Unit Head approval goes to the configured DBC Unit Head for the RM's region.
+
+### Pinning
+The classification, RBE and Unit Head are pinned on each request at submission. Later changes apply to new requests; in-flight requests keep their route.
+
+### Performance Overview (Reports → Performance reports)
+- Executive summary: total requested / approved / disbursed, pending, declined, average approval turnaround, SLA breaches, pending disbursement confirmations.
+- Financing trend (requested, approved, disbursed; daily, weekly or monthly by range) with hover details and a table view.
+- Organisational performance with drill-down: Business line (DBC / Non-DBC / Merchant Officer line) → Unit Head or RBE → product → officer → location → facility, plus alternative orders (Unit Head, RBE, product, location, business unit, Merchant Officers).
+- Officer performance table: searchable, sortable, opens the officer's facilities.
+- Filters: date range with presets, business line, region, product, Unit Head / RBE, and more (business unit, officer, location, status, exceptions, invoice, SLA, disbursement). CSV export carries the same filters.
+- Scope (enforced on the server): God's Eye, Super Admin, Reporting Admin — everything; Divisional Head — their Unit Heads' staff; Unit Head — staff mapped to them, plus the DBC RMs of their region if they are a configured DBC Unit Head; RBE — the RMs assigned to them; Merchant Officer Head — their Leads and officers.
+
+## After deployment (Super Admin)
+1. Configuration centre → RM classification and routing: set the two DBC Unit Heads and the E-commerce Unit Head.
+2. Classify each RM (DBC + region, or Non-DBC + RBE). Provision any missing RBEs first.
+3. Make sure at least one active CX Credit Reviewer exists (Staff → grant role).

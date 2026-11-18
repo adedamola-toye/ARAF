@@ -3,7 +3,8 @@ import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { act, createSubmittedCase, ctxFor } from "@/server/demo/scenario";
 import { setOrgLink } from "@/server/domain/org";
-import { actionsByPerformer, altphonesFacts, financingFacts, groupAlt, groupFacts, reportScope, toCsv } from "@/server/performance-report";
+import { actionsByPerformer, altphonesFacts, financingFacts, groupAlt, groupFacts, officerPerformance, reportScope, toCsv, trend } from "@/server/performance-report";
+import { setRmClassification, setRoutingAssignment } from "@/server/domain/rm-routing";
 
 const N = (n: number) => n * 100;
 const ADMIN = "superadmin@altbank.ng";
@@ -90,5 +91,49 @@ describe("Location correction", () => {
     const rows = (await db.query("SELECT name FROM locations WHERE name ILIKE '%alaba%' OR name = 'AltLounge Allen Lagos 2'")).rows.map((r) => r.name);
     expect(rows).toEqual(["AltLounge Alaba Lagos"]);
     expect((await db.query("SELECT 1 FROM locations WHERE name = 'AltLounge Allen Lagos 1'")).rowCount).toBe(1);
+  });
+});
+
+describe("Business lines, RBE and DBC Unit Head reporting", () => {
+  it("attributes Non-DBC requests to the RBE, DBC requests to the regional Unit Head, and scopes each to their own", async () => {
+    const admin = await ctxFor(ADMIN);
+    const reason = "Business owner instruction for reporting.";
+    const north = await staff("dbc.north.r@altbank.ng", "Musa North", "UNIT_HEAD");
+    await setRoutingAssignment(admin, { key: "DBC_UNIT_HEAD_NORTH", staffId: north, reason });
+    await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.abuja@altbank.ng"), businessUnit: "Commercial", reason });
+    const nd = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
+    await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "DBC", dbcRegion: "NORTH", businessUnit: "DBC", reason });
+    const dbc = await createSubmittedCase({ initiator: "RM", amountKobo: N(2_000_000) });
+    const mo = await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: N(500_000) });
+    const all = await financingFacts(db, { kind: "ALL" });
+    const by = (id: string) => all.find((f) => f.id === id)!;
+    expect(by(nd)).toMatchObject({ segment: "Non-DBC", rbe: "Hauwa Sani", reportingHead: "Hauwa Sani" });
+    expect(by(dbc)).toMatchObject({ segment: "DBC", region: "DBC North", reportingHead: "Musa North", rbe: "—" });
+    expect(by(mo).segment).toBe("Merchant Officer line");
+    // Totals reconcile across business lines without double counting.
+    const lines = groupFacts(all, "segment");
+    expect(lines.reduce((s, g) => s + g.requestedKobo, 0)).toBe(all.reduce((s, f) => s + f.requestedKobo, 0));
+    // The DBC North Unit Head sees the DBC RM's work (the RM is currently DBC North); the RBE sees nothing once the RM left them.
+    const uhScope = await reportScope(db, north);
+    expect(uhScope.kind).toBe("STAFF");
+    expect((await financingFacts(db, uhScope)).map((f) => f.id).sort()).toEqual([nd, dbc].sort());
+    expect((await reportScope(db, await sid("rbe.abuja@altbank.ng"))).kind).toBe("NONE");
+    // Dimension filters.
+    expect((await financingFacts(db, { kind: "ALL" }, { dims: { segment: "Non-DBC" } })).map((f) => f.id)).toEqual([nd]);
+  });
+
+  it("an RBE sees the RMs assigned to them; officer rows and the trend reconcile with the facts", async () => {
+    const admin = await ctxFor(ADMIN);
+    await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.lagos@altbank.ng"), reason: "Ade reports to Tunde as RBE." });
+    const a = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
+    await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: N(700_000) });
+    const facts = await financingFacts(db, await reportScope(db, await sid("rbe.lagos@altbank.ng")));
+    expect(facts.map((f) => f.id)).toEqual([a]);
+    const rows = officerPerformance(facts);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ officer: "Ade Okafor", requests: 1, requestedKobo: N(1_000_000), slaOnTimePercent: 100 });
+    const t = trend(facts);
+    expect(t.grain).toBe("day");
+    expect(t.points.reduce((s, p) => s + p.requestedKobo, 0)).toBe(N(1_000_000));
   });
 });

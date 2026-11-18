@@ -10,7 +10,7 @@ import type { Db } from "./db";
 import { activeRoles } from "./domain/access";
 import { STAGE_LABELS, type Stage } from "./domain/stages";
 
-export const REPORT_ROLES = ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN", "DIVISIONAL_HEAD", "UNIT_HEAD"] as const;
+export const REPORT_ROLES = ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN", "DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"] as const;
 
 export type Scope = { kind: "ALL" } | { kind: "STAFF"; staffIds: string[]; label: string } | { kind: "NONE"; reason: string };
 
@@ -30,9 +30,34 @@ export async function reportScope(q: Db, staffId: string): Promise<Scope> {
   }
   if (roles.includes("UNIT_HEAD")) {
     for (const r of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'UNIT_HEAD'", [staffId])).rows) ids.add(r.staff_id);
+    // A DBC Unit Head also sees the DBC Relationship Managers of their configured region (South & West or North).
+    for (const r of (
+      await q.query<{ staff_id: string }>(
+        `SELECT c.staff_id FROM routing_assignments ra JOIN rm_classifications c ON c.segment = 'DBC'
+            AND c.dbc_region = CASE ra.key WHEN 'DBC_UNIT_HEAD_NORTH' THEN 'NORTH' WHEN 'DBC_UNIT_HEAD_SOUTH_WEST' THEN 'SOUTH_WEST' END
+          WHERE ra.staff_id = $1`,
+        [staffId],
+      )
+    ).rows)
+      ids.add(r.staff_id);
     label = label || "your unit";
   }
-  if (!roles.includes("DIVISIONAL_HEAD") && !roles.includes("UNIT_HEAD")) return { kind: "NONE", reason: "Reports are available to God's Eye, Super Admin, Reporting Admin, Divisional Heads and Unit Heads." };
+  if (roles.includes("RBE")) {
+    // The Relationship Managers assigned to this RBE.
+    for (const r of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'RBE'", [staffId])).rows) ids.add(r.staff_id);
+    label = label || "your Relationship Managers";
+  }
+  if (roles.includes("MERCHANT_OFFICER_HEAD")) {
+    // The Merchant Officer hierarchy: the Head, their Leads and the Leads' officers.
+    ids.add(staffId);
+    for (const lead of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'MO_HEAD'", [staffId])).rows) {
+      ids.add(lead.staff_id);
+      for (const mo of (await q.query<{ staff_id: string }>("SELECT staff_id FROM org_links WHERE manager_id = $1 AND relation = 'MO_LEAD'", [lead.staff_id])).rows) ids.add(mo.staff_id);
+    }
+    label = label || "the Merchant Officer business line";
+  }
+  if (!["DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"].some((r) => roles.includes(r as never)))
+    return { kind: "NONE", reason: "Reports are available to God's Eye, Super Admin, Reporting Admin, Divisional Heads, Unit Heads, Regional Business Executives and the Merchant Officer Head." };
   if (!ids.size) return { kind: "NONE", reason: "No staff are mapped to you yet. The Super Admin sets reporting lines under Administration → Reporting lines." };
   return { kind: "STAFF", staffIds: [...ids], label };
 }
@@ -40,6 +65,11 @@ export async function reportScope(q: Db, staffId: string): Promise<Scope> {
 // ─────────────────────────── financing facts ───────────────────────────
 
 export const FIN_DIMENSIONS = {
+  segment: "Business line",
+  businessUnit: "Business unit",
+  region: "Region",
+  reportingHead: "Reporting head",
+  rbe: "RBE",
   division: "Divisional Head",
   unitHead: "Unit Head",
   product: "Product",
@@ -57,6 +87,15 @@ export const DEFAULT_ORDER: FinDim[] = ["unitHead", "product", "officer", "locat
 export interface FinFact {
   id: string;
   ref: string;
+  /** DBC, Non-DBC, Merchant Officer line, RM (unclassified) or Other channels. */
+  segment: string;
+  businessUnit: string;
+  region: string;
+  /** The approver the originator reports into for this request: RBE (Non-DBC), DBC Unit Head, MO Head or Unit Head. */
+  reportingHead: string;
+  rbe: string;
+  approvedAt: Date | null;
+  disbursedAt: Date | null;
   division: string;
   unitHead: string;
   product: string;
@@ -97,6 +136,8 @@ export interface FinFilters {
   invoice?: "pending" | "completed" | null;
   sla?: "breached" | null;
   disbursed?: "yes" | "no" | null;
+  /** Exact-match filters on any reporting dimension (business line, RBE, Unit Head, officer, location …). */
+  dims?: Partial<Record<FinDim, string>>;
 }
 
 const CATEGORY: Record<string, string> = { BUSINESS_OWNER: "Business", SALARY_EARNER: "Salaried" };
@@ -119,6 +160,10 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
               CASE WHEN a.initiator_role = 'MERCHANT_OFFICER' THEN en.full_name WHEN a.initiator_role = 'MERCHANT_OFFICER_LEAD' THEN o.full_name END AS mo_lead,
               mh.full_name AS mo_head,
               coalesce(lo.name, ou.name, a.region) AS location,
+              o.business_unit AS staff_unit, o.region AS staff_region,
+              coalesce(a.routing_segment, rc.segment) AS segment, rc.dbc_region, rc.business_unit AS rm_unit,
+              CASE WHEN coalesce(a.routing_segment, rc.segment) = 'NON_DBC' THEN coalesce(CASE WHEN a.routing_segment = 'NON_DBC' THEN sr.full_name END, cr.full_name) END AS rbe,
+              rh.full_name AS routing_head, ds.disbursed_on,
               (SELECT max(d.created_at) FROM decisions d WHERE d.application_id = a.id AND d.invalidated_at IS NULL AND d.action IN ('APPROVE','PROCEED')
                   AND d.stage IN ('DIVISIONAL_HEAD_REVIEW','UNIT_HEAD_REVIEW')) AS approved_at,
               (SELECT coalesce((ra.inputs->>'principalKobo')::bigint, NULL) FROM retail_assessments ra WHERE ra.application_id = a.id AND ra.kind = 'FINAL' AND ra.superseded_at IS NULL ORDER BY ra.created_at DESC LIMIT 1) AS approved_principal,
@@ -137,7 +182,12 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
          LEFT JOIN staff mh ON mh.id = a.mo_head_id
          LEFT JOIN locations lo ON lo.id = a.origination_location_id
          LEFT JOIN locations ou ON ou.id = a.outlet_location_id
-         LEFT JOIN disbursements ds ON ds.application_id = a.id`,
+         LEFT JOIN disbursements ds ON ds.application_id = a.id
+         LEFT JOIN rm_classifications rc ON rc.staff_id = a.initiator_id AND a.initiator_role = 'RM'
+         LEFT JOIN org_links lr ON lr.staff_id = a.initiator_id AND lr.relation = 'RBE'
+         LEFT JOIN staff cr ON cr.id = lr.manager_id
+         LEFT JOIN staff sr ON sr.id = a.selected_rbe_id
+         LEFT JOIN staff rh ON rh.id = a.routing_unit_head_id`,
       [scope.kind === "STAFF" ? scope.staffIds : null, f.from || null, f.to || null],
     )
   ).rows;
@@ -147,9 +197,19 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
     const completed = ["COMPLETED", "CLOSED"].includes(r.stage);
     const declined = r.stage === "REJECTED";
     const awaiting = r.stage === "FULFILMENT" || r.stage === "VENDOR_CONFIRMATION";
+    const mo = ["MERCHANT_OFFICER", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"].includes(r.initiator_role);
+    const segment = mo ? "Merchant Officer line" : r.segment === "DBC" ? "DBC" : r.segment === "NON_DBC" ? "Non-DBC" : r.initiator_role === "RM" ? "RM (unclassified)" : "Other channels";
+    const reportingHead = segment === "Non-DBC" ? r.rbe : segment === "DBC" ? r.routing_head : mo ? (r.mo_head ?? (r.initiator_role === "MERCHANT_OFFICER_HEAD" ? r.officer : null)) : r.unit_head;
     return {
       id: r.id,
       ref: r.ref,
+      segment,
+      businessUnit: r.rm_unit ?? r.staff_unit ?? "Not set",
+      region: r.dbc_region ? `DBC ${r.dbc_region === "NORTH" ? "North" : "South & West"}` : (r.staff_region ?? "Not set"),
+      reportingHead: reportingHead ?? "Not mapped",
+      rbe: r.rbe ?? "—",
+      approvedAt: r.approved_at ?? null,
+      disbursedAt: r.disbursed_on ? new Date(`${r.disbursed_on instanceof Date ? r.disbursed_on.toISOString().slice(0, 10) : r.disbursed_on}T12:00:00Z`) : null,
       division: r.division ?? "Not mapped",
       unitHead: r.unit_head ?? "Not mapped",
       product: r.product,
@@ -188,8 +248,107 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       (!f.creditException || (f.creditException === "yes") === x.creditException) &&
       (!f.invoice || (f.invoice === "pending" ? x.invoicePending : x.invoiceCompleted)) &&
       (!f.sla || x.slaBreaches > 0) &&
-      (!f.disbursed || (f.disbursed === "yes") === x.disbursed),
+      (!f.disbursed || (f.disbursed === "yes") === x.disbursed) &&
+      Object.entries(f.dims ?? {}).every(([d, v]) => !v || String(x[d as FinDim]) === v),
   );
+}
+
+// ─────────────────────────── overview: trend and officer table ───────────────────────────
+
+export interface TrendPoint {
+  label: string;
+  start: string;
+  requestedKobo: number;
+  approvedKobo: number;
+  disbursedKobo: number;
+}
+
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
+/** Daily buckets up to a month, weekly up to six months, monthly otherwise. Each amount is dated by its own event. */
+export function trend(facts: FinFact[], from?: string | null, to?: string | null): { grain: "day" | "week" | "month"; points: TrendPoint[] } {
+  const dates = facts.flatMap((x) => [x.submittedAt, x.approvedAt, x.disbursedAt]).filter((d): d is Date => !!d).map((d) => new Date(d));
+  const end = to ? new Date(`${to}T23:59:59Z`) : new Date(Math.max(Date.now(), ...dates.map((d) => d.getTime())));
+  const start = from ? new Date(`${from}T00:00:00Z`) : dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date(end.getTime() - 180 * 86_400_000);
+  const span = end.getTime() - start.getTime();
+  const grain = span <= 31 * 86_400_000 ? "day" : span <= 182 * 86_400_000 ? "week" : "month";
+  const bucketOf = (d: Date) => {
+    if (grain === "month") return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-01`;
+    if (grain === "day") return ymd(d);
+    const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    x.setUTCDate(x.getUTCDate() - ((x.getUTCDay() + 6) % 7)); // Monday
+    return ymd(x);
+  };
+  const keys: string[] = [];
+  for (let k = bucketOf(start); k <= bucketOf(end); ) {
+    keys.push(k);
+    const d = new Date(`${k}T00:00:00Z`);
+    if (grain === "month") d.setUTCMonth(d.getUTCMonth() + 1);
+    else d.setUTCDate(d.getUTCDate() + (grain === "day" ? 1 : 7));
+    k = ymd(d);
+    if (keys.length > 120) break;
+  }
+  const m = new Map<string, TrendPoint>(keys.map((k) => [k, { label: k, start: k, requestedKobo: 0, approvedKobo: 0, disbursedKobo: 0 }]));
+  const add = (d: Date | null, field: "requestedKobo" | "approvedKobo" | "disbursedKobo", v: number) => {
+    if (!d || !v) return;
+    const p = m.get(bucketOf(new Date(d)));
+    if (p) p[field] += v;
+  };
+  for (const x of facts) {
+    add(x.submittedAt, "requestedKobo", x.requestedKobo);
+    if (x.approved) add(x.approvedAt ?? x.submittedAt, "approvedKobo", x.approvedKobo);
+    if (x.disbursed) add(x.disbursedAt, "disbursedKobo", x.disbursedKobo);
+  }
+  const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const points = [...m.values()].map((p) => {
+    const d = new Date(`${p.start}T00:00:00Z`);
+    return { ...p, label: grain === "month" ? `${MONTHS[d.getUTCMonth()]} ${String(d.getUTCFullYear()).slice(2)}` : `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}` };
+  });
+  return { grain, points };
+}
+
+export interface OfficerRow {
+  officer: string;
+  role: string;
+  segment: string;
+  businessUnit: string;
+  reportingHead: string;
+  products: string;
+  locations: string;
+  requests: number;
+  requestedKobo: number;
+  approvedKobo: number;
+  disbursedKobo: number;
+  pending: number;
+  avgTurnaroundHours: number | null;
+  /** Share of the officer's facilities that never breached the SLA (0–100). */
+  slaOnTimePercent: number;
+}
+
+const uniq = (xs: string[]) => [...new Set(xs.filter((x) => x && x !== "—"))].sort();
+export function officerPerformance(facts: FinFact[], roleLabel: (r: string) => string = (r) => r): OfficerRow[] {
+  const m = new Map<string, FinFact[]>();
+  for (const x of facts) m.set(x.officer, [...(m.get(x.officer) ?? []), x]);
+  return [...m.entries()]
+    .map(([officer, xs]) => {
+      const t = xs.filter((x) => x.turnaroundHours !== null);
+      return {
+        officer,
+        role: uniq(xs.map((x) => roleLabel(x.officerRole))).join(", "),
+        segment: uniq(xs.map((x) => x.segment)).join(", "),
+        businessUnit: uniq(xs.map((x) => x.businessUnit)).join(", "),
+        reportingHead: uniq(xs.map((x) => x.reportingHead)).join(", "),
+        products: uniq(xs.map((x) => x.product)).join(", "),
+        locations: uniq(xs.map((x) => x.location)).join(", "),
+        requests: xs.length,
+        requestedKobo: xs.reduce((s, x) => s + x.requestedKobo, 0),
+        approvedKobo: xs.reduce((s, x) => s + x.approvedKobo, 0),
+        disbursedKobo: xs.reduce((s, x) => s + x.disbursedKobo, 0),
+        pending: xs.filter((x) => x.pending).length,
+        avgTurnaroundHours: t.length ? t.reduce((s, x) => s + x.turnaroundHours!, 0) / t.length : null,
+        slaOnTimePercent: Math.round((100 * xs.filter((x) => x.slaBreaches === 0).length) / xs.length),
+      };
+    })
+    .sort((a, b) => b.requestedKobo - a.requestedKobo || a.officer.localeCompare(b.officer));
 }
 
 export interface FinGroup {

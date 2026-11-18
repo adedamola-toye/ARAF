@@ -28,10 +28,11 @@ export async function GET(req: NextRequest) {
     rows = facts.map((x) => ({ reference: x.ref, date: x.date, officer: x.officer, officer_role: x.officerRole, location: x.location, unit_head: x.unitHead, model: x.model, status: x.status, down_payment_naira: x.downPaymentKobo / 100, financing_naira: x.financedKobo / 100, completed: x.completed }));
   } else {
     const f = Object.fromEntries(["from", "to", "product", "category", "status", "creditException", "invoice", "sla", "disbursed"].map((k) => [k, sp.get(k)])) as FinFilters;
+    f.dims = Object.fromEntries((Object.keys(FIN_DIMENSIONS) as FinDim[]).map((d) => [d, sp.get(`d_${d}`)]).filter(([, v]) => v));
     let facts = await financingFacts(db, scope, f);
     sel.forEach((v, i) => order[i] in FIN_DIMENSIONS && (facts = facts.filter((x) => String(x[order[i] as FinDim]) === v)));
     rows = facts.map((x) => ({
-      facility: x.ref, product: x.product, customer_category: x.category, originating_officer: x.officer, originator_role: x.officerRole, merchant_officer_lead: x.moLead, merchant_officer_head: x.moHead,
+      facility: x.ref, business_line: x.segment, business_unit: x.businessUnit, region: x.region, reporting_head: x.reportingHead, rbe: x.rbe, product: x.product, customer_category: x.category, originating_officer: x.officer, originator_role: x.officerRole, merchant_officer_lead: x.moLead, merchant_officer_head: x.moHead,
       unit_head: x.unitHead, divisional_head: x.division, location: x.location, status: x.status, submitted: x.submittedAt, requested_naira: x.requestedKobo / 100, approved: x.approved,
       approved_naira: x.approvedKobo / 100, disbursed_naira: x.disbursedKobo / 100, sla_breaches: x.slaBreaches, credit_exception: x.creditException, invoice_pending: x.invoicePending,
       invoice_completed: x.invoiceCompleted, awaiting_rm_confirmation: x.awaitingRmConfirmation, missing_acquisition_evidence: x.missingEvidence,
