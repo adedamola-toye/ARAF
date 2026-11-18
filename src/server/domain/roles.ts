@@ -4,6 +4,7 @@ export const ROLES = [
   "MERCHANT_OFFICER",
   "RBE",
   "MERCHANT_OFFICER_LEAD",
+  "MERCHANT_OFFICER_HEAD",
   "ANM_LEAD_NORTH",
   "ANM_LEAD_SOUTH",
   "CREDIT_OFFICER_1",
@@ -49,10 +50,12 @@ export const INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER", "DELIGHT_OFFICE
 /** Team Leads and Unit Heads may originate retail requests; routing never sends a request back to its originator.
  *  Delight Officers / Smile Associates sell Altphones only: they no longer start retail requests (requests they
  *  started earlier keep their Outlet Service Supervisor route). */
-export const RETAIL_INITIATOR_ROLES = ["RM", "TEAM_LEAD", "UNIT_HEAD"] as const;
+export const RETAIL_INITIATOR_ROLES = ["RM", "TEAM_LEAD", "UNIT_HEAD", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"] as const;
 export type RetailInitiatorRole = (typeof RETAIL_INITIATOR_ROLES)[number];
 /** WakeelBoost (legacy) initiators. */
-export const LEGACY_INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER"] as const;
+export const LEGACY_INITIATOR_ROLES = ["RM", "ANM", "MERCHANT_OFFICER", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"] as const;
+/** Merchant Officer hierarchy: officers originate WakeelBoost only; Leads and Heads originate the wider suite. */
+export const MERCHANT_HIERARCHY_ROLES = ["MERCHANT_OFFICER", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"] as const;
 export type InitiatorRole = (typeof INITIATOR_ROLES)[number];
 
 export const ROLE_LABELS: Record<Role, string> = {
@@ -61,6 +64,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   MERCHANT_OFFICER: "Merchant Officer",
   RBE: "Regional Business Executive",
   MERCHANT_OFFICER_LEAD: "Merchant Officer Lead",
+  MERCHANT_OFFICER_HEAD: "Merchant Officer Head",
   ANM_LEAD_NORTH: "North ANM Lead",
   ANM_LEAD_SOUTH: "South ANM Lead",
   CREDIT_OFFICER_1: "Credit Officer 1",

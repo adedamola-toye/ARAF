@@ -1,3 +1,4 @@
+import { managerOf } from "./org";
 import type { Tx } from "../db";
 import { notifyExceptionReviewer } from "./credit-exception";
 import type { Ctx } from "../context";
@@ -56,7 +57,7 @@ export interface AppRow {
   customer_id: string | null;
   applicant_type: "INDIVIDUAL" | "ENTERPRISE" | "LIMITED";
   initiator_id: string;
-  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER" | "DELIGHT_OFFICER" | "TEAM_LEAD" | "UNIT_HEAD";
+  initiator_role: "RM" | "ANM" | "MERCHANT_OFFICER" | "MERCHANT_OFFICER_LEAD" | "MERCHANT_OFFICER_HEAD" | "DELIGHT_OFFICER" | "TEAM_LEAD" | "UNIT_HEAD";
   region: string | null;
   business_unit: string | null;
   status: string;
@@ -99,6 +100,7 @@ export interface AppRow {
   team_lead_id: string | null;
   hrs_id: string | null;
   hou_id: string | null;
+  mo_head_id?: string | null;
   suspended_at: Date | null;
   suspension_reason: string | null;
   business_approved_at?: Date | null;
@@ -138,7 +140,7 @@ export async function eligibleStaff(
 async function priorApprovers(tx: Tx, appId: string): Promise<string[]> {
   const r = await tx.query<{ actor_id: string }>(
     `SELECT DISTINCT actor_id FROM decisions WHERE application_id = $1 AND invalidated_at IS NULL
-       AND stage IN ('BUSINESS_ENDORSEMENT','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW',
+       AND stage IN ('BUSINESS_ENDORSEMENT','MO_HEAD_REVIEW','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW',
                      'OSS_REVIEW','TEAM_LEAD_REVIEW','HRS_REVIEW','HEAD_OF_UNIT_APPROVAL')`,
     [appId],
   );
@@ -156,7 +158,7 @@ export interface AssignmentSpec {
 
 /** Retail routing: business review by team / outlet / organisation scope, independent credit review. */
 async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<AssignmentSpec | null> {
-  const base = [app.initiator_id, app.assigned_rm_id];
+  const base = [app.initiator_id, app.assigned_rm_id, app.mo_head_id ?? null];
   switch (stage) {
     case "OSS_REVIEW": {
       const loc = app.outlet_location_id ? (await tx.query<{ oss_staff_id: string | null; active: boolean }>("SELECT oss_staff_id, active FROM locations WHERE id = $1", [app.outlet_location_id])).rows[0] : null;
@@ -210,11 +212,25 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
   switch (stage) {
     case "BUSINESS_ENDORSEMENT": {
       if (app.initiator_role === "RM") return { roles: ["RBE"], exclude: [app.initiator_id] };
-      if (app.initiator_role === "MERCHANT_OFFICER") return { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id] };
+      if (app.initiator_role === "MERCHANT_OFFICER") {
+        // The officer's own Lead when a reporting line is set; otherwise any Merchant Officer Lead.
+        const lead = await managerOf(tx, app.initiator_id, "MO_LEAD");
+        return lead
+          ? { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id], only: [lead], scopeNote: "The Merchant Officer's Lead (reporting line)" }
+          : { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id] };
+      }
       const zone = zoneForRegion(app.region);
       if (zone === "NORTH") return { roles: ["ANM_LEAD_NORTH"], exclude: [app.initiator_id] };
       if (zone === "SOUTH") return { roles: ["ANM_LEAD_SOUTH"], exclude: [app.initiator_id] };
       return { roles: [], exclude: [] }; // ANM without a configured state -> unstaffed
+    }
+    case "MO_HEAD_REVIEW": {
+      // The Head of the Lead in the chain (the endorsing Lead, or the originating Lead); otherwise any Head.
+      const lead = app.initiator_role === "MERCHANT_OFFICER_LEAD" ? app.initiator_id : app.endorser_id;
+      const head = await managerOf(tx, lead, "MO_HEAD");
+      return head
+        ? { roles: ["MERCHANT_OFFICER_HEAD"], exclude: [app.initiator_id, app.endorser_id], only: [head], scopeNote: "The Lead's Merchant Officer Head (reporting line)" }
+        : { roles: ["MERCHANT_OFFICER_HEAD"], exclude: [app.initiator_id, app.endorser_id] };
     }
     case "DRAFT":
     case "INITIATOR_CORRECTION":
@@ -224,7 +240,7 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION":
       if (!route) throw new Error("Route not set");
-      return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id] };
+      return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.mo_head_id ?? null] };
     case "SECOND_CREDIT_REVIEW":
       if (!route) throw new Error("Route not set");
       return { roles: route.secondReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id] };

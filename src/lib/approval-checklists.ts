@@ -72,6 +72,12 @@ export const CHECKLISTS = {
     ["AMOUNT_REASONABLE", "The requested amount is reasonable for the business."],
     ["EXCEPTIONS_NOTED", "Any exceptions have been noted."],
   ]),
+  MO_HEAD_REVIEW: c("MO_HEAD_REVIEW", 1, "Merchant Officer Head review", [
+    ["CUSTOMER_REVIEWED", "Customer and business details have been reviewed."],
+    ["LEAD_REVIEW_CONSIDERED", "The Merchant Officer Lead's endorsement (where applicable) has been considered."],
+    ["AMOUNT_REASONABLE", "The requested amount is reasonable for the business."],
+    ["EXCEPTIONS_NOTED", "Any exceptions have been noted."],
+  ]),
   OSS_REVIEW: c("OSS_REVIEW", 1, "Outlet Service Supervisor review", [
     ["COMPLETE", "The request is complete and the customer details have been checked."],
     ["OUTLET_CONFIRMED", "The originating outlet and state details are correct."],
@@ -139,6 +145,8 @@ export function checklistFor(p: { kind: "APPLICATION" | "ALTPHONES" | "STAFF_REQ
         return CHECKLISTS.DH_FINAL;
       case "BUSINESS_ENDORSEMENT":
         return CHECKLISTS.BUSINESS_ENDORSEMENT;
+      case "MO_HEAD_REVIEW":
+        return CHECKLISTS.MO_HEAD_REVIEW;
       case "OSS_REVIEW":
         return CHECKLISTS.OSS_REVIEW;
       case "HRS_REVIEW":

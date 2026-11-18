@@ -235,7 +235,7 @@ export async function driveToBooking(id: string, now = new Date(), bookingRef = 
   const t = await openTaskOf(id);
   const ctx = await ctxFor(t.email!, now);
   await generateOffer(ctx, id);
-  for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED", "CONTRACT_EVIDENCE"]) {
+  for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING", "INSURANCE_SIGNED"]) {
     await uploadDocument(ctx, { applicationId: id, category: c, filename: `${c.toLowerCase()}.pdf`, data: makePdf(c) });
   }
   await act(id, "SUBMIT_PACK", { contractStepsConfirmed: true }, now);
@@ -267,6 +267,8 @@ export async function completeAll(id: string, now = new Date()) {
   await act(id, "COMPLETE_PROCESS", {}, now);
   const t = await openTaskOf(id);
   const ctx = await ctxFor(t.email!, now);
+  // RM disbursement confirmation needs evidence of delivery / acquisition.
+  await uploadDocument(ctx, { applicationId: id, category: "FULFILMENT_EVIDENCE", filename: "delivery-note.pdf", data: makePdf("delivery note") });
   const tasks = (await db.query("SELECT kind FROM fulfilment_tasks WHERE application_id = $1 AND status = 'OPEN'", [id])).rows;
   for (const k of tasks) {
     const ev = await uploadDocument(ctx, { applicationId: id, category: "FULFILMENT_EVIDENCE", filename: `${k.kind}.pdf`, data: makePdf(k.kind) });

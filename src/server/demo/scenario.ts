@@ -82,6 +82,8 @@ export const INITIATOR_EMAIL: Record<string, string> = {
   ANM_NORTH: "anm.north@altbank.ng",
   ANM_SOUTH: "anm.south@altbank.ng",
   MERCHANT_OFFICER: "mo.chi@altbank.ng",
+  MERCHANT_OFFICER_LEAD: "mo.lead@altbank.ng",
+  MERCHANT_OFFICER_HEAD: "mo.head@altbank.ng",
 };
 
 export async function openTaskOf(appId: string) {
@@ -98,13 +100,18 @@ export async function appRow(appId: string) {
 }
 
 /** Act on the current open task as its assignee. */
-export async function act(appId: string, action: TaskActionInput["action"], extra: Partial<TaskActionInput> & { confirmInvoice?: boolean } = {}, now = new Date()) {
+export async function act(appId: string, action: TaskActionInput["action"], extra: Partial<TaskActionInput> & { confirmInvoice?: boolean; withEvidence?: boolean } = {}, now = new Date()) {
   const t = await openTaskOf(appId);
   if (!t?.email) throw new Error(`No assignee for open task on ${appId} (${t?.stage})`);
   if (t.stage === "DISBURSEMENT_CHECK" && action === "OKAY" && extra.confirmInvoice !== false) await confirmInvoiceIfNeeded(appId, now);
+  if ((t.stage === "VENDOR_CONFIRMATION" || t.stage === "FULFILMENT") && extra.withEvidence !== false) {
+    const has = (await db.query("SELECT 1 FROM documents WHERE application_id = $1 AND category = 'FULFILMENT_EVIDENCE' AND scan_status = 'CLEAN' AND superseded_at IS NULL", [appId])).rowCount;
+    if (!has) await uploadDocument(await ctxFor(t.email, now), { applicationId: appId, category: "FULFILMENT_EVIDENCE", filename: "delivery-evidence.pdf", data: makePdf("Evidence of delivery (synthetic)") });
+  }
   const ctx = await ctxFor(t.email, now);
-  const { confirmInvoice: _ci, ...input } = extra;
+  const { confirmInvoice: _ci, withEvidence: _we, ...input } = extra;
   void _ci;
+  void _we;
   return performTaskAction(ctx, await withVerification({ taskId: t.id, action, idempotencyKey: randomUUID(), ...input }));
 }
 
@@ -196,7 +203,12 @@ export async function approveFirstReview(appId: string, now = new Date()) {
 
 /** Drive from submitted to offer preparation via the route's approvals. */
 export async function driveToOffer(appId: string, now = new Date()) {
-  await act(appId, "ENDORSE", {}, now);
+  // Business review: endorsement and/or the Merchant Officer Head, whichever the route has.
+  for (let i = 0; i < 2; i++) {
+    const t = await openTaskOf(appId);
+    if (t?.stage !== "BUSINESS_ENDORSEMENT" && t?.stage !== "MO_HEAD_REVIEW") break;
+    await act(appId, "ENDORSE", t.stage === "MO_HEAD_REVIEW" ? { reason: "Merchant Officer Head review completed; endorsed." } : {}, now);
+  }
   await approveFirstReview(appId, now);
   const app = await appRow(appId);
   await act(appId, app.route === 1 ? "APPROVE" : "PROCEED", {}, now);

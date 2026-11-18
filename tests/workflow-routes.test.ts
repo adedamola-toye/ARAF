@@ -59,6 +59,7 @@ describe("all three credit routes end to end (synthetic cases)", () => {
   it("Route 2 (₦5,000,000.01): CO2 → Lead1/Lead2/CO3 with Proceed", async () => {
     const id = await createSubmittedCase({ initiator: "MERCHANT_OFFICER", type: "ENTERPRISE", amountKobo: 500_000_001 });
     await act(id, "ENDORSE");
+    await act(id, "ENDORSE", { reason: "Merchant Officer Head review completed." }); // Merchant Officer Head
     await approveFirstReview(id);
     const t = await openTaskOf(id);
     expect(t.stage).toBe("SECOND_CREDIT_REVIEW");
@@ -73,8 +74,9 @@ describe("all three credit routes end to end (synthetic cases)", () => {
     expect(app.route).toBe(2);
     expect(app.status).toBe("CLOSED");
     const s = await stagesOf(id);
-    expect(s[1].email).toBe("co2@altbank.ng");
     expect(s[0].email).toBe("mo.lead@altbank.ng");
+    expect([s[1].stage, s[1].email]).toEqual(["MO_HEAD_REVIEW", "mo.head@altbank.ng"]);
+    expect(s[2].email).toBe("co2@altbank.ng");
   });
 
   it("Route 3 (₦50,000,000.00): CO3 → Lead 1 or Lead 2 (Proceed/Reject)", async () => {
@@ -129,6 +131,7 @@ describe("random assignment eligibility and separation of duties", () => {
     for (let i = 0; i < 12; i++) {
       const id = await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: NAIRA(10_000) });
       await act(id, "ENDORSE");
+      await act(id, "ENDORSE", { reason: "Merchant Officer Head review completed." }); // Merchant Officer Head
       await approveFirstReview(id);
       const t = await openTaskOf(id);
       expect(t.email).not.toBe("co1@altbank.ng");

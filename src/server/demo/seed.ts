@@ -34,6 +34,7 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "rbe.lagos@altbank.ng", name: "Tunde Adeyemi", roles: [{ role: "RBE", region: "SOUTH" }], region: "SOUTH" },
   { email: "rbe.abuja@altbank.ng", name: "Hauwa Sani", roles: [{ role: "RBE", region: "NORTH" }], region: "NORTH" },
   { email: "mo.lead@altbank.ng", name: "Kemi Ajayi", roles: [{ role: "MERCHANT_OFFICER_LEAD" }] },
+  { email: "mo.head@altbank.ng", name: "Tunde Merchant-Head (synthetic)", roles: [{ role: "MERCHANT_OFFICER_HEAD" }] },
   { email: "anm.lead.north@altbank.ng", name: "Ibrahim Danjuma", roles: [{ role: "ANM_LEAD_NORTH", region: "NORTH" }], region: "NORTH" },
   { email: "anm.lead.south@altbank.ng", name: "Ifeoma Obi", roles: [{ role: "ANM_LEAD_SOUTH", region: "SOUTH" }], region: "SOUTH" },
   { email: "co1@altbank.ng", name: "Bola Credit-One", roles: [{ role: "CREDIT_OFFICER_1" }], unit: "Credit" },
@@ -123,6 +124,10 @@ export async function seedReferenceData(q: Db, opts: { includeDemo?: boolean } =
         [r.rows[0].id, ra.role, ra.region ?? null, s.unit ?? null, ra.team ?? null],
       );
     }
+  }
+  // Demo reporting lines for the synthetic Merchant Officer team (routing is deterministic in demos and tests).
+  if (includeDemo && ids["mo.chi@altbank.ng"] && ids["mo.lead@altbank.ng"] && ids["mo.head@altbank.ng"]) {
+    await q.query("INSERT INTO org_links (staff_id, relation, manager_id, reason) VALUES ($1,'MO_LEAD',$2,'Synthetic demo team'), ($2,'MO_HEAD',$3,'Synthetic demo team') ON CONFLICT DO NOTHING", [ids["mo.chi@altbank.ng"], ids["mo.lead@altbank.ng"], ids["mo.head@altbank.ng"]]);
   }
   for (const [g, emails] of [
     ["LEGAL", ["legal@altbank.ng", ...(includeDemo ? ["legal.officer@altbank.ng"] : [])]],

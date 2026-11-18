@@ -633,9 +633,10 @@ async function businessStages(tx: Tx, app: AppRow, now: Date): Promise<Stage[]> 
 
 /** Assign a business-review stage to the right person (preferring whoever held it before). */
 async function enterBusinessStage(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, note?: string) {
-  const preferred = stage === "OSS_REVIEW" ? app.oss_reviewer_id : stage === "TEAM_LEAD_REVIEW" ? app.team_lead_id : stage === "HRS_REVIEW" ? app.hrs_id : app.hou_id;
+  const preferred = stage === "MO_HEAD_REVIEW" ? (app.mo_head_id ?? null) : stage === "OSS_REVIEW" ? app.oss_reviewer_id : stage === "TEAM_LEAD_REVIEW" ? app.team_lead_id : stage === "HRS_REVIEW" ? app.hrs_id : app.hou_id;
   const chosen = await chooseAssignee(tx, app, stage, { preferred });
-  if (stage === "OSS_REVIEW") app.oss_reviewer_id = chosen.staffId;
+  if (stage === "MO_HEAD_REVIEW") app.mo_head_id = chosen.staffId;
+  else if (stage === "OSS_REVIEW") app.oss_reviewer_id = chosen.staffId;
   else if (stage === "TEAM_LEAD_REVIEW") app.team_lead_id = chosen.staffId;
   else if (stage === "HRS_REVIEW") app.hrs_id = chosen.staffId;
   else app.hou_id = chosen.staffId;
@@ -647,7 +648,8 @@ async function enterBusinessStage(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, n
 async function routeFromSubmission(tx: Tx, ctx: Ctx, app: AppRow, note?: string): Promise<string> {
   const stage = nextBusinessStage(await businessStages(tx, app, ctx.now), null) as Stage | null;
   if (stage === null) {
-    await applyRoutingRule(tx, ctx, app, app.initiator_role === "TEAM_LEAD" ? "TL_ORIGINATOR_CERTIFICATION" : "UH_ORIGINATOR_CERTIFICATION", "TEAM_LEAD_REVIEW");
+    if (app.initiator_role === "TEAM_LEAD" || app.initiator_role === "UNIT_HEAD")
+      await applyRoutingRule(tx, ctx, app, app.initiator_role === "TEAM_LEAD" ? "TL_ORIGINATOR_CERTIFICATION" : "UH_ORIGINATOR_CERTIFICATION", "TEAM_LEAD_REVIEW");
     return enterCredit(tx, ctx, app);
   }
   const chosen = await enterBusinessStage(tx, ctx, app, stage, note);
@@ -792,6 +794,7 @@ export async function preliminaryOk(tx: Db, app: AppRow): Promise<{ ok: boolean;
 export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: TaskActionInput, reason: string | null): Promise<string | null> {
   const a = input.action;
   switch (task.stage) {
+    case "MO_HEAD_REVIEW":
     case "OSS_REVIEW":
     case "TEAM_LEAD_REVIEW":
     case "HRS_REVIEW":
@@ -821,16 +824,17 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       }
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a, attestation);
-      if (task.stage === "OSS_REVIEW") app.oss_reviewer_id = ctx.actor!.staffId;
+      if (task.stage === "MO_HEAD_REVIEW") app.mo_head_id = ctx.actor!.staffId;
+      else if (task.stage === "OSS_REVIEW") app.oss_reviewer_id = ctx.actor!.staffId;
       else if (task.stage === "TEAM_LEAD_REVIEW") app.team_lead_id = ctx.actor!.staffId;
       else if (task.stage === "HRS_REVIEW") app.hrs_id = ctx.actor!.staffId;
       else app.hou_id = ctx.actor!.staffId;
       // Next business review on this request's approval workflow, or credit when business review is complete.
       const next = nextBusinessStage(await businessStages(tx, app, ctx.now), task.stage) as Stage | null;
-      const done = task.stage === "OSS_REVIEW" ? "Recommended." : task.stage === "TEAM_LEAD_REVIEW" ? (isCx(app) ? "Certified." : "Recommended.") : task.stage === "HRS_REVIEW" ? "Endorsed." : "Approved.";
+      const done = task.stage === "MO_HEAD_REVIEW" ? "Endorsed by the Merchant Officer Head." : task.stage === "OSS_REVIEW" ? "Recommended." : task.stage === "TEAM_LEAD_REVIEW" ? (isCx(app) ? "Certified." : "Recommended.") : task.stage === "HRS_REVIEW" ? "Endorsed." : "Approved.";
       if (next === null) {
         const m = await enterCredit(tx, ctx, app);
-        return task.stage === "TEAM_LEAD_REVIEW" && isCx(app) ? `${done} ${m}` : task.stage === "HRS_REVIEW" || task.stage === "HEAD_OF_UNIT_APPROVAL" ? m : `${done} ${m}`;
+        return task.stage === "HRS_REVIEW" || task.stage === "HEAD_OF_UNIT_APPROVAL" ? m : `${done} ${m}`;
       }
       const chosen = await enterBusinessStage(tx, ctx, app, next);
       if (next === "TEAM_LEAD_REVIEW") return `${done} Sent to the Team Lead for first review.`;
@@ -897,7 +901,7 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       if (contracting.length) throw gate(`The contractual sequence for this structure is not configured: ${contracting.map((g) => g.label).join("; ")}.`);
       const rules = profileRules(effective.config, app.customer_profile);
       const seq = structureRules(rules, app.financing_structure)?.contractSequence ?? [];
-      const missing = await missingRequired(tx, app, seq.length > 0);
+      const missing = await missingRequired(tx, app);
       if (missing.length) throw gate(`The offer and contract pack is incomplete. Missing: ${missing.join(", ")}.`);
       if (seq.length && !input.contractStepsConfirmed) throw gate(`Confirm the contractual steps were completed in order: ${seq.join(" → ")}.`);
       await recordDecision(tx, ctx, app, task, "SUBMIT_PACK", reason);
@@ -925,7 +929,8 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
         const { cfg: c2 } = await currentConfigFor(tx, app, ctx.now);
         const eff = (await effectiveConfig(tx, app.product_code!, ctx.now)) ?? c2;
         const seq2 = structureRules(profileRules(eff.config, app.customer_profile), app.financing_structure)?.contractSequence ?? [];
-        const blockers = await disbursementBlockers(tx, app, seq2.length > 0);
+        void seq2;
+        const blockers = await disbursementBlockers(tx, app);
         if (blockers.length) throw gate(`Not ready for disbursement. ${blockers.join(" ")}`);
       }
       await recordDecision(tx, ctx, app, task, a, reason);
@@ -1062,7 +1067,7 @@ export async function saveProposal(ctx: Ctx, appId: string, content: Partial<Pro
     if (!["DRAFT", "INITIATOR_CORRECTION"].includes(app.stage)) throw forbidden("The credit proposal can be edited while the request is a draft or under correction.");
     const responsible = app.initiator_role === "DELIGHT_OFFICER" ? app.assigned_rm_id : app.initiator_id;
     // The first-level analysis is the RM's; a Team Lead or Unit Head who originates writes their own.
-    const authorRole = app.initiator_role === "TEAM_LEAD" || app.initiator_role === "UNIT_HEAD" ? app.initiator_role : "RM";
+    const authorRole = ["TEAM_LEAD", "UNIT_HEAD", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"].includes(app.initiator_role) ? app.initiator_role : "RM";
     const isResponsibleRm = responsible === actor.staffId && (await holdsRole(tx, actor.staffId, authorRole));
     if (!isResponsibleRm) throw forbidden(app.initiator_role === "DELIGHT_OFFICER" ? "The credit proposal is written by the assigned Relationship Manager." : "Only the originating officer can write the credit proposal.");
     const clean: Record<string, string> = {};

@@ -49,7 +49,7 @@ const TAB_ALIASES: Record<string, string> = { summary: "overview", history: "act
 /** Milestones for the progress timeline (presentation only; maps existing stages). */
 const MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
-  { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT"] },
+  { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT", "MO_HEAD_REVIEW"] },
   { label: "Credit review", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"] },
   { label: "Approvals", stages: ["UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & insurance", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
@@ -253,7 +253,7 @@ export default async function CasePage({ params, searchParams }: { params: Promi
         </section>
         <aside className="split-right" aria-label="Actions and preview">
           {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
-          <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} link={link} />
+          <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} canSign={!!myTask && ["OFFER_PREPARATION", "DISBURSEMENT_CORRECTION"].includes(myTask.stage)} link={link} />
           <RecordsCard appId={app.id} recordsStatus={app.records_status ?? null} roles={roles} />
           {retail && <RetailCaseTools c={c} staffId={session.staffId} roles={roles} />}
           {!myTask && c.openTask && (
@@ -791,7 +791,8 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
 
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
-      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>Business endorsement must be approved before credit routing. Review the Overview and Documents.</p>);
+    case "MO_HEAD_REVIEW":
+      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>{stage === "MO_HEAD_REVIEW" ? "Merchant Officer Head review before credit routing." : "Business endorsement must be approved before credit routing."} Review the Overview and Documents.</p>);
       body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} verify={verifyFor("ENDORSE", "Endorse")} />);
       break;
     case "FIRST_CREDIT_REVIEW":
@@ -983,9 +984,14 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator. The initiator then confirms vendor payment separately.</p>);
       body.push(<TaskButton key="c" hidden={hidden} action="COMPLETE_PROCESS" label="Complete Process" confirm="Send the closure pack to Legal and Shariah Compliance and hand the request to the initiator for vendor payment confirmation?" doneHref={doneHref} />);
       break;
-    case "VENDOR_CONFIRMATION":
+    case "VENDOR_CONFIRMATION": {
+      const ev = c.documents.filter((d) => d.category === "FULFILMENT_EVIDENCE" && !d.superseded_at && d.scan_status === "CLEAN");
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Confirm the vendor has been paid. This closes the request and activates repayment prompts.</p>);
-      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" confirm="Confirm that the vendor has been paid and close this request?" doneHref={doneHref} />);
+      body.push(<UploadPanel key="u" compact applicationId={c.app.id} title="Upload Evidence of Delivery / Acquisition" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      if (!ev.length) body.push(<p key="ev" className="small" style={{ margin: 0, color: "var(--danger)" }}>Please upload evidence of delivery or acquisition before confirming disbursement.</p>);
+      body.push(<TaskButton key="v" hidden={hidden} action="CONFIRM_VENDOR_PAYMENT" label="Confirm vendor payment and end of process" disabled={!ev.length} confirm="Confirm that the vendor has been paid and close this request?" doneHref={doneHref} />);
+      break;
+    }
       break;
   }
 

@@ -26,6 +26,7 @@ export default async function ConfigurationCentre() {
       "Products and approval",
       [
         { href: "/admin/product-settings", title: "Product settings", body: "Products, customer types, documents, pricing and workflow per product." },
+        { href: "/admin/reporting-lines", title: "Reporting lines", body: "Merchant Officer → Lead → Head, and staff → Unit Head → Divisional Head, for routing and reports." },
         { href: "/admin/workflows", title: "Approval workflows", body: "Approval stages per product family. Every route includes a Team Lead or Unit Head." },
         { href: "/admin/pricing", title: "Pricing and tenor", body: "Mark-up and tenor limits." },
         { href: "/admin/feature-controls", title: "Feature controls", body: "Switch platform features on or off." },

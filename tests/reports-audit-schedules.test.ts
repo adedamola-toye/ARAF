@@ -198,7 +198,7 @@ describe("scheduled emails", () => {
     expect(r.ran).toBe(true);
     const mails = await outbox("MONTHLY_REPORT");
     const to = mails.flatMap((m) => m.to_addresses).sort();
-    expect(to).toEqual(["anm.lead.north@altbank.ng", "anm.lead.south@altbank.ng", "lead1@altbank.ng", "lead2@altbank.ng", "mo.lead@altbank.ng", "unit.head@altbank.ng"]);
+    expect(to).toEqual(["abiodun.ayinde@altbank.ng", "anm.lead.north@altbank.ng", "anm.lead.south@altbank.ng", "lead1@altbank.ng", "lead2@altbank.ng", "mo.lead@altbank.ng", "unit.head@altbank.ng"]);
     const south = mails.find((m) => m.to_addresses[0] === "anm.lead.south@altbank.ng")!;
     expect(south.body_text).toContain("scope: SOUTH");
     expect(south.body_text).toContain("Submitted in month: 0");

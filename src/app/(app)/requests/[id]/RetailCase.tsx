@@ -1,3 +1,4 @@
+import { checklistStatus, CHECKLIST_LABELS } from "@/server/domain/closing-checklist";
 import { checklistFor } from "@/lib/approval-checklists";
 import { ackSlot, creditExceptionFor, exceptionView, openCreditException } from "@/server/domain/credit-exception";
 import { ExceptionAckForm, ExceptionBanner } from "@/components/CreditException";
@@ -12,7 +13,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { db } from "@/server/db";
 import type { getCase } from "@/server/domain/views";
-import { CATEGORY_LABEL, PACK } from "@/server/domain/documents";
+import { CATEGORY_LABEL } from "@/server/domain/documents";
 import { STAGE_LABELS, stageLabel, type Stage } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { configById, configGaps, effectiveConfig, gapsBlocking, profileRules, structureRules, PROFILE_LABELS, STRUCTURE_LABELS, INSURANCE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, FULFILMENT_LABELS, roleLabel, type CustomerProfile, type StructureCode, type FulfilmentKind } from "@/server/domain/products";
@@ -36,7 +37,7 @@ const k2s = (k: number | string | null | undefined) => (k === null || k === unde
 
 export const RETAIL_MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
-  { label: "Business review", stages: ["OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
+  { label: "Business review", stages: ["MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
   { label: "Credit", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & contract", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
   { label: "Pre-disbursement & booking", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
@@ -356,6 +357,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
   const prelimOut = b.prelim?.outputs as AffordabilityOutput | undefined;
   const finalOut = b.final?.outputs as AffordabilityOutput | undefined;
   switch (stage) {
+    case "MO_HEAD_REVIEW":
     case "OSS_REVIEW":
     case "TEAM_LEAD_REVIEW":
     case "HRS_REVIEW":
@@ -405,6 +407,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
         }
       }
       const actionMap: Record<string, [string, string, string]> = {
+        MO_HEAD_REVIEW: ["ENDORSE", "Endorse for credit", "Merchant Officer Head review of the request before credit."],
         OSS_REVIEW: ["RECOMMEND", "Recommend to Team Lead", "Completeness, outlet and state details, Altbox/Altshop location and evidence."],
         TEAM_LEAD_REVIEW: ["RECOMMEND", "Recommend to Head of Retail Sales", "Your independent view of the appraisal, proposal, financial evidence, DSR and commercial viability."],
         HRS_REVIEW: ["ENDORSE", b.cfg?.config.businessReview.headOfUnitStage === "DISTINCT" ? "Endorse to Head of Unit" : "Endorse for credit", "Prior recommendations, product compliance, commercial viability and the proposed terms."],
@@ -486,8 +489,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       const offerBlocked = [...gapsBlocking(gapsNow, "OFFER"), ...gapsBlocking(gapsNow, "FINAL_ASSESSMENT")];
       const contracting = gapsBlocking(gapsNow, "CONTRACTING");
       const seq = structureRules(effective ? profileRules(effective.config, app.customer_profile) : null, app.financing_structure)?.contractSequence ?? [];
-      const missing = ["GENERATED_OFFER", ...PACK].filter((p) => !has(p));
-      if (seq.length && !has("CONTRACT_EVIDENCE")) missing.push("CONTRACT_EVIDENCE");
+      const checklist = await checklistStatus(db, app);
+      const missing = checklist.filter((i) => i.required && !i.onFile).map((i) => i.code);
       if (finalOut) body.push(<div key="terms" className="summary-box small"><p className="eyebrow">Approved terms</p>{finalOut.structureLabel} · {finalOut.rateLabel}<br />Principal {formatKobo((b.final.inputs as AffordabilityInput).principalKobo)} · total payable {formatKobo(finalOut.totalPayableKobo)} · monthly {finalOut.proposedMonthlyDisplay}<br /><strong>{finalOut.insurance}</strong></div>);
       if (offerBlocked.length) body.push(<Blocked key="ob">Offer generation blocked until configured: {offerBlocked.map((g) => g.label).join("; ")}.</Blocked>);
       else if (!tpl) body.push(<Blocked key="nt">No active offer template for this product and structure.</Blocked>);
@@ -495,9 +498,9 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       else body.push(<GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={`${tpl.name} v${tpl.version}`} />);
       if (contracting.length) body.push(<Blocked key="cs">Contractual sequence not configured: {contracting.map((g) => g.label).join("; ")}.</Blocked>);
       else if (seq.length) body.push(<div key="seq" className="small"><strong>Contract sequence ({STRUCTURE_LABELS[app.financing_structure as StructureCode]}):</strong><ol>{seq.map((s) => <li key={s}>{s}</li>)}</ol></div>);
-      body.push(<ul key="cl" className="checklist"><Check ok={has("GENERATED_OFFER")}>Offer generated from the approved template</Check>{PACK.map((p) => <Check key={p} ok={has(p)}>{CATEGORY_LABEL[p]}</Check>)}{seq.length > 0 && <Check ok={has("CONTRACT_EVIDENCE")}>{CATEGORY_LABEL.CONTRACT_EVIDENCE}</Check>}</ul>);
-      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack or contract document" categories={[...PACK, "CONTRACT_EVIDENCE", "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
-      if (missing.length) body.push(<Blocked key="miss">Missing: {missing.map((m) => CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
+      body.push(<ul key="cl" className="checklist">{checklist.map((i) => <Check key={i.code} ok={i.onFile}>{i.label}{i.required ? "" : " (optional)"}</Check>)}</ul>);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack document" categories={[...checklist.filter((i) => i.code !== "GENERATED_OFFER").map((i) => i.code), "SUPPORTING"].map((x) => ({ code: x, label: CHECKLIST_LABELS[x] ?? CATEGORY_LABEL[x] }))} />);
+      if (missing.length) body.push(<Blocked key="miss">Missing: {missing.map((m) => CHECKLIST_LABELS[m] ?? CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
       body.push(<SubmitPack key="sp" hidden={hidden} doneHref={doneHref} disabled={missing.length > 0 || contracting.length > 0} sequence={seq} />);
       break;
     }
@@ -542,13 +545,14 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
     }
     case "FULFILMENT": {
       const evidence = docs.filter((d) => d.category === "FULFILMENT_EVIDENCE").map((d) => ({ id: d.id, label: `${d.filename} (v${d.version_no})` }));
-      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload fulfilment evidence" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload Evidence of Delivery / Acquisition" categories={[{ code: "FULFILMENT_EVIDENCE", label: CATEGORY_LABEL.FULFILMENT_EVIDENCE }]} />);
+      if (!evidence.length) body.push(<Blocked key="ev-missing">Please upload evidence of delivery or acquisition before confirming disbursement.</Blocked>);
       for (const f of b.fulfilment) {
         if (f.status === "DONE") body.push(<p key={f.kind} className="small" style={{ margin: 0 }}>✓ {FULFILMENT_LABELS[f.kind as FulfilmentKind]}: {f.note}</p>);
         else body.push(<FulfilmentForm key={f.kind} applicationId={app.id} kind={f.kind} label={FULFILMENT_LABELS[f.kind as FulfilmentKind]} evidence={evidence} />);
       }
       const open = b.fulfilment.filter((f: { status: string }) => f.status !== "DONE").length;
-      body.push(<TaskButton key="cf" hidden={hidden} action="COMPLETE_FULFILMENT" label="Complete application" disabled={open > 0} doneHref={doneHref} />);
+      body.push(<TaskButton key="cf" hidden={hidden} action="COMPLETE_FULFILMENT" label="Confirm Disbursement" disabled={open > 0 || !evidence.length} doneHref={doneHref} />);
       body.push(<p key="n" className="small muted" style={{ margin: 0 }}>Completing the application does not close the facility; it stays active until fully settled.</p>);
       break;
     }
