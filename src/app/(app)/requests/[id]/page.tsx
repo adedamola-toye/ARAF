@@ -1,3 +1,4 @@
+import { BusinessDecisionForm } from "./RetailClient";
 import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -50,7 +51,7 @@ const TAB_ALIASES: Record<string, string> = { summary: "overview", history: "act
 const MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
   { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT", "MO_HEAD_REVIEW"] },
-  { label: "Credit review", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"] },
+  { label: "Credit review", stages: ["CX_CREDIT_REVIEW", "FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"] },
   { label: "Approvals", stages: ["UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & insurance", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
   { label: "Disbursement", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
@@ -794,6 +795,10 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
     case "MO_HEAD_REVIEW":
       body.push(<p key="t" className="small muted" style={{ margin: 0 }}>{stage === "MO_HEAD_REVIEW" ? "Merchant Officer Head review before credit routing." : "Business endorsement must be approved before credit routing."} Review the Overview and Documents.</p>);
       body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} verify={verifyFor("ENDORSE", "Endorse")} />);
+      break;
+    case "CX_CREDIT_REVIEW":
+      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>CX credit review: eligibility, credit assessment, facility details, supporting documents and any credit exception. The request then goes directly to the Credit Officer for the amount. Review the Overview and Documents.</p>);
+      body.push(<BusinessDecisionForm key="cx" hidden={hidden} action="RECOMMEND" label="Recommend to the Credit Officer" hint="Record your review remarks." visitRequired={false} rmPhotoRequired={false} doneHref={doneHref} verify={verifyFor("RECOMMEND", "Recommend to the Credit Officer")} />);
       break;
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION": {

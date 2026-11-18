@@ -164,6 +164,8 @@ export interface BusinessRouteInput {
   initiatorRole: string;
   /** Product configuration requires a distinct Head of Unit stage. */
   headOfUnitDistinct: boolean;
+  /** Relationship Manager classification pinned on the request (NON_DBC follows the confirmed Non-DBC route). */
+  segment?: "DBC" | "NON_DBC" | null;
 }
 
 const inBounds = (s: { minKobo: number | null; maxKobo: number | null }, amount: number) => (s.minKobo === null || amount >= s.minKobo) && (s.maxKobo === null || amount <= s.maxKobo);
@@ -174,6 +176,8 @@ const inBounds = (s: { minKobo: number | null; maxKobo: number | null }, amount:
  * policy a Team Lead's or Unit Head's own request skips Team Lead certification (it is not independent).
  */
 export function retailBusinessStages(def: WorkflowDefinition, i: BusinessRouteInput): string[] {
+  // Non-DBC Relationship Managers: the assigned RBE, then CX credit review, then credit by amount.
+  if (i.segment === "NON_DBC" && i.initiatorRole === "RM") return ["BUSINESS_ENDORSEMENT", "CX_CREDIT_REVIEW"];
   // Merchant Officer hierarchy originators: a Lead's request goes to the Merchant Officer Head; a Head's request
   // has no further business review (it is not reviewed by its own originator) and goes to credit.
   if (i.initiatorRole === "MERCHANT_OFFICER_LEAD") return ["MO_HEAD_REVIEW"];
@@ -231,6 +235,8 @@ export interface SimulationInput {
   headOfUnitDistinct?: boolean;
   /** Altphones: DO (Delight Officer) or SA (Smile Associate). */
   channel?: "DO" | "SA";
+  /** Relationship Managers: DBC or Non-DBC classification (null: not yet classified, existing route). */
+  segment?: "DBC" | "NON_DBC" | null;
 }
 
 /** The expected approval route. Live routing uses the same functions, so this is what a submission would do. */
@@ -253,6 +259,24 @@ export function planRoute(def: WorkflowDefinition, i: SimulationInput): { stages
     stages.push({ stage: "ALT_UH", name: STAGE_NAMES.ALT_UH, roles: ["UNIT_HEAD"] });
     return { stages, errors };
   }
+  const nonDbc = i.segment === "NON_DBC" && i.initiatorRole === "RM";
+  const unitHead = () =>
+    stages.push({
+      stage: "UNIT_HEAD_REVIEW",
+      name: nonDbc ? "E-commerce Unit Head approval" : STAGE_NAMES.UNIT_HEAD_REVIEW,
+      roles: ["UNIT_HEAD"],
+      note: nonDbc ? "The configured E-commerce Unit Head" : i.segment === "DBC" && i.initiatorRole === "RM" ? "The DBC Unit Head for the RM's region" : undefined,
+    });
+  if (nonDbc) {
+    // Confirmed Non-DBC route: RBE → CX → Credit Officer by amount (with concurrence) → E-commerce Unit Head → Divisional Head.
+    stages.push({ stage: "BUSINESS_ENDORSEMENT", name: "Regional Business Executive approval", roles: ["RBE"], note: "The RM's assigned RBE" });
+    stages.push({ stage: "CX_CREDIT_REVIEW", name: STAGE_NAMES.CX_CREDIT_REVIEW, roles: ["CX_CREDIT_REVIEWER"] });
+    if (credit()) {
+      unitHead();
+      stages.push({ stage: "DIVISIONAL_HEAD_REVIEW", name: STAGE_NAMES.DIVISIONAL_HEAD_REVIEW, roles: ["DIVISIONAL_HEAD"] });
+    }
+    return { stages, errors };
+  }
   if (def.family === "WAKEELBOOST") {
     const mo = i.initiatorRole === "MERCHANT_OFFICER" || i.initiatorRole === "MERCHANT_OFFICER_LEAD" || i.initiatorRole === "MERCHANT_OFFICER_HEAD";
     if (!mo || i.initiatorRole === "MERCHANT_OFFICER") {
@@ -261,7 +285,7 @@ export function planRoute(def: WorkflowDefinition, i: SimulationInput): { stages
     }
     if (i.initiatorRole === "MERCHANT_OFFICER" || i.initiatorRole === "MERCHANT_OFFICER_LEAD") stages.push({ stage: "MO_HEAD_REVIEW", name: STAGE_NAMES.MO_HEAD_REVIEW, roles: ["MERCHANT_OFFICER_HEAD"], note: "The Lead's Merchant Officer Head" });
     if (credit()) {
-      stages.push({ stage: "UNIT_HEAD_REVIEW", name: STAGE_NAMES.UNIT_HEAD_REVIEW, roles: ["UNIT_HEAD"] });
+      unitHead();
       stages.push({ stage: "DIVISIONAL_HEAD_REVIEW", name: STAGE_NAMES.DIVISIONAL_HEAD_REVIEW, roles: ["DIVISIONAL_HEAD"] });
     }
     return { stages, errors };
@@ -273,12 +297,12 @@ export function planRoute(def: WorkflowDefinition, i: SimulationInput): { stages
   if (policy === "RETAIL_CX_V1") {
     if ((i.initiatorRole === "TEAM_LEAD" || i.initiatorRole === "UNIT_HEAD") && !stages.length) stages.push({ stage: "NOTE", name: "Routing rule", roles: [], note: "The originator's own certification is not independent, so the request goes straight to CX credit review." });
     stages.push({ stage: "CX_CREDIT_REVIEW", name: STAGE_NAMES.CX_CREDIT_REVIEW, roles: ["CX_CREDIT_REVIEWER"], note: "Not routed by amount" });
-    if (i.initiatorRole !== "UNIT_HEAD") stages.push({ stage: "UNIT_HEAD_REVIEW", name: STAGE_NAMES.UNIT_HEAD_REVIEW, roles: ["UNIT_HEAD"] });
+    if (i.initiatorRole !== "UNIT_HEAD") unitHead();
     stages.push({ stage: "DIVISIONAL_HEAD_REVIEW", name: STAGE_NAMES.DIVISIONAL_HEAD_REVIEW, roles: ["DIVISIONAL_HEAD"], note: i.initiatorRole === "UNIT_HEAD" ? "A Unit Head's own request moves forward to the Divisional Head" : undefined });
     return { stages, errors };
   }
   if (credit()) {
-    stages.push({ stage: "UNIT_HEAD_REVIEW", name: STAGE_NAMES.UNIT_HEAD_REVIEW, roles: ["UNIT_HEAD"] });
+    unitHead();
     stages.push({ stage: "DIVISIONAL_HEAD_REVIEW", name: STAGE_NAMES.DIVISIONAL_HEAD_REVIEW, roles: ["DIVISIONAL_HEAD"] });
   }
   return { stages, errors };

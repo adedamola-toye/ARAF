@@ -26,6 +26,7 @@ export default async function ConfigurationCentre() {
       "Products and approval",
       [
         { href: "/admin/product-settings", title: "Product settings", body: "Products, customer types, documents, pricing and workflow per product." },
+        { href: "/admin/rm-routing", title: "RM classification and routing", body: "DBC or Non-DBC for each RM, RBE assignments and provisioning, DBC regional and E-commerce Unit Heads." },
         { href: "/admin/reporting-lines", title: "Reporting lines", body: "Merchant Officer → Lead → Head, and staff → Unit Head → Divisional Head, for routing and reports." },
         { href: "/admin/workflows", title: "Approval workflows", body: "Approval stages per product family. Every route includes a Team Lead or Unit Head." },
         { href: "/admin/pricing", title: "Pricing and tenor", body: "Mark-up and tenor limits." },

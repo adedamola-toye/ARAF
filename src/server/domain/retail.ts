@@ -35,6 +35,7 @@ import { listLocations, snapshotOf, type LocationRow } from "./locations";
 import { isRetailInitiatorRole, ROLE_LABELS, type Role } from "./roles";
 import { routeForAmount } from "./routing";
 import { creditBandForApp, definitionForApp, pinWorkflow } from "./approval-workflows";
+import { pinRouting } from "./rm-routing";
 import { nextBusinessStage, retailBusinessStages } from "@/lib/approval-workflow";
 import { STAGE_LABELS, stageLabel, type Stage } from "./stages";
 import { recordRequestLedger, noteLatestRequestedAmount } from "./wallet";
@@ -53,6 +54,7 @@ import {
   resolveAllCorrections,
   resolveCorrection,
   returnToInitiator,
+  setCxReviewer,
   staffEmail,
   workingVersion,
   type ActionResult,
@@ -628,11 +630,17 @@ async function businessStages(tx: Tx, app: AppRow, now: Date): Promise<Stage[]> 
     amountKobo: Number(app.requested_amount_kobo),
     initiatorRole: app.initiator_role,
     headOfUnitDistinct: cfg.config.businessReview.headOfUnitStage === "DISTINCT",
+    segment: app.routing_segment === "NON_DBC" ? "NON_DBC" : null,
   }) as Stage[];
 }
 
 /** Assign a business-review stage to the right person (preferring whoever held it before). */
 async function enterBusinessStage(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, note?: string) {
+  if (stage === "BUSINESS_ENDORSEMENT" || stage === "CX_CREDIT_REVIEW") {
+    const chosen = await chooseAssignee(tx, app, stage, { preferred: stage === "BUSINESS_ENDORSEMENT" ? app.selected_rbe_id : (app.cx_reviewer_id ?? null), requirePreferred: stage === "BUSINESS_ENDORSEMENT" });
+    await moveTo(tx, ctx, app, stage, chosen, note);
+    return chosen;
+  }
   const preferred = stage === "MO_HEAD_REVIEW" ? (app.mo_head_id ?? null) : stage === "OSS_REVIEW" ? app.oss_reviewer_id : stage === "TEAM_LEAD_REVIEW" ? app.team_lead_id : stage === "HRS_REVIEW" ? app.hrs_id : app.hou_id;
   const chosen = await chooseAssignee(tx, app, stage, { preferred });
   if (stage === "MO_HEAD_REVIEW") app.mo_head_id = chosen.staffId;
@@ -687,7 +695,10 @@ export async function submitRetail(tx: Tx, ctx: Ctx, app: AppRow): Promise<Actio
   if ((app.initiator_role === "TEAM_LEAD" || app.initiator_role === "UNIT_HEAD") && cfg.config.approvalPolicy !== "RETAIL_CX_V1")
     throw gate("Team Leads and Unit Heads can submit only products on the CX approval policy, which routes their requests to independent reviewers.");
   // The approval policy and the approval workflow version are pinned at first submission and kept for the life of the request.
-  app.approval_policy = cfg.config.approvalPolicy;
+  // Non-DBC RMs follow the confirmed route (RBE → CX → Credit Officer by amount → E-commerce Unit Head → Divisional
+  // Head), so credit is routed by amount (the standard credit bands) whatever the product's business policy.
+  const routing = await pinRouting(tx, app);
+  app.approval_policy = routing.segment === "NON_DBC" ? "STANDARD" : cfg.config.approvalPolicy;
   await tx.query("UPDATE applications SET approval_policy = $2 WHERE id = $1", [app.id, app.approval_policy]);
   const wf = await pinWorkflow(tx, app, ctx.now);
   await audit(tx, ctx, { action: "REQUEST_SUBMITTED", actorRole: app.initiator_role, applicationId: app.id, customerId: app.customer_id, stage: "DRAFT", details: { versionId: app.current_version_id, product: app.product_code, configVersion: cfg.version, channel: app.initiator_role, approvalPolicy: app.approval_policy, workflowVersion: wf.version, workflowVersionId: wf.id } });
@@ -762,7 +773,7 @@ async function enterCredit(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
   }
   app.business_approved_at = ctx.now;
   await tx.query("UPDATE applications SET business_approved_at = $2 WHERE id = $1", [app.id, ctx.now]);
-  app.endorser_id = app.hrs_id ?? app.team_lead_id;
+  app.endorser_id = app.hrs_id ?? app.team_lead_id ?? app.endorser_id;
   if (app.route !== route.route) {
     app.route = route.route;
     app.first_reviewer_id = null;
@@ -794,6 +805,8 @@ export async function preliminaryOk(tx: Db, app: AppRow): Promise<{ ok: boolean;
 export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: TaskActionInput, reason: string | null): Promise<string | null> {
   const a = input.action;
   switch (task.stage) {
+    case "BUSINESS_ENDORSEMENT":
+    case "CX_CREDIT_REVIEW":
     case "MO_HEAD_REVIEW":
     case "OSS_REVIEW":
     case "TEAM_LEAD_REVIEW":
@@ -824,17 +837,23 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       }
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a, attestation);
-      if (task.stage === "MO_HEAD_REVIEW") app.mo_head_id = ctx.actor!.staffId;
+      if (task.stage === "BUSINESS_ENDORSEMENT") app.endorser_id = ctx.actor!.staffId;
+      else if (task.stage === "CX_CREDIT_REVIEW") await setCxReviewer(tx, app, ctx.actor!.staffId);
+      else if (task.stage === "MO_HEAD_REVIEW") app.mo_head_id = ctx.actor!.staffId;
       else if (task.stage === "OSS_REVIEW") app.oss_reviewer_id = ctx.actor!.staffId;
       else if (task.stage === "TEAM_LEAD_REVIEW") app.team_lead_id = ctx.actor!.staffId;
       else if (task.stage === "HRS_REVIEW") app.hrs_id = ctx.actor!.staffId;
       else app.hou_id = ctx.actor!.staffId;
       // Next business review on this request's approval workflow, or credit when business review is complete.
       const next = nextBusinessStage(await businessStages(tx, app, ctx.now), task.stage) as Stage | null;
-      const done = task.stage === "MO_HEAD_REVIEW" ? "Endorsed by the Merchant Officer Head." : task.stage === "OSS_REVIEW" ? "Recommended." : task.stage === "TEAM_LEAD_REVIEW" ? (isCx(app) ? "Certified." : "Recommended.") : task.stage === "HRS_REVIEW" ? "Endorsed." : "Approved.";
+      const done = task.stage === "BUSINESS_ENDORSEMENT" ? "Approved by the RBE." : task.stage === "CX_CREDIT_REVIEW" ? "CX credit review recommended." : task.stage === "MO_HEAD_REVIEW" ? "Endorsed by the Merchant Officer Head." : task.stage === "OSS_REVIEW" ? "Recommended." : task.stage === "TEAM_LEAD_REVIEW" ? (isCx(app) ? "Certified." : "Recommended.") : task.stage === "HRS_REVIEW" ? "Endorsed." : "Approved.";
       if (next === null) {
         const m = await enterCredit(tx, ctx, app);
         return task.stage === "HRS_REVIEW" || task.stage === "HEAD_OF_UNIT_APPROVAL" ? m : `${done} ${m}`;
+      }
+      if (next === "CX_CREDIT_REVIEW") {
+        const cx = await enterBusinessStage(tx, ctx, app, next);
+        return cx.staffId ? `${done} Sent to CX credit review.` : `${done} No eligible CX Credit Reviewer is available; the request is in the assignment exception queue.`;
       }
       const chosen = await enterBusinessStage(tx, ctx, app, next);
       if (next === "TEAM_LEAD_REVIEW") return `${done} Sent to the Team Lead for first review.`;

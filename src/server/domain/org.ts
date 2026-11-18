@@ -13,6 +13,8 @@ export const RELATIONS = {
   MO_HEAD: { label: "Merchant Officer Head", managerRole: "MERCHANT_OFFICER_HEAD", forRoles: ["MERCHANT_OFFICER_LEAD"] },
   UNIT_HEAD: { label: "Unit Head", managerRole: "UNIT_HEAD", forRoles: null },
   DIVISIONAL_HEAD: { label: "Divisional Head", managerRole: "DIVISIONAL_HEAD", forRoles: ["UNIT_HEAD"] },
+  /** Non-DBC Relationship Manager -> Regional Business Executive (set through RM classification). */
+  RBE: { label: "Regional Business Executive", managerRole: "RBE", forRoles: ["RM"] },
 } as const;
 export type Relation = keyof typeof RELATIONS;
 export const isRelation = (r: string): r is Relation => r in RELATIONS;

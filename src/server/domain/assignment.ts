@@ -101,6 +101,11 @@ export interface AppRow {
   hrs_id: string | null;
   hou_id: string | null;
   mo_head_id?: string | null;
+  /** Routing pinned at submission: DBC / NON_DBC (null: unclassified, existing route). */
+  routing_segment?: string | null;
+  /** The Unit Head resolved at submission (DBC regional Unit Head or the E-commerce Unit Head). */
+  routing_unit_head_id?: string | null;
+  cx_reviewer_id?: string | null;
   suspended_at: Date | null;
   suspension_reason: string | null;
   business_approved_at?: Date | null;
@@ -140,11 +145,26 @@ export async function eligibleStaff(
 async function priorApprovers(tx: Tx, appId: string): Promise<string[]> {
   const r = await tx.query<{ actor_id: string }>(
     `SELECT DISTINCT actor_id FROM decisions WHERE application_id = $1 AND invalidated_at IS NULL
-       AND stage IN ('BUSINESS_ENDORSEMENT','MO_HEAD_REVIEW','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW',
+       AND stage IN ('BUSINESS_ENDORSEMENT','MO_HEAD_REVIEW','CX_CREDIT_REVIEW','FIRST_CREDIT_REVIEW','SECOND_CREDIT_REVIEW','UNIT_HEAD_REVIEW','DIVISIONAL_HEAD_REVIEW',
                      'OSS_REVIEW','TEAM_LEAD_REVIEW','HRS_REVIEW','HEAD_OF_UNIT_APPROVAL')`,
     [appId],
   );
   return r.rows.map((x) => x.actor_id);
+}
+
+/** Non-DBC RBE stage: only the RBE pinned on the request (the RM's assigned RBE); never another RBE. */
+function rbeSpec(app: AppRow): AssignmentSpec {
+  return { roles: ["RBE"], exclude: [app.initiator_id], only: [app.selected_rbe_id], scopeNote: app.selected_rbe_id ? "The RM's assigned Regional Business Executive" : "The RM has no assigned Regional Business Executive" };
+}
+/** CX credit review on the Non-DBC route: any CX Credit Reviewer not involved earlier on the request. */
+async function cxSpec(tx: Tx, app: AppRow): Promise<AssignmentSpec> {
+  return { roles: ["CX_CREDIT_REVIEWER"], exclude: [app.initiator_id, app.selected_rbe_id, app.endorser_id, ...(await priorApprovers(tx, app.id)).filter((x) => x !== app.cx_reviewer_id)], scopeNote: "CX Credit Reviewer (not involved earlier on this request)" };
+}
+/** Unit Head stage when the request's routing pinned a Unit Head (DBC regional Unit Head or E-commerce Unit Head). */
+function pinnedUnitHead(app: AppRow, exclude: (string | null)[]): AssignmentSpec | null {
+  if (!app.routing_segment) return null;
+  const who = app.routing_segment === "NON_DBC" ? "E-commerce Unit Head" : "DBC Unit Head for the RM's region";
+  return { roles: ["UNIT_HEAD"], exclude, only: [app.routing_unit_head_id ?? null], scopeNote: app.routing_unit_head_id ? `The configured ${who}` : `No ${who} is configured (Configuration centre → RM classification and routing)` };
 }
 
 export interface AssignmentSpec {
@@ -185,8 +205,14 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       if (!route) throw new Error("Route not set");
       return { roles: route.secondReviewRoles as Role[], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id] };
     }
-    case "UNIT_HEAD_REVIEW":
-      return { roles: ["UNIT_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id] };
+    case "BUSINESS_ENDORSEMENT":
+      return rbeSpec(app);
+    case "CX_CREDIT_REVIEW":
+      return cxSpec(tx, app);
+    case "UNIT_HEAD_REVIEW": {
+      const ex = [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id, app.cx_reviewer_id ?? null, app.endorser_id];
+      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex.slice(0, 7) };
+    }
     case "DIVISIONAL_HEAD_REVIEW":
       return { roles: ["DIVISIONAL_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id, ...(await priorApprovers(tx, app.id))] };
     case "PAYMENT_RECONCILIATION":
@@ -211,7 +237,7 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
   const route = ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"].includes(stage) ? await creditBandOfApp(tx, app) : null;
   switch (stage) {
     case "BUSINESS_ENDORSEMENT": {
-      if (app.initiator_role === "RM") return { roles: ["RBE"], exclude: [app.initiator_id] };
+      if (app.initiator_role === "RM") return app.routing_segment === "NON_DBC" ? rbeSpec(app) : { roles: ["RBE"], exclude: [app.initiator_id] };
       if (app.initiator_role === "MERCHANT_OFFICER") {
         // The officer's own Lead when a reporting line is set; otherwise any Merchant Officer Lead.
         const lead = await managerOf(tx, app.initiator_id, "MO_LEAD");
@@ -232,6 +258,8 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
         ? { roles: ["MERCHANT_OFFICER_HEAD"], exclude: [app.initiator_id, app.endorser_id], only: [head], scopeNote: "The Lead's Merchant Officer Head (reporting line)" }
         : { roles: ["MERCHANT_OFFICER_HEAD"], exclude: [app.initiator_id, app.endorser_id] };
     }
+    case "CX_CREDIT_REVIEW":
+      return cxSpec(tx, app);
     case "DRAFT":
     case "INITIATOR_CORRECTION":
     case "OFFER_PREPARATION":
@@ -240,12 +268,14 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION":
       if (!route) throw new Error("Route not set");
-      return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.mo_head_id ?? null] };
+      return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.mo_head_id ?? null, app.cx_reviewer_id ?? null] };
     case "SECOND_CREDIT_REVIEW":
       if (!route) throw new Error("Route not set");
       return { roles: route.secondReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id] };
-    case "UNIT_HEAD_REVIEW":
-      return { roles: ["UNIT_HEAD"], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id] };
+    case "UNIT_HEAD_REVIEW": {
+      const ex = [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id, app.cx_reviewer_id ?? null];
+      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex.slice(0, 4) };
+    }
     case "DIVISIONAL_HEAD_REVIEW":
       return {
         roles: ["DIVISIONAL_HEAD"],

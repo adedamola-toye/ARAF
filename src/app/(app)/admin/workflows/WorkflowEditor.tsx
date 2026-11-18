@@ -241,8 +241,9 @@ function Simulation({ family, current, draft, productConfig, changed }: { family
   const [policy, setPolicy] = useState<RetailPolicy>(productConfig?.policy ?? "STANDARD");
   const [hou, setHou] = useState(productConfig?.headOfUnitDistinct ?? true);
   const [which, setWhich] = useState<"current" | "draft">("current");
+  const [segment, setSegment] = useState<"" | "DBC" | "NON_DBC">("");
   const valid = amount !== null && !Number.isNaN(amount) && amount >= MIN_KOBO;
-  const input = { amountKobo: amount ?? 0, initiatorRole: originator, policy, headOfUnitDistinct: hou, channel: originator as "DO" | "SA" };
+  const input = { amountKobo: amount ?? 0, initiatorRole: originator, policy, headOfUnitDistinct: hou, channel: originator as "DO" | "SA", segment: segment || null };
   return (
     <section className="card" aria-labelledby={`${uid}-sim`} style={{ marginTop: "var(--space-5)" }}>
       <div className="card-head">
@@ -266,6 +267,16 @@ function Simulation({ family, current, draft, productConfig, changed }: { family
             ))}
           </select>
         </div>
+        {family !== "ALTPHONES" && originator === "RM" && (
+          <div className="field">
+            <label htmlFor={`${uid}-seg`}>RM classification</label>
+            <select id={`${uid}-seg`} value={segment} onChange={(e) => setSegment(e.target.value as "" | "DBC" | "NON_DBC")}>
+              <option value="">Not yet classified (existing route)</option>
+              <option value="DBC">DBC</option>
+              <option value="NON_DBC">Non-DBC (RBE → CX → Credit Officer → E-commerce Unit Head → Divisional Head)</option>
+            </select>
+          </div>
+        )}
         {family === "RETAIL" && (
           <>
             <div className="field">

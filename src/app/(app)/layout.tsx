@@ -108,7 +108,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Exceptions
             </NavLink>
           )}
-          {(godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW"].includes(r))) && !altWs && (
+          {(godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "RBE", "MERCHANT_OFFICER_HEAD"].includes(r))) && !altWs && (
             <NavLink href="/reports/performance" icon={<BarChart3 {...ic} />}>
               Performance reports
             </NavLink>

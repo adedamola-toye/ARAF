@@ -51,6 +51,7 @@ import { isInitiatorRole, isLegacyInitiatorRole, type InitiatorRole } from "./ro
 import { routeForAmount } from "./routing";
 import { creditBandForApp, pinWorkflow } from "./approval-workflows";
 import { pricingSettingsAt } from "./pricing";
+import { pinRouting, resolveRouting } from "./rm-routing";
 import { BUSINESS_REVIEW_STAGES, COMMENT_REQUIRED_STAGES, CREDIT_APPROVAL_STAGES, REASON_REQUIRED, STAGE_LABELS, allowedActions, type Stage, type TaskAction } from "./stages";
 import { LEGACY_REF_PREFIX, PLATFORM_NAME } from "../brand";
 import { retailDispatch, retailResubmit, submitRetail } from "./retail";
@@ -145,7 +146,7 @@ export function decisionKind(stage: string, action: string): string {
   if (action === "REJECT") return "DECLINE";
   if (["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(action)) return "CORRECTION";
   if ((BUSINESS_REVIEW_STAGES as readonly string[]).includes(stage)) return "BUSINESS_REVIEW";
-  if (["FIRST_CREDIT_REVIEW", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW", "CREDIT_CORRECTION"].includes(stage)) return "CREDIT";
+  if (["CX_CREDIT_REVIEW", "FIRST_CREDIT_REVIEW", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW", "CREDIT_CORRECTION"].includes(stage)) return "CREDIT";
   if (["INITIATOR_CORRECTION", "OFFER_PREPARATION", "VENDOR_CONFIRMATION", "FULFILMENT"].includes(stage)) return "INITIATOR";
   return "OPERATIONAL";
 }
@@ -409,6 +410,14 @@ async function finaliseVersionForSubmission(tx: Tx, ctx: Ctx, app: AppRow): Prom
   const version = working ?? (await tx.query<VersionRow>("SELECT * FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0];
   const directors = (await tx.query("SELECT * FROM application_directors WHERE version_id = $1 ORDER BY position", [version.id])).rows;
   const docs = await currentCleanDocuments(tx, app.id);
+  // Non-DBC RMs do not choose an RBE: the request goes to the RBE the Super Admin assigned (no bypass).
+  if (app.initiator_role === "RM") {
+    const assigned = app.routing_segment === "NON_DBC" ? app.selected_rbe_id : app.routing_segment ? null : (await resolveRouting(tx, app.initiator_id, "RM")).rbeId;
+    if (assigned && version.data.rbeId !== assigned) {
+      version.data = { ...version.data, rbeId: assigned };
+      await tx.query("UPDATE application_versions SET data = $2 WHERE id = $1", [version.id, JSON.stringify(version.data)]);
+    }
+  }
   const errors = validateForSubmission({
     type: app.applicant_type,
     initiatorRole: app.initiator_role,
@@ -481,6 +490,7 @@ export async function submitApplication(ctx: Ctx, appId: string, idempotencyKey:
       if (!(await holdsRole(tx, actor.staffId, app.initiator_role))) throw forbidden("Your initiator role is no longer active.");
       if (app.workflow === "RETAIL") return submitRetail(tx, ctx, app);
       await finaliseVersionForSubmission(tx, ctx, app);
+      await pinRouting(tx, app);
       await recordRequestLedger(tx, app, ctx.now);
       (app as { submitted_at: Date | null }).submitted_at = ctx.now;
       await tx.query("UPDATE applications SET submitted_at = $2 WHERE id = $1", [app.id, ctx.now]);
@@ -566,7 +576,7 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         if (REASON_REQUIRED.includes(input.action) && (!reason || reason.length < 3)) {
           throw invalid("A reason is required for this action.", { reason: "Enter a reason." });
         }
-        if (app.workflow === "RETAIL" && COMMENT_REQUIRED_STAGES.includes(task.stage) && (!reason || reason.length < 10)) {
+        if ((app.workflow === "RETAIL" || task.stage === "CX_CREDIT_REVIEW") && COMMENT_REQUIRED_STAGES.includes(task.stage) && (!reason || reason.length < 10)) {
           throw invalid("Record your recommendation or decision with supporting comments (at least 10 characters).", { reason: "Comments are required." });
         }
         ctx.actor = { ...actor, activeRole: task.assignee_role };
@@ -617,12 +627,25 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       app.endorser_id = ctx.actor!.staffId;
+      // Non-DBC route: RBE approval, then CX credit review (before any Credit Officer).
+      if (app.routing_segment === "NON_DBC") {
+        const cx = await chooseAssignee(tx, app, "CX_CREDIT_REVIEW", { preferred: app.cx_reviewer_id ?? null });
+        await moveTo(tx, ctx, app, "CX_CREDIT_REVIEW", cx);
+        return cx.staffId ? "Approved by the RBE. Sent to CX credit review." : "Approved by the RBE. No eligible CX Credit Reviewer is available; the request is in the assignment exception queue.";
+      }
       // A Merchant Officer's request: Lead endorsement, then the Merchant Officer Head.
       if (app.initiator_role === "MERCHANT_OFFICER") {
         await moveTo(tx, ctx, app, "MO_HEAD_REVIEW", await chooseAssignee(tx, app, "MO_HEAD_REVIEW"));
         return "Endorsed. Sent to the Merchant Officer Head.";
       }
       return `Endorsed. ${await routeToCredit(tx, ctx, app)}`;
+    }
+    case "CX_CREDIT_REVIEW": {
+      if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
+      await recordDecision(tx, ctx, app, task, a, reason);
+      await completeTask(tx, ctx, task, a);
+      await setCxReviewer(tx, app, ctx.actor!.staffId);
+      return `CX credit review recommended. ${await routeToCredit(tx, ctx, app)}`;
     }
     case "MO_HEAD_REVIEW": {
       if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
@@ -885,6 +908,12 @@ export async function resolveAllCorrections(tx: Tx, ctx: Ctx, app: AppRow, resol
 }
 
 /** Return to the initiator: from business endorsement, first credit review or (via the first reviewer) a later credit stage. */
+/** Record the CX credit reviewer on the request (separation of duties and attribution). */
+export async function setCxReviewer(tx: Tx, app: AppRow, staffId: string | null) {
+  app.cx_reviewer_id = staffId;
+  await tx.query("UPDATE applications SET cx_reviewer_id = $2 WHERE id = $1", [app.id, staffId]);
+}
+
 /** WakeelBoost: after business review, route by amount to first credit review. */
 async function routeToCredit(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
   const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
@@ -922,7 +951,7 @@ export async function creditCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: Task
 export async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: string) {
   const r = await tx.query(
     `UPDATE decisions SET invalidated_at=$2, invalidated_reason=$3
-      WHERE application_id=$1 AND invalidated_at IS NULL AND action IN ('APPROVE','PROCEED') AND stage = ANY($4::text[])`,
+      WHERE application_id=$1 AND invalidated_at IS NULL AND action IN ('APPROVE','PROCEED','RECOMMEND') AND stage = ANY($4::text[])`,
     [app.id, ctx.now, why, CREDIT_APPROVAL_STAGES],
   );
   await audit(tx, ctx, { action: "APPROVALS_INVALIDATED", applicationId: app.id, stage: app.stage, reason: why, details: { count: r.rowCount } });
@@ -946,6 +975,13 @@ async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow)
     });
     await moveTo(tx, ctx, app, "BUSINESS_ENDORSEMENT", chosen, "Resubmitted after correction");
     return "Resubmitted to business endorsement.";
+  }
+  if (corr.from_stage === "CX_CREDIT_REVIEW") {
+    await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");
+    app.active_correction_id = null;
+    const chosen = await chooseAssignee(tx, app, "CX_CREDIT_REVIEW", { preferred: corr.from_assignee_id });
+    await moveTo(tx, ctx, app, "CX_CREDIT_REVIEW", chosen, "Resubmitted after correction");
+    return "Resubmitted to CX credit review.";
   }
   if (corr.from_stage === "MO_HEAD_REVIEW") {
     await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");

@@ -12,6 +12,7 @@ interface OutboxRow {
   cc_addresses: string[];
   subject: string;
   body_text: string;
+  body_html: string | null;
   attachment_document_ids: string[];
   attempts: number;
   max_attempts: number;
@@ -54,7 +55,7 @@ export async function processOutbox(now = new Date(), limit = 20): Promise<{ sen
         const docs = (await db.query("SELECT * FROM documents WHERE id = ANY($1::uuid[]) AND scan_status = 'CLEAN'", [m.attachment_document_ids])).rows;
         for (const d of docs) attachments.push({ filename: d.filename, contentType: d.mime_type, content: await objectStore().get(d.storage_key) });
       }
-      const res = await mailTransport().send({ to: m.to_addresses, cc: m.cc_addresses, subject: m.subject, text: m.body_text, attachments, outboxId: m.id });
+      const res = await mailTransport().send({ to: m.to_addresses, cc: m.cc_addresses, subject: m.subject, text: m.body_text, html: m.body_html, attachments, outboxId: m.id });
       await withTx(async (tx) => {
         await tx.query(
           "UPDATE notification_outbox SET status = 'SENT', sent_at = $2, attempts = attempts + 1, provider_message_id = $3, last_error = NULL WHERE id = $1",

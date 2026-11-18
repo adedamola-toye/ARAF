@@ -1,3 +1,5 @@
+import { rmClassification } from "@/server/domain/rm-routing";
+import { managerOf } from "@/server/domain/org";
 import { notFound, redirect } from "next/navigation";
 import { requireUser } from "../../../../_lib/auth";
 import { db } from "@/server/db";
@@ -39,6 +41,9 @@ export default async function EditRequest({ params }: { params: Promise<{ id: st
     app.initiator_role === "RM"
       ? (await db.query(`SELECT s.id, s.full_name, ra.region FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id WHERE ra.role = 'RBE' AND ra.active AND s.status = 'ACTIVE' AND s.id <> $1 ORDER BY s.full_name`, [session.staffId])).rows
       : [];
+  // Non-DBC RMs do not choose: their request goes to the RBE the Super Admin assigned.
+  const assignedRbeId = app.initiator_role === "RM" ? (app.routing_segment === "NON_DBC" ? app.selected_rbe_id : (await rmClassification(db, session.staffId))?.segment === "NON_DBC" ? await managerOf(db, session.staffId, "RBE") : null) : null;
+  const assignedRbe = assignedRbeId ? ((await db.query<{ id: string; full_name: string }>("SELECT id, full_name FROM staff WHERE id = $1", [assignedRbeId])).rows.map((r) => ({ id: r.id, label: r.full_name }))[0] ?? null) : null;
   const docs = c.documents.filter((d) => !d.superseded_at && d.scan_status !== "REJECTED");
   const required = requiredSubmissionDocuments(app.applicant_type);
   const cats = (UPLOADABLE_BY_STAGE[myTask ? "INITIATOR_CORRECTION" : "DRAFT"] ?? []).filter((x) => app.applicant_type !== "INDIVIDUAL" || x !== "CAC_CERTIFICATE");
@@ -67,6 +72,7 @@ export default async function EditRequest({ params }: { params: Promise<{ id: st
         maskedBvn={source?.bvn_last4 ? maskWithLast4(source.bvn_last4) : null}
         maskedTin={source?.tin_last4 ? maskWithLast4(source.tin_last4, 10) : null}
         directors={(source?.directors ?? []).map((d: { id: string; full_name: string; bvn_last4: string }) => ({ id: d.id, fullName: d.full_name, masked: maskWithLast4(d.bvn_last4) }))}
+        assignedRbe={assignedRbe}
         rbes={rbes.map((r) => ({ id: r.id, label: `${r.full_name}${r.region ? ` (${r.region})` : ""}` }))}
         isCorrection={!!myTask}
         required={required.map((r) => ({ code: r, label: CATEGORY_LABEL[r], done: docs.some((d) => d.category === r && d.scan_status === "CLEAN") }))}

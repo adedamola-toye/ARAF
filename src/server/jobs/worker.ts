@@ -10,6 +10,7 @@ import { objectStore } from "../storage";
 import { scanDocument } from "../domain/documents";
 import { processOutbox } from "./outbox";
 import { runMonthlyReport, runWeeklyDigest } from "./schedules";
+import { runDhWeeklyReport } from "./dh-weekly";
 import { runSlaEscalations } from "../domain/sla";
 import { expireStaleDrafts } from "../domain/retail";
 import { refreshArrears } from "../domain/retail-ops";
@@ -46,6 +47,7 @@ export async function workerTick(now = new Date()) {
   results.outbox = await processOutbox(now);
   results.weekly = await runWeeklyDigest(now);
   results.monthly = await runMonthlyReport(now);
+  results.dhWeekly = await runDhWeeklyReport(now);
   await rescanQuarantined(now);
   results.retention = await retentionSweep(now);
   results.slaEscalations = await runSlaEscalations(now);

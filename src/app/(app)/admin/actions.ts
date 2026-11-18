@@ -18,6 +18,7 @@ import {
   revokeRole,
   setStaffStatus,
   updateMonthlySchedule,
+  updateDhWeeklySchedule,
 } from "@/server/domain/admin";
 import { retryOutbox } from "@/server/jobs/outbox";
 import { auditOutsideTx } from "@/server/audit";
@@ -70,6 +71,15 @@ export const scheduleAction = async (_p: ActionState, fd: FormData) =>
       minute: Number(s(f, "minute")),
       recipientIds: f.getAll("recipients").map(String),
     }), "Monthly schedule saved.");
+export const dhScheduleAction = async (_p: ActionState, fd: FormData) =>
+  run(fd, (f, ctx) =>
+    updateDhWeeklySchedule(ctx, {
+      enabled: f.get("enabled") === "on",
+      hour: Number(s(f, "hour")),
+      minute: Number(s(f, "minute")),
+      recipientIds: f.getAll("recipients").map(String),
+      teamEnabled: f.get("teamEnabled") === "on",
+    }), "Weekly reports saved.");
 export const retryOutboxAction = async (_p: ActionState, fd: FormData) =>
   run(fd, async (f, ctx) => {
     if (!(await isSuperAdmin(ctx.actor!.staffId))) throw new Error("forbidden");
