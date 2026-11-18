@@ -36,7 +36,7 @@ const k2s = (k: number | string | null | undefined) => (k === null || k === unde
 
 export const RETAIL_MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
-  { label: "Business review", stages: ["OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
+  { label: "Business review", stages: ["MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"] },
   { label: "Credit", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW", "UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & contract", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
   { label: "Pre-disbursement & booking", stages: ["DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING"] },
@@ -356,6 +356,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
   const prelimOut = b.prelim?.outputs as AffordabilityOutput | undefined;
   const finalOut = b.final?.outputs as AffordabilityOutput | undefined;
   switch (stage) {
+    case "MO_HEAD_REVIEW":
     case "OSS_REVIEW":
     case "TEAM_LEAD_REVIEW":
     case "HRS_REVIEW":
@@ -405,6 +406,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
         }
       }
       const actionMap: Record<string, [string, string, string]> = {
+        MO_HEAD_REVIEW: ["ENDORSE", "Endorse for credit", "Merchant Officer Head review of the request before credit."],
         OSS_REVIEW: ["RECOMMEND", "Recommend to Team Lead", "Completeness, outlet and state details, Altbox/Altshop location and evidence."],
         TEAM_LEAD_REVIEW: ["RECOMMEND", "Recommend to Head of Retail Sales", "Your independent view of the appraisal, proposal, financial evidence, DSR and commercial viability."],
         HRS_REVIEW: ["ENDORSE", b.cfg?.config.businessReview.headOfUnitStage === "DISTINCT" ? "Endorse to Head of Unit" : "Endorse for credit", "Prior recommendations, product compliance, commercial viability and the proposed terms."],

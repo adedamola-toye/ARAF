@@ -34,6 +34,7 @@ export const DEMO_STAFF: DemoStaff[] = [
   { email: "rbe.lagos@altbank.ng", name: "Tunde Adeyemi", roles: [{ role: "RBE", region: "SOUTH" }], region: "SOUTH" },
   { email: "rbe.abuja@altbank.ng", name: "Hauwa Sani", roles: [{ role: "RBE", region: "NORTH" }], region: "NORTH" },
   { email: "mo.lead@altbank.ng", name: "Kemi Ajayi", roles: [{ role: "MERCHANT_OFFICER_LEAD" }] },
+  { email: "mo.head@altbank.ng", name: "Tunde Merchant-Head (synthetic)", roles: [{ role: "MERCHANT_OFFICER_HEAD" }] },
   { email: "anm.lead.north@altbank.ng", name: "Ibrahim Danjuma", roles: [{ role: "ANM_LEAD_NORTH", region: "NORTH" }], region: "NORTH" },
   { email: "anm.lead.south@altbank.ng", name: "Ifeoma Obi", roles: [{ role: "ANM_LEAD_SOUTH", region: "SOUTH" }], region: "SOUTH" },
   { email: "co1@altbank.ng", name: "Bola Credit-One", roles: [{ role: "CREDIT_OFFICER_1" }], unit: "Credit" },

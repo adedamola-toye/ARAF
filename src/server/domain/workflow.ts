@@ -75,7 +75,8 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
        selected_rbe_id=$8, endorser_id=$9, first_reviewer_id=$10, second_reviewer_id=$11, pack_co3_id=$12, do1_id=$13, do2_id=$14,
        active_correction_id=$15, customer_id=$16, lock_version = lock_version + 1, updated_at=$17,
        oss_reviewer_id=$18, team_lead_id=$19, hrs_id=$20, hou_id=$21, team=$22, outlet_location_id=$23, assigned_rm_id=$24,
-       customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28, origination_location_id=$29
+       customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28, origination_location_id=$29,
+       mo_head_id=$30
      WHERE id=$1`,
     [
       app.id, app.stage, app.status, app.route, app.current_version_id, app.requested_amount_kobo, app.customer_name,
@@ -84,6 +85,7 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
       app.oss_reviewer_id ?? null, app.team_lead_id ?? null, app.hrs_id ?? null, app.hou_id ?? null, app.team ?? null, app.outlet_location_id ?? null,
       app.assigned_rm_id ?? null, app.customer_profile ?? null, app.financing_structure ?? null, app.product_config_id ?? null,
       app.location_snapshot ? JSON.stringify(app.location_snapshot) : null, app.origination_location_id ?? null,
+      app.mo_head_id ?? null,
     ],
   );
 }
@@ -482,6 +484,18 @@ export async function submitApplication(ctx: Ctx, appId: string, idempotencyKey:
       await tx.query("UPDATE applications SET submitted_at = $2 WHERE id = $1", [app.id, ctx.now]);
       const wf = await pinWorkflow(tx, app, ctx.now);
       await audit(tx, ctx, { action: "REQUEST_SUBMITTED", actorRole: app.initiator_role, applicationId: app.id, customerId: app.customer_id, stage: "DRAFT", details: { versionId: app.current_version_id, workflowVersion: wf.version, workflowVersionId: wf.id } });
+      // Merchant Officer hierarchy: a Lead's request goes to their Head; a Head's request goes straight to credit
+      // (never back to the originator for self-review).
+      if (app.initiator_role === "MERCHANT_OFFICER_LEAD") {
+        await moveTo(tx, ctx, app, "MO_HEAD_REVIEW", await chooseAssignee(tx, app, "MO_HEAD_REVIEW"));
+        await persistApp(tx, app, ctx.now);
+        return { applicationId: app.id, stage: app.stage, message: "Request submitted to the Merchant Officer Head." };
+      }
+      if (app.initiator_role === "MERCHANT_OFFICER_HEAD") {
+        const msg = await routeToCredit(tx, ctx, app);
+        await persistApp(tx, app, ctx.now);
+        return { applicationId: app.id, stage: app.stage, message: `Request submitted. ${msg}` };
+      }
       const chosen = await chooseAssignee(tx, app, "BUSINESS_ENDORSEMENT", {
         preferred: app.initiator_role === "RM" ? app.selected_rbe_id : null,
         requirePreferred: app.initiator_role === "RM",
@@ -598,19 +612,22 @@ async function dispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, input: Tas
   switch (task.stage) {
     case "BUSINESS_ENDORSEMENT": {
       if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
-      const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
       await recordDecision(tx, ctx, app, task, a, reason);
       await completeTask(tx, ctx, task, a);
       app.endorser_id = ctx.actor!.staffId;
-      if (app.route !== route.route) {
-        app.route = route.route;
-        app.first_reviewer_id = null;
-        app.second_reviewer_id = null;
+      // A Merchant Officer's request: Lead endorsement, then the Merchant Officer Head.
+      if (app.initiator_role === "MERCHANT_OFFICER") {
+        await moveTo(tx, ctx, app, "MO_HEAD_REVIEW", await chooseAssignee(tx, app, "MO_HEAD_REVIEW"));
+        return "Endorsed. Sent to the Merchant Officer Head.";
       }
-      const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id });
-      app.first_reviewer_id = chosen.staffId;
-      await moveTo(tx, ctx, app, "FIRST_CREDIT_REVIEW", chosen);
-      return `Endorsed. Routed to first credit review (Route ${route.route}).`;
+      return `Endorsed. ${await routeToCredit(tx, ctx, app)}`;
+    }
+    case "MO_HEAD_REVIEW": {
+      if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
+      await recordDecision(tx, ctx, app, task, a, reason);
+      await completeTask(tx, ctx, task, a);
+      app.mo_head_id = ctx.actor!.staffId;
+      return `Endorsed by the Merchant Officer Head. ${await routeToCredit(tx, ctx, app)}`;
     }
     case "FIRST_CREDIT_REVIEW": {
       if (a === "RETURN") return returnToInitiator(tx, ctx, app, task, reason!);
@@ -865,6 +882,20 @@ export async function resolveAllCorrections(tx: Tx, ctx: Ctx, app: AppRow, resol
 }
 
 /** Return to the initiator: from business endorsement, first credit review or (via the first reviewer) a later credit stage. */
+/** WakeelBoost: after business review, route by amount to first credit review. */
+async function routeToCredit(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
+  const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
+  if (app.route !== route.route) {
+    app.route = route.route;
+    app.first_reviewer_id = null;
+    app.second_reviewer_id = null;
+  }
+  const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id });
+  app.first_reviewer_id = chosen.staffId;
+  await moveTo(tx, ctx, app, "FIRST_CREDIT_REVIEW", chosen);
+  return `Routed to first credit review (Route ${route.route}).`;
+}
+
 export async function returnToInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
   const parent = task.stage === "CREDIT_CORRECTION" ? app.active_correction_id : null;
   await createCorrection(tx, ctx, app, task, "INITIATOR_CORRECTION", reason, parent, app.initiator_id);
@@ -912,6 +943,13 @@ async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow)
     });
     await moveTo(tx, ctx, app, "BUSINESS_ENDORSEMENT", chosen, "Resubmitted after correction");
     return "Resubmitted to business endorsement.";
+  }
+  if (corr.from_stage === "MO_HEAD_REVIEW") {
+    await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");
+    app.active_correction_id = null;
+    const chosen = await chooseAssignee(tx, app, "MO_HEAD_REVIEW", { preferred: corr.from_assignee_id });
+    await moveTo(tx, ctx, app, "MO_HEAD_REVIEW", chosen, "Resubmitted after correction");
+    return "Resubmitted to the Merchant Officer Head.";
   }
   if (material) {
     await invalidateCreditApprovals(tx, ctx, app, "Material underwriting fields changed on resubmission");

@@ -3,6 +3,7 @@ import type { Role } from "./roles";
 export const STAGES = [
   "DRAFT",
   "BUSINESS_ENDORSEMENT",
+  "MO_HEAD_REVIEW",
   "INITIATOR_CORRECTION",
   "FIRST_CREDIT_REVIEW",
   "CREDIT_CORRECTION",
@@ -34,6 +35,7 @@ export type Stage = (typeof STAGES)[number];
 export const STAGE_LABELS: Record<Stage, string> = {
   DRAFT: "Draft",
   BUSINESS_ENDORSEMENT: "Business endorsement",
+  MO_HEAD_REVIEW: "Merchant Officer Head review",
   INITIATOR_CORRECTION: "Correction by initiator",
   FIRST_CREDIT_REVIEW: "First credit review",
   CREDIT_CORRECTION: "Credit correction (first reviewer)",
@@ -63,6 +65,7 @@ export const STAGE_LABELS: Record<Stage, string> = {
 export const REQUIRED_ACTION: Record<Stage, string> = {
   DRAFT: "Complete and submit request",
   BUSINESS_ENDORSEMENT: "Endorse, reject or return the request",
+  MO_HEAD_REVIEW: "Merchant Officer Head review: endorse, return or decline",
   INITIATOR_CORRECTION: "Correct and resubmit the request",
   FIRST_CREDIT_REVIEW: "Upload 3 credit reports, complete APR/DSR, log invoice and decide",
   CREDIT_CORRECTION: "Resolve the correction or request documents from the initiator",
@@ -92,7 +95,7 @@ export const REQUIRED_ACTION: Record<Stage, string> = {
 export const TERMINAL_STAGES: readonly Stage[] = ["CLOSED", "REJECTED", "COMPLETED", "WITHDRAWN", "EXPIRED"];
 
 /** Retail business review stages (business endorsement meaning, never credit approval). */
-export const BUSINESS_REVIEW_STAGES: readonly Stage[] = ["BUSINESS_ENDORSEMENT", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
+export const BUSINESS_REVIEW_STAGES: readonly Stage[] = ["BUSINESS_ENDORSEMENT", "MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
 
 /** Stages whose approval decisions are credit approvals invalidated by material changes. */
 export const CREDIT_APPROVAL_STAGES: readonly Stage[] = [
@@ -146,7 +149,7 @@ export const ACTION_LABELS: Record<TaskAction, string> = {
 /** Actions requiring a reason. */
 export const REASON_REQUIRED: readonly TaskAction[] = ["REJECT", "RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"];
 /** Business review decisions also require supporting comments. */
-export const COMMENT_REQUIRED_STAGES: readonly Stage[] = ["OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
+export const COMMENT_REQUIRED_STAGES: readonly Stage[] = ["MO_HEAD_REVIEW", "OSS_REVIEW", "TEAM_LEAD_REVIEW", "HRS_REVIEW", "HEAD_OF_UNIT_APPROVAL"];
 
 /** Allowed actions per stage. Second review depends on the route (Proceed/Reject for routes 2 and 3). */
 export function allowedActions(stage: Stage, route: number | null, workflow: string = "WAKEELBOOST"): TaskAction[] {
@@ -156,6 +159,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
       case "TEAM_LEAD_REVIEW":
         return ["RECOMMEND", "RETURN", "REJECT"];
       case "HRS_REVIEW":
+      case "MO_HEAD_REVIEW":
         return ["ENDORSE", "RETURN", "REJECT"];
       case "HEAD_OF_UNIT_APPROVAL":
         return ["APPROVE", "RETURN", "REJECT"];
@@ -173,6 +177,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
   }
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
+    case "MO_HEAD_REVIEW":
       return ["ENDORSE", "REJECT", "RETURN"];
     case "INITIATOR_CORRECTION":
       return ["RESUBMIT"];

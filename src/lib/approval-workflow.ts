@@ -64,6 +64,7 @@ export const STAGE_NAMES: Record<string, string> = {
   HRS_REVIEW: "Head of Retail Sales review",
   HEAD_OF_UNIT_APPROVAL: "Head of Unit approval",
   BUSINESS_ENDORSEMENT: "Business endorsement",
+  MO_HEAD_REVIEW: "Merchant Officer Head review",
   FIRST_CREDIT_REVIEW: "First credit review",
   CX_CREDIT_REVIEW: "CX credit review",
   SECOND_CREDIT_REVIEW: "Second credit review (concurrence)",
@@ -173,6 +174,10 @@ const inBounds = (s: { minKobo: number | null; maxKobo: number | null }, amount:
  * policy a Team Lead's or Unit Head's own request skips Team Lead certification (it is not independent).
  */
 export function retailBusinessStages(def: WorkflowDefinition, i: BusinessRouteInput): string[] {
+  // Merchant Officer hierarchy originators: a Lead's request goes to the Merchant Officer Head; a Head's request
+  // has no further business review (it is not reviewed by its own originator) and goes to credit.
+  if (i.initiatorRole === "MERCHANT_OFFICER_LEAD") return ["MO_HEAD_REVIEW"];
+  if (i.initiatorRole === "MERCHANT_OFFICER_HEAD") return [];
   const list = (i.policy === "RETAIL_CX_V1" ? def.cx : def.standard)?.businessStages ?? [];
   const out: string[] = [];
   if (i.policy !== "RETAIL_CX_V1" && i.initiatorRole === "DELIGHT_OFFICER") out.push("OSS_REVIEW");
@@ -249,8 +254,12 @@ export function planRoute(def: WorkflowDefinition, i: SimulationInput): { stages
     return { stages, errors };
   }
   if (def.family === "WAKEELBOOST") {
-    const endorser = i.initiatorRole === "MERCHANT_OFFICER" ? ["MERCHANT_OFFICER_LEAD"] : i.initiatorRole === "ANM" ? ["ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"] : ["RBE"];
-    stages.push({ stage: "BUSINESS_ENDORSEMENT", name: STAGE_NAMES.BUSINESS_ENDORSEMENT, roles: endorser, note: i.initiatorRole === "ANM" ? "The ANM Lead for the request's zone" : undefined });
+    const mo = i.initiatorRole === "MERCHANT_OFFICER" || i.initiatorRole === "MERCHANT_OFFICER_LEAD" || i.initiatorRole === "MERCHANT_OFFICER_HEAD";
+    if (!mo || i.initiatorRole === "MERCHANT_OFFICER") {
+      const endorser = i.initiatorRole === "MERCHANT_OFFICER" ? ["MERCHANT_OFFICER_LEAD"] : i.initiatorRole === "ANM" ? ["ANM_LEAD_NORTH", "ANM_LEAD_SOUTH"] : ["RBE"];
+      stages.push({ stage: "BUSINESS_ENDORSEMENT", name: STAGE_NAMES.BUSINESS_ENDORSEMENT, roles: endorser, note: i.initiatorRole === "ANM" ? "The ANM Lead for the request's zone" : i.initiatorRole === "MERCHANT_OFFICER" ? "The officer's Merchant Officer Lead" : undefined });
+    }
+    if (i.initiatorRole === "MERCHANT_OFFICER" || i.initiatorRole === "MERCHANT_OFFICER_LEAD") stages.push({ stage: "MO_HEAD_REVIEW", name: STAGE_NAMES.MO_HEAD_REVIEW, roles: ["MERCHANT_OFFICER_HEAD"], note: "The Lead's Merchant Officer Head" });
     if (credit()) {
       stages.push({ stage: "UNIT_HEAD_REVIEW", name: STAGE_NAMES.UNIT_HEAD_REVIEW, roles: ["UNIT_HEAD"] });
       stages.push({ stage: "DIVISIONAL_HEAD_REVIEW", name: STAGE_NAMES.DIVISIONAL_HEAD_REVIEW, roles: ["DIVISIONAL_HEAD"] });
@@ -259,7 +268,7 @@ export function planRoute(def: WorkflowDefinition, i: SimulationInput): { stages
   }
   const policy = i.policy ?? "STANDARD";
   for (const s of retailBusinessStages(def, { policy, amountKobo: i.amountKobo, initiatorRole: i.initiatorRole, headOfUnitDistinct: !!i.headOfUnitDistinct })) {
-    stages.push({ stage: s, name: STAGE_NAMES[s], roles: s === "OSS_REVIEW" ? ["OUTLET_SERVICE_SUPERVISOR"] : [BUSINESS_STAGE_ROLE[s as BusinessStageType]] });
+    stages.push({ stage: s, name: STAGE_NAMES[s], roles: s === "OSS_REVIEW" ? ["OUTLET_SERVICE_SUPERVISOR"] : s === "MO_HEAD_REVIEW" ? ["MERCHANT_OFFICER_HEAD"] : [BUSINESS_STAGE_ROLE[s as BusinessStageType]] });
   }
   if (policy === "RETAIL_CX_V1") {
     if ((i.initiatorRole === "TEAM_LEAD" || i.initiatorRole === "UNIT_HEAD") && !stages.length) stages.push({ stage: "NOTE", name: "Routing rule", roles: [], note: "The originator's own certification is not independent, so the request goes straight to CX credit review." });

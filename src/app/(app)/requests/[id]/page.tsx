@@ -49,7 +49,7 @@ const TAB_ALIASES: Record<string, string> = { summary: "overview", history: "act
 /** Milestones for the progress timeline (presentation only; maps existing stages). */
 const MILESTONES: { label: string; stages: Stage[] }[] = [
   { label: "Initiation", stages: ["DRAFT", "INITIATOR_CORRECTION"] },
-  { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT"] },
+  { label: "Business endorsement", stages: ["BUSINESS_ENDORSEMENT", "MO_HEAD_REVIEW"] },
   { label: "Credit review", stages: ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "SECOND_CREDIT_REVIEW"] },
   { label: "Approvals", stages: ["UNIT_HEAD_REVIEW", "DIVISIONAL_HEAD_REVIEW"] },
   { label: "Offer & insurance", stages: ["OFFER_PREPARATION", "CO3_PACK_REVIEW"] },
@@ -791,7 +791,8 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
 
   switch (stage) {
     case "BUSINESS_ENDORSEMENT":
-      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>Business endorsement must be approved before credit routing. Review the Overview and Documents.</p>);
+    case "MO_HEAD_REVIEW":
+      body.push(<p key="t" className="small muted" style={{ margin: 0 }}>{stage === "MO_HEAD_REVIEW" ? "Merchant Officer Head review before credit routing." : "Business endorsement must be approved before credit routing."} Review the Overview and Documents.</p>);
       body.push(<TaskButton key="e" hidden={hidden} action="ENDORSE" label="Endorse" doneHref={doneHref} verify={verifyFor("ENDORSE", "Endorse")} />);
       break;
     case "FIRST_CREDIT_REVIEW":

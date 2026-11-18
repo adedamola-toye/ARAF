@@ -82,6 +82,8 @@ export const INITIATOR_EMAIL: Record<string, string> = {
   ANM_NORTH: "anm.north@altbank.ng",
   ANM_SOUTH: "anm.south@altbank.ng",
   MERCHANT_OFFICER: "mo.chi@altbank.ng",
+  MERCHANT_OFFICER_LEAD: "mo.lead@altbank.ng",
+  MERCHANT_OFFICER_HEAD: "mo.head@altbank.ng",
 };
 
 export async function openTaskOf(appId: string) {
