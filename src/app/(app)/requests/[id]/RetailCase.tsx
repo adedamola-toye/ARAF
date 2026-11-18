@@ -1,3 +1,4 @@
+import { checklistStatus, CHECKLIST_LABELS } from "@/server/domain/closing-checklist";
 import { checklistFor } from "@/lib/approval-checklists";
 import { ackSlot, creditExceptionFor, exceptionView, openCreditException } from "@/server/domain/credit-exception";
 import { ExceptionAckForm, ExceptionBanner } from "@/components/CreditException";
@@ -12,7 +13,7 @@ import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { db } from "@/server/db";
 import type { getCase } from "@/server/domain/views";
-import { CATEGORY_LABEL, PACK } from "@/server/domain/documents";
+import { CATEGORY_LABEL } from "@/server/domain/documents";
 import { STAGE_LABELS, stageLabel, type Stage } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { configById, configGaps, effectiveConfig, gapsBlocking, profileRules, structureRules, PROFILE_LABELS, STRUCTURE_LABELS, INSURANCE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, FULFILMENT_LABELS, roleLabel, type CustomerProfile, type StructureCode, type FulfilmentKind } from "@/server/domain/products";
@@ -488,7 +489,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       const offerBlocked = [...gapsBlocking(gapsNow, "OFFER"), ...gapsBlocking(gapsNow, "FINAL_ASSESSMENT")];
       const contracting = gapsBlocking(gapsNow, "CONTRACTING");
       const seq = structureRules(effective ? profileRules(effective.config, app.customer_profile) : null, app.financing_structure)?.contractSequence ?? [];
-      const missing = ["GENERATED_OFFER", ...PACK].filter((p) => !has(p));
+      const checklist = await checklistStatus(db, app);
+      const missing = checklist.filter((i) => i.required && !i.onFile).map((i) => i.code);
       if (finalOut) body.push(<div key="terms" className="summary-box small"><p className="eyebrow">Approved terms</p>{finalOut.structureLabel} · {finalOut.rateLabel}<br />Principal {formatKobo((b.final.inputs as AffordabilityInput).principalKobo)} · total payable {formatKobo(finalOut.totalPayableKobo)} · monthly {finalOut.proposedMonthlyDisplay}<br /><strong>{finalOut.insurance}</strong></div>);
       if (offerBlocked.length) body.push(<Blocked key="ob">Offer generation blocked until configured: {offerBlocked.map((g) => g.label).join("; ")}.</Blocked>);
       else if (!tpl) body.push(<Blocked key="nt">No active offer template for this product and structure.</Blocked>);
@@ -496,9 +498,9 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       else body.push(<GenerateOffer key="g" applicationId={app.id} hasOffer={has("GENERATED_OFFER")} templateLabel={`${tpl.name} v${tpl.version}`} />);
       if (contracting.length) body.push(<Blocked key="cs">Contractual sequence not configured: {contracting.map((g) => g.label).join("; ")}.</Blocked>);
       else if (seq.length) body.push(<div key="seq" className="small"><strong>Contract sequence ({STRUCTURE_LABELS[app.financing_structure as StructureCode]}):</strong><ol>{seq.map((s) => <li key={s}>{s}</li>)}</ol></div>);
-      body.push(<ul key="cl" className="checklist"><Check ok={has("GENERATED_OFFER")}>Offer generated from the approved template</Check>{PACK.map((p) => <Check key={p} ok={has(p)}>{CATEGORY_LABEL[p]}</Check>)}</ul>);
-      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack document" categories={[...PACK, "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
-      if (missing.length) body.push(<Blocked key="miss">Missing: {missing.map((m) => CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
+      body.push(<ul key="cl" className="checklist">{checklist.map((i) => <Check key={i.code} ok={i.onFile}>{i.label}{i.required ? "" : " (optional)"}</Check>)}</ul>);
+      body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload pack document" categories={[...checklist.filter((i) => i.code !== "GENERATED_OFFER").map((i) => i.code), "SUPPORTING"].map((x) => ({ code: x, label: CHECKLIST_LABELS[x] ?? CATEGORY_LABEL[x] }))} />);
+      if (missing.length) body.push(<Blocked key="miss">Missing: {missing.map((m) => CHECKLIST_LABELS[m] ?? CATEGORY_LABEL[m]).join(", ")}.</Blocked>);
       body.push(<SubmitPack key="sp" hidden={hidden} doneHref={doneHref} disabled={missing.length > 0 || contracting.length > 0} sequence={seq} />);
       break;
     }

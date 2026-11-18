@@ -16,31 +16,40 @@ export interface ChecklistItem {
   required: boolean;
 }
 /** Documents a checklist may include. */
-export const CHECKLIST_CANDIDATES = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "INSURANCE_SIGNED"];
-export const STANDARD_CHECKLIST: ChecklistItem[] = [
-  { code: "GENERATED_OFFER", required: true },
-  { code: "SIGNED_OFFER", required: true },
-  { code: "KYC", required: true },
-  { code: "PRE_DISBURSEMENT", required: true },
-  { code: "GSI_FORM", required: true },
-  { code: "REMITA_MANDATE", required: false },
-  { code: "INSURANCE_SIGNED", required: true },
-];
+export const CHECKLIST_CANDIDATES = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING", "INSURANCE_SIGNED"];
+const R = (...codes: string[]) => codes.map((code) => ({ code, required: true }));
+const O = (...codes: string[]) => codes.map((code) => ({ code, required: false }));
+const CORE = ["GENERATED_OFFER", "SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM"];
+export const STANDARD_CHECKLIST: ChecklistItem[] = [...R(...CORE), ...O("REMITA_MANDATE"), ...R("INSURANCE_SIGNED")];
+/** Default checklists by product and customer category (the bank's documentation requirements). */
+export const DEFAULT_CHECKLISTS: Record<string, ChecklistItem[]> = {
+  "VENDOR_FINANCING:BUSINESS_OWNER": [...R(...CORE, "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING"), ...O("REMITA_MANDATE"), ...R("INSURANCE_SIGNED")],
+  "ALT_POWER:BUSINESS_OWNER": [...R(...CORE, "REMITA_MANDATE", "DOMICILIATION_UNDERTAKING", "INSURANCE_SIGNED")],
+  "ALT_POWER:SALARY_EARNER": [...R(...CORE, "REMITA_MANDATE", "INSURANCE_SIGNED")],
+  "ALT_DRIVE:BUSINESS_OWNER": [...R(...CORE, "REMITA_MANDATE", "INSURANCE_SIGNED")],
+  "ALT_DRIVE:SALARY_EARNER": [...R(...CORE, "REMITA_MANDATE", "INSURANCE_SIGNED")],
+  WAKEELBOOST: STANDARD_CHECKLIST,
+};
 export const CHECKLIST_LABELS: Record<string, string> = {
   ...CATEGORY_LABEL,
   GENERATED_OFFER: "Offer letter (prepared by ARAF)",
+  PRE_DISBURSEMENT: "Pre-Disbursement Agreement",
   GSI_FORM: "Signed GSI mandate form",
-  REMITA_MANDATE: "Signed Remita direct debit mandate",
+  REMITA_MANDATE: "Signed Remita / direct debit mandate",
   CONTRACT_EVIDENCE: "Structure-specific contracting evidence",
 };
 
-export function checklistKey(app: { workflow: string; product_code: string | null }) {
-  return app.workflow === "RETAIL" ? (app.product_code ?? "RETAIL") : "WAKEELBOOST";
+/** Checklist key: product and customer category for retail (e.g. ALT_POWER:SALARY_EARNER); WAKEELBOOST otherwise. */
+export function checklistKey(app: { workflow: string; product_code: string | null; customer_profile?: string | null }) {
+  if (app.workflow !== "RETAIL") return "WAKEELBOOST";
+  return app.customer_profile ? `${app.product_code}:${app.customer_profile}` : (app.product_code ?? "RETAIL");
 }
 
+/** Saved checklist for the key, else one saved for the whole product, else the default for the key, else the standard pack. */
 export async function checklistItems(q: Db, key: string): Promise<ChecklistItem[]> {
-  const r = (await q.query<{ items: ChecklistItem[] }>("SELECT items FROM closing_checklists WHERE product_code = $1", [key])).rows[0];
-  return r?.items ?? STANDARD_CHECKLIST;
+  const product = key.split(":")[0];
+  const rows = (await q.query<{ product_code: string; items: ChecklistItem[] }>("SELECT product_code, items FROM closing_checklists WHERE product_code = ANY($1)", [[key, product]])).rows;
+  return rows.find((r) => r.product_code === key)?.items ?? rows.find((r) => r.product_code === product)?.items ?? DEFAULT_CHECKLISTS[key] ?? STANDARD_CHECKLIST;
 }
 
 export interface ChecklistStatus {
@@ -51,7 +60,8 @@ export interface ChecklistStatus {
 }
 
 /** The checklist for a request with what is on file (contract evidence is added when the structure has a contract sequence). */
-export async function checklistStatus(q: Db, app: { id: string; workflow: string; product_code: string | null }, contractSequence = false): Promise<ChecklistStatus[]> {
+type ChecklistApp = { id: string; workflow: string; product_code: string | null; customer_profile?: string | null };
+export async function checklistStatus(q: Db, app: ChecklistApp, contractSequence = false): Promise<ChecklistStatus[]> {
   // Contracting / acquisition evidence is not part of the pack: it is taken at RM disbursement confirmation.
   void contractSequence;
   const items = (await checklistItems(q, checklistKey(app))).filter((i) => i.code !== "CONTRACT_EVIDENCE");
@@ -59,12 +69,12 @@ export async function checklistStatus(q: Db, app: { id: string; workflow: string
   return items.map((i) => ({ code: i.code, label: CHECKLIST_LABELS[i.code] ?? i.code, required: i.required, onFile: cats.has(i.code) }));
 }
 
-export async function missingRequired(q: Db, app: { id: string; workflow: string; product_code: string | null }, contractSequence = false): Promise<string[]> {
+export async function missingRequired(q: Db, app: ChecklistApp, contractSequence = false): Promise<string[]> {
   return (await checklistStatus(q, app, contractSequence)).filter((i) => i.required && !i.onFile).map((i) => i.label);
 }
 
 /** Disbursement readiness: the closing checklist and the invoice confirmation. */
-export async function disbursementBlockers(q: Db, app: { id: string; workflow: string; product_code: string | null }, contractSequence = false): Promise<string[]> {
+export async function disbursementBlockers(q: Db, app: ChecklistApp, contractSequence = false): Promise<string[]> {
   const out: string[] = [];
   const miss = await missingRequired(q, app, contractSequence);
   if (miss.length) out.push(`Missing from the closing pack: ${miss.join(", ")}.`);

@@ -353,20 +353,21 @@ describe("14–17. Invoice confirmation", () => {
 });
 
 describe("18–19. Closing checklist and disbursement readiness", () => {
-  it("the pack needs the required items; Remita is optional until the Super Admin requires it", async () => {
+  it("Vendor Financing (business) needs the core pack plus undated cheques and the domiciliation undertaking; Remita is optional until the Super Admin requires it", async () => {
     const id = await vf();
     await toOfferPreparation(id);
     const st = await checklistStatus(db, await app(id));
     expect(st.find((i) => i.code === "REMITA_MANDATE")?.required).toBe(false);
     const rm = await ctxFor(RM);
     for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM"]) await uploadDocument(rm, { applicationId: id, category: c, filename: `${c}.pdf`, data: makePdf(c) });
-    await expect(act(id, "SUBMIT_PACK", { contractStepsConfirmed: true })).rejects.toThrow(/Missing: .*insurance/i);
+    await expect(act(id, "SUBMIT_PACK", { contractStepsConfirmed: true })).rejects.toThrow(/Missing: .*undated cheques.*domiciliation undertaking.*insurance/i);
     const admin = await ctxFor("superadmin@altbank.ng");
-    await saveChecklist(admin, "VENDOR_FINANCING", STANDARD_CHECKLIST.map((i) => (i.code === "REMITA_MANDATE" ? { ...i, required: true } : i)), "Remita mandates are now mandatory for vendor financing.");
-    await uploadDocument(rm, { applicationId: id, category: "INSURANCE_SIGNED", filename: "ins.pdf", data: makePdf("ins") });
+    const { DEFAULT_CHECKLISTS } = await import("@/server/domain/closing-checklist");
+    await saveChecklist(admin, "VENDOR_FINANCING:BUSINESS_OWNER", DEFAULT_CHECKLISTS["VENDOR_FINANCING:BUSINESS_OWNER"].map((i) => (i.code === "REMITA_MANDATE" ? { ...i, required: true } : i)), "Remita mandates are now mandatory for vendor financing.");
+    void STANDARD_CHECKLIST;
+    for (const c of ["INSURANCE_SIGNED", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING"]) await uploadDocument(rm, { applicationId: id, category: c, filename: `${c}.pdf`, data: makePdf(c) });
     await expect(act(id, "SUBMIT_PACK", { contractStepsConfirmed: true })).rejects.toThrow(/Remita/);
     await uploadDocument(rm, { applicationId: id, category: "REMITA_MANDATE", filename: "remita.pdf", data: makePdf("remita") });
-    await uploadDocument(rm, { applicationId: id, category: "CONTRACT_EVIDENCE", filename: "c.pdf", data: makePdf("c") });
     await act(id, "SUBMIT_PACK", { contractStepsConfirmed: true });
     expect((await app(id)).stage).toBe("CO3_PACK_REVIEW");
   });
@@ -377,7 +378,7 @@ describe("18–19. Closing checklist and disbursement readiness", () => {
     await toOfferPreparation(id);
     const rm = await ctxFor(RM);
     await uploadDocument(rm, { applicationId: id, category: "SUPPLIER_INVOICE", filename: "inv.pdf", data: makePdf("inv") });
-    for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED", "CONTRACT_EVIDENCE"]) await uploadDocument(rm, { applicationId: id, category: c, filename: `${c}.pdf`, data: makePdf(c) });
+    for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING"]) await uploadDocument(rm, { applicationId: id, category: c, filename: `${c}.pdf`, data: makePdf(c) });
     await act(id, "SUBMIT_PACK", { contractStepsConfirmed: true });
     const co3 = await openTaskOf(id);
     await uploadDocument(await ctxFor(co3.email!), { applicationId: id, category: "INSURANCE_EVIDENCE", filename: "ins.pdf", data: makePdf("insurance") });

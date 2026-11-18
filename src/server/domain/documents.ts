@@ -33,7 +33,9 @@ export const DOC_CATEGORIES: DocCategory[] = [
   { code: "GSI_FORM", label: "GSI form", multiple: false },
   { code: "GENERATED_GSI", label: "GSI mandate form (prefilled by ARAF)", multiple: false },
   { code: "GENERATED_REMITA", label: "Remita direct debit set-up sheet (prefilled by ARAF)", multiple: false },
-  { code: "REMITA_MANDATE", label: "Signed Remita mandate", multiple: false },
+  { code: "REMITA_MANDATE", label: "Signed Remita / direct debit mandate", multiple: false },
+  { code: "UNDATED_CHEQUES", label: "Promoter / business undated cheques", multiple: true },
+  { code: "DOMICILIATION_UNDERTAKING", label: "Business-proceeds domiciliation undertaking", multiple: false },
   { code: "INVOICE_CONFIRMATION_RESPONSE", label: "Invoice confirmation response (issuer's reply)", multiple: true },
   { code: "INSURANCE_SIGNED", label: "Customer-signed insurance document", multiple: false },
   { code: "INSURANCE_EVIDENCE", label: "Evidence of insurance (Credit Officer 3)", multiple: false },
@@ -117,7 +119,7 @@ export const RETAIL_UPLOADABLE_BY_STAGE: Partial<Record<Stage, string[]>> = {
   FULFILMENT: ["FULFILMENT_EVIDENCE", "SUPPORTING"],
 };
 function PACK_LIST() {
-  return ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "INSURANCE_SIGNED"];
+  return ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING", "INSURANCE_SIGNED"];
 }
 
 /** Which categories the current task holder may upload at each stage. */

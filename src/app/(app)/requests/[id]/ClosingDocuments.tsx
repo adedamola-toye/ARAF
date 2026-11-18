@@ -16,7 +16,7 @@ export async function ClosingDocuments({ appId, canEdit, link }: { appId: string
   const needsAccount = st.items.some((i) => i.state === "NEEDS_ACCOUNT");
   const conf = (await icForApplication(db, appId))[0] ?? null;
   const emailOn = !!(await db.query("SELECT customer_email_enabled FROM document_settings WHERE id = 1")).rows[0]?.customer_email_enabled;
-  const app = (await db.query("SELECT id, workflow, product_code FROM applications WHERE id = $1", [appId])).rows[0];
+  const app = (await db.query("SELECT id, workflow, product_code, customer_profile FROM applications WHERE id = $1", [appId])).rows[0];
   const checklist = await checklistStatus(db, app);
   return (
     <section className="card" id="closing-documents" aria-labelledby="cd-h">

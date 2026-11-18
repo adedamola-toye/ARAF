@@ -235,7 +235,7 @@ export async function driveToBooking(id: string, now = new Date(), bookingRef = 
   const t = await openTaskOf(id);
   const ctx = await ctxFor(t.email!, now);
   await generateOffer(ctx, id);
-  for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "INSURANCE_SIGNED"]) {
+  for (const c of ["SIGNED_OFFER", "KYC", "PRE_DISBURSEMENT", "GSI_FORM", "REMITA_MANDATE", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING", "INSURANCE_SIGNED"]) {
     await uploadDocument(ctx, { applicationId: id, category: c, filename: `${c.toLowerCase()}.pdf`, data: makePdf(c) });
   }
   await act(id, "SUBMIT_PACK", { contractStepsConfirmed: true }, now);

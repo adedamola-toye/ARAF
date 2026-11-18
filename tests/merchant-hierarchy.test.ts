@@ -144,3 +144,18 @@ describe("Acquisition evidence at RM disbursement confirmation", () => {
     expect((await appRow(id)).status).toBe("CLOSED");
   });
 });
+
+describe("Product-specific documentation", () => {
+  it("defaults follow the product and customer category; Staff Salary Advance has no invoice confirmation", async () => {
+    const { checklistItems } = await import("@/server/domain/closing-checklist");
+    const req = async (k: string) => (await checklistItems(db, k)).filter((i) => i.required).map((i) => i.code);
+    expect(await req("VENDOR_FINANCING:BUSINESS_OWNER")).toEqual(expect.arrayContaining(["PRE_DISBURSEMENT", "GSI_FORM", "UNDATED_CHEQUES", "DOMICILIATION_UNDERTAKING"]));
+    expect(await req("ALT_POWER:BUSINESS_OWNER")).toEqual(expect.arrayContaining(["REMITA_MANDATE", "DOMICILIATION_UNDERTAKING"]));
+    expect(await req("ALT_POWER:SALARY_EARNER")).toContain("REMITA_MANDATE");
+    expect(await req("ALT_POWER:SALARY_EARNER")).not.toContain("DOMICILIATION_UNDERTAKING");
+    expect(await req("ALT_DRIVE:SALARY_EARNER")).toContain("REMITA_MANDATE");
+    expect(await req("ALT_DRIVE:BUSINESS_OWNER")).not.toContain("UNDATED_CHEQUES");
+    // Staff Salary Advance lives in its own tables: no invoice confirmations are ever created for it.
+    expect((await db.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'invoice_confirmations' AND column_name = 'staff_request_id'")).rowCount).toBe(0);
+  });
+});
