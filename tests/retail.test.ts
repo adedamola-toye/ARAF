@@ -455,13 +455,13 @@ describe("material changes, access and independence", () => {
     expect(r2.message).toMatch(/Resubmitted to Team Lead/);
   });
 
-  it("access follows scope; administrators alone see nothing; the same person cannot satisfy independent stages", async () => {
+  it("access follows scope; the Super Admin sees every request; the same person cannot satisfy independent stages", async () => {
     await vf();
     const id = await vfCase();
     expect((await caseAccess(db, await staffId("tl.abuja@altbank.ng"), id)).canView).toBe(false);
     expect((await caseAccess(db, await staffId("tl.lagos@altbank.ng"), id)).canView).toBe(true);
     expect((await caseAccess(db, await staffId("hrs@altbank.ng"), id)).capacities).toContain("RETAIL_LEADERSHIP");
-    expect((await caseAccess(db, await staffId("superadmin@altbank.ng"), id)).canView).toBe(false);
+    expect((await caseAccess(db, await staffId("superadmin@altbank.ng"), id)).capacities).toContain("SUPER_ADMIN");
     expect((await caseAccess(db, await staffId("rm.ade@altbank.ng"), id)).canView).toBe(false);
     // The Team Lead also holds the only first-credit-review role for route 2: they are excluded there.
     const tl = await staffId("tl.lagos@altbank.ng");

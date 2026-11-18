@@ -67,3 +67,77 @@ export async function setOrgLink(ctx: Ctx, p: { staffId: string; relation: strin
     await audit(tx, ctx, { action: "REPORTING_LINE_CHANGED", actorRole: "SUPER_ADMIN", reason: p.reason.trim(), details: { staffId: p.staffId, relation: p.relation, previous: before, next: p.managerId } });
   });
 }
+
+export interface Supervision {
+  /** Staff whose requests this person may see (they originate or are the assigned RM). */
+  staffIds: string[];
+  /** Retail teams in scope (Team Leads' teams). */
+  teams: string[];
+  /** Request regions (states) in scope from the person's Unit Head role assignment. */
+  regions: string[];
+  label: string;
+}
+
+/**
+ * Who a supervisor oversees (shared by case access and reporting, so a report never lists a facility its viewer
+ * cannot open). The hierarchy is RM → Team Lead → Unit Head → Divisional Head; Non-DBC RMs → RBE; Merchant
+ * Officer → Lead → Head. A Unit Head also oversees the DBC RMs of the region they are configured for and the
+ * states on their Unit Head role assignment.
+ */
+export async function supervision(q: Db, staffId: string): Promise<Supervision> {
+  const roles = (await q.query<{ role: string; region: string | null; team: string | null }>("SELECT role, region, team FROM role_assignments WHERE staff_id = $1 AND active", [staffId])).rows;
+  const has = (r: string) => roles.some((x) => x.role === r);
+  const ids = new Set<string>();
+  const teams = new Set<string>();
+  const regions = new Set<string>();
+  const labels: string[] = [];
+  const rows = async (sql: string, p: unknown[]) => (await q.query<{ id: string }>(sql, p)).rows.map((r) => r.id);
+  const teamOf = async (people: string[]) =>
+    people.length ? (await q.query<{ team: string }>("SELECT DISTINCT team FROM role_assignments WHERE staff_id = ANY($1::uuid[]) AND active AND role = 'TEAM_LEAD' AND team IS NOT NULL", [people])).rows.map((r) => r.team) : [];
+  const unit = async (uh: string) => {
+    const direct = await rows("SELECT staff_id AS id FROM org_links WHERE manager_id = $1 AND relation = 'UNIT_HEAD'", [uh]);
+    direct.forEach((x) => ids.add(x));
+    // Team Leads reporting to the Unit Head bring their whole team (RMs on the same team code).
+    for (const t of await teamOf(direct)) teams.add(t);
+    const dbc = await rows(
+      `SELECT c.staff_id AS id FROM routing_assignments x JOIN rm_classifications c ON c.segment = 'DBC'
+          AND c.dbc_region = CASE x.key WHEN 'DBC_UNIT_HEAD_NORTH' THEN 'NORTH' WHEN 'DBC_UNIT_HEAD_SOUTH_WEST' THEN 'SOUTH_WEST' END
+        WHERE x.staff_id = $1`,
+      [uh],
+    );
+    dbc.forEach((x) => ids.add(x));
+  };
+  if (has("UNIT_HEAD")) {
+    await unit(staffId);
+    const { expandRegions } = await import("./roles");
+    for (const r of expandRegions(roles.filter((x) => x.role === "UNIT_HEAD" && x.region).map((x) => x.region!))) regions.add(r);
+    labels.push("your unit");
+  }
+  if (has("DIVISIONAL_HEAD")) {
+    for (const uh of await rows("SELECT staff_id AS id FROM org_links WHERE manager_id = $1 AND relation = 'DIVISIONAL_HEAD'", [staffId])) {
+      ids.add(uh);
+      await unit(uh);
+    }
+    labels.push("your division");
+  }
+  if (has("TEAM_LEAD")) {
+    roles.filter((x) => x.role === "TEAM_LEAD" && x.team).forEach((x) => teams.add(x.team!));
+    labels.push("your team");
+  }
+  if (has("RBE")) {
+    (await rows("SELECT staff_id AS id FROM org_links WHERE manager_id = $1 AND relation = 'RBE'", [staffId])).forEach((x) => ids.add(x));
+    labels.push("your Relationship Managers");
+  }
+  if (has("MERCHANT_OFFICER_HEAD")) {
+    ids.add(staffId);
+    for (const lead of await rows("SELECT staff_id AS id FROM org_links WHERE manager_id = $1 AND relation = 'MO_HEAD'", [staffId])) {
+      ids.add(lead);
+      (await rows("SELECT staff_id AS id FROM org_links WHERE manager_id = $1 AND relation = 'MO_LEAD'", [lead])).forEach((x) => ids.add(x));
+    }
+    labels.push("the Merchant Officer business line");
+  }
+  // Everyone on the teams in scope.
+  if (teams.size)
+    (await rows("SELECT DISTINCT staff_id AS id FROM role_assignments WHERE active AND team = ANY($1::text[]) AND role IN ('RM','TEAM_LEAD','DELIGHT_OFFICER')", [[...teams]])).forEach((x) => ids.add(x));
+  return { staffIds: [...ids], teams: [...teams], regions: [...regions], label: labels[0] ?? "" };
+}
