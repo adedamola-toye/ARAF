@@ -22,7 +22,7 @@ describe("Reporting scope", () => {
     expect((await reportScope(db, await sid(ADMIN))).kind).toBe("ALL");
     const uh = await staff("uh.report@altbank.ng", "Uche Unit-Head", "UNIT_HEAD");
     const dh = await staff("dh.report@altbank.ng", "Dayo Div-Head", "DIVISIONAL_HEAD");
-    expect((await reportScope(db, uh)).kind).toBe("NONE");
+    expect(await financingFacts(db, await reportScope(db, uh))).toEqual([]); // nothing approved, nobody mapped yet
     const admin = await ctxFor(ADMIN);
     await setOrgLink(admin, { staffId: await sid("mo.chi@altbank.ng"), relation: "UNIT_HEAD", managerId: uh, reason: "Chioma reports to Uche for reporting." });
     await setOrgLink(admin, { staffId: uh, relation: "DIVISIONAL_HEAD", managerId: dh, reason: "Uche's unit is in Dayo's division." });
@@ -113,11 +113,12 @@ describe("Business lines, RBE and DBC Unit Head reporting", () => {
     // Totals reconcile across business lines without double counting.
     const lines = groupFacts(all, "segment");
     expect(lines.reduce((s, g) => s + g.requestedKobo, 0)).toBe(all.reduce((s, f) => s + f.requestedKobo, 0));
-    // The DBC North Unit Head sees the DBC RM's work (the RM is currently DBC North); the RBE sees nothing once the RM left them.
+    // The DBC North Unit Head sees the DBC RM's work (the RM is currently DBC North); the RBE keeps only the request they approved.
     const uhScope = await reportScope(db, north);
     expect(uhScope.kind).toBe("STAFF");
     expect((await financingFacts(db, uhScope)).map((f) => f.id).sort()).toEqual([nd, dbc].sort());
-    expect((await reportScope(db, await sid("rbe.abuja@altbank.ng"))).kind).toBe("NONE");
+    // The RBE keeps the request they were the named approver for, but not the RM's later DBC request.
+    expect((await financingFacts(db, await reportScope(db, await sid("rbe.abuja@altbank.ng")))).map((f) => f.id)).toEqual([nd]);
     // Dimension filters.
     expect((await financingFacts(db, { kind: "ALL" }, { dims: { segment: "Non-DBC" } })).map((f) => f.id)).toEqual([nd]);
   });

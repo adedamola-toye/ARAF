@@ -28,6 +28,8 @@ import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
+/** Roles that review or approve requests: they get "Requests I approved". */
+const APPROVER_NAV_ROLES: readonly string[] = ["RBE", "UNIT_HEAD", "DIVISIONAL_HEAD", "TEAM_LEAD", "HEAD_OF_RETAIL_SALES", "HEAD_OF_UNIT", "OUTLET_SERVICE_SUPERVISOR", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD", "ANM_LEAD_NORTH", "ANM_LEAD_SOUTH", "CX_CREDIT_REVIEWER", "CREDIT_OFFICER_1", "CREDIT_OFFICER_2", "CREDIT_OFFICER_3", "CREDIT_LEAD_1", "CREDIT_LEAD_2", "DISBURSEMENT_OFFICER_1", "DISBURSEMENT_OFFICER_2", "INVOICE_CONFIRMATION_OFFICER"];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const { session, roles } = await requireUser();
@@ -92,6 +94,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 Booked Requests
               </NavLink>
             </>
+          )}
+          {roles.some((r) => APPROVER_NAV_ROLES.includes(r)) && (
+            <NavLink href="/requests/approved" icon={<ListChecks {...ic} />}>
+              Requests I approved
+            </NavLink>
           )}
           {roles.includes("RM") && (
             <NavLink href="/wallet" icon={<Wallet {...ic} />}>

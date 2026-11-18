@@ -27,11 +27,10 @@ export async function reportScope(q: Db, staffId: string): Promise<Scope> {
   if (roles.some((r) => ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN"].includes(r))) return { kind: "ALL" };
   if (!["DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"].some((r) => roles.includes(r as never)))
     return { kind: "NONE", reason: "Reports are available to God's Eye, Super Admin, Reporting Admin, Divisional Heads, Unit Heads, Regional Business Executives and the Merchant Officer Head." };
+  // Always includes every request the viewer reviewed or approved (or is the designated RBE / Unit Head for), so it
+  // works with no setup; reporting lines, where set, add the requests of the people who report to them.
   const sv = await supervision(q, staffId);
-  const pinned = roles.includes("UNIT_HEAD") && !!(await q.query("SELECT 1 FROM applications WHERE routing_unit_head_id = $1 LIMIT 1", [staffId])).rowCount;
-  if (!sv.staffIds.length && !sv.teams.length && !sv.regions.length && !pinned)
-    return { kind: "NONE", reason: "No staff are mapped to you yet. The Super Admin sets reporting lines under Administration → Reporting lines." };
-  return { kind: "STAFF", staffIds: sv.staffIds, teams: sv.teams, regions: sv.regions, viewerId: staffId, label: sv.label };
+  return { kind: "STAFF", staffIds: sv.staffIds, teams: sv.teams, regions: sv.regions, viewerId: staffId, label: sv.label || "requests you reviewed or approved, and your team" };
 }
 
 // ─────────────────────────── financing facts ───────────────────────────
@@ -124,7 +123,8 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       `WITH apps AS (
          SELECT a.* FROM applications a
           WHERE a.submitted_at IS NOT NULL
-            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1) OR a.assigned_rm_id = ANY($1) OR a.team = ANY($4::text[]) OR a.region = ANY($5::text[]) OR a.routing_unit_head_id = $6)
+            AND ($1::uuid[] IS NULL OR a.initiator_id = ANY($1) OR a.assigned_rm_id = ANY($1) OR a.team = ANY($4::text[]) OR a.region = ANY($5::text[]) OR a.routing_unit_head_id = $6 OR a.selected_rbe_id = $6
+                 OR EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = a.id AND d.actor_id = $6))
             AND ($2::date IS NULL OR a.submitted_at >= $2::date)
             AND ($3::date IS NULL OR a.submitted_at < ($3::date + 1))
        )

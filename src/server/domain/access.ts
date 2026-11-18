@@ -90,6 +90,15 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
     [staffId, appId],
   );
   if (ico.rowCount) capacities.push("INVOICE_CONFIRMATION");
+  // Anyone who reviewed or approved the request, or was ever assigned it (even if later reassigned), and the RBE /
+  // Unit Head designated as its approver, can follow it to disbursement and beyond. Nothing needs configuring.
+  const approver = await q.query(
+    `SELECT 1 WHERE EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = $2 AND d.actor_id = $1)
+        OR EXISTS (SELECT 1 FROM assignment_changes ac JOIN tasks t ON t.id = ac.task_id WHERE t.application_id = $2 AND (ac.to_staff_id = $1 OR ac.from_staff_id = $1))
+        OR EXISTS (SELECT 1 FROM applications a WHERE a.id = $2 AND a.stage <> 'DRAFT' AND (a.routing_unit_head_id = $1 OR a.selected_rbe_id = $1))`,
+    [staffId, appId],
+  );
+  if (approver.rowCount) capacities.push("APPROVER");
   // The Super Admin sees every request.
   if (await holdsRole(q, staffId, "SUPER_ADMIN")) capacities.push("SUPER_ADMIN");
   // Supervisors see the submitted requests of the people they oversee (RM → Team Lead → Unit Head → Divisional

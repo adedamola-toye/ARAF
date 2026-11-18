@@ -8,6 +8,9 @@ import { caseAccess } from "@/server/domain/access";
 import { setOrgLink } from "@/server/domain/org";
 import { setRmClassification } from "@/server/domain/rm-routing";
 import { financingFacts, reportScope } from "@/server/performance-report";
+import { act, driveToOffer, openTaskOf } from "@/server/demo/scenario";
+import { reviewedRequests } from "@/server/domain/views";
+import { adminAssignTask } from "@/server/domain/admin";
 
 const N = (n: number) => n * 100;
 const ADMIN = "superadmin@altbank.ng";
@@ -82,4 +85,35 @@ describe("Who can open a request", () => {
     expect(facts.map((f) => f.id)).toEqual([id]);
     for (const f of facts) expect((await caseAccess(db, uh, f.id)).canView).toBe(true);
   });
+
+  it("with nothing configured, the Unit Head and RBE who approved a request can follow it to disbursement", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
+    const rbe = await sid("rbe.lagos@altbank.ng"); // the RBE named on the request
+    expect(await view(rbe, id)).toContain("APPROVER"); // from submission
+    await driveToOffer(id); // RBE → credit → Unit Head → Divisional Head
+    const uh = await sid("unit.head@altbank.ng");
+    expect(await view(uh, id)).toContain("APPROVER");
+    // Their list shows where it is now.
+    const mine = await reviewedRequests(db, uh);
+    expect(mine.map((r) => [r.id, r.stage, (r.my_decision as { stage: string }).stage])).toEqual([[id, "OFFER_PREPARATION", "UNIT_HEAD_REVIEW"]]);
+    expect((await reviewedRequests(db, rbe)).map((r) => r.id)).toEqual([id]);
+    // Their performance report includes it, with no reporting lines set.
+    expect((await financingFacts(db, await reportScope(db, uh))).map((f) => f.id)).toEqual([id]);
+    expect((await financingFacts(db, await reportScope(db, rbe))).map((f) => f.id)).toEqual([id]);
+  });
+
+  it("someone whose task was reassigned to another officer keeps read access", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
+    await act(id, "ENDORSE");
+    const t = await openTaskOf(id);
+    const first = t.assignee_id!;
+    const others = (await db.query("SELECT ra.staff_id FROM role_assignments ra WHERE ra.role = $1 AND ra.active AND ra.staff_id <> $2", [t.assignee_role, first])).rows;
+    if (!others.length) {
+      const extra = await staff("co.extra@altbank.ng", "Extra Credit-Officer", t.assignee_role);
+      others.push({ staff_id: extra });
+    }
+    await adminAssignTask(await ctxFor(ADMIN), t.id, others[0].staff_id, "Rebalancing the credit queue for leave.");
+    expect(await view(first, id)).toContain("APPROVER");
+  });
 });
+
