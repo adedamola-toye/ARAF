@@ -14,7 +14,7 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
   const show = ["noroles", "recent"].includes(sp.show ?? "") ? sp.show! : "all";
   const rows = (
     await db.query(
-      `SELECT s.*, coalesce(json_agg(json_build_object('role', ra.role, 'region', ra.region) ORDER BY ra.role) FILTER (WHERE ra.id IS NOT NULL), '[]') AS roles
+      `SELECT s.*, coalesce(json_agg(json_build_object('role', ra.role, 'region', ra.region, 'businessUnit', ra.business_unit) ORDER BY ra.role) FILTER (WHERE ra.id IS NOT NULL), '[]') AS roles
          FROM staff s LEFT JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active
         WHERE ($1 = '' OR lower(s.full_name) LIKE '%' || $1 || '%' OR s.email LIKE '%' || $1 || '%' OR lower(coalesce(s.business_unit, '')) LIKE '%' || $1 || '%')
           AND ($2 <> 'recent' OR s.created_at > now() - interval '7 days')
@@ -64,13 +64,17 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
             <tr><th scope="col" style={{ width: 36 }}><SelectAllStaff /></th><th>Name</th><th>Email</th><th>Status</th><th>State / unit</th><th>Active roles</th></tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {rows.map((r) => {
+              const scope = r.roles.find((x: { region: string | null; businessUnit: string | null }) => x.region || x.businessUnit) ?? {};
+              const region = r.region ?? scope.region ?? null;
+              const businessUnit = r.business_unit ?? scope.businessUnit ?? null;
+              return (
               <tr key={r.id}>
                 <td><input type="checkbox" name="staffId" value={r.id} aria-label={`Select ${r.full_name}`} disabled={r.status !== "ACTIVE"} /></td>
                 <td><Link href={`/admin/staff/${r.id}`}>{r.full_name}</Link></td>
                 <td className="small">{r.email}</td>
                 <td><span className={`badge ${r.status === "ACTIVE" ? "badge-green" : "badge-red"}`}>{r.status}</span></td>
-                <td className="small">{r.region ?? "—"} {r.business_unit && `· ${r.business_unit}`}</td>
+                <td className="small">{region ?? "—"} {businessUnit && `· ${businessUnit}`}</td>
                 <td>
                   <div className="row" style={{ gap: 4 }}>
                     {r.roles.map((x: { role: Role; region: string | null }) => (
@@ -80,7 +84,8 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
