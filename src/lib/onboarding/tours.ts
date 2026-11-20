@@ -142,6 +142,18 @@ const REPORTING: TourStep[] = [
   { title: "God's Eye", body: "Institution-wide, read-only executive view.", target: nav("/executive") },
   help,
 ];
+const CX_HEAD: TourStep[] = [
+  { title: "CX Command Centre", body: "Open, unassigned, escalated and overdue complaints right now, plus volumes, SLA compliance and handling time for the period.", target: nav("/crm/cx"), href: "/crm/cx" },
+  { title: "All Complaints", body: "Search and filter every ticket. Open one to see its full history, override routing with a reason or ask a team to act.", target: nav("/crm/all") },
+  { title: "Team Performance", body: "How long each team and officer held tickets, from the hand-off history.", target: nav("/crm/performance") },
+  { title: "CX Reports", body: "Daily, weekly and monthly reports with CSV and PDF downloads.", target: nav("/crm/reports") },
+  help,
+];
+const CRM_AGENT: TourStep[] = [
+  { title: "Assigned to Me", body: "Complaints assigned to you, most urgent first. Start work, update the complainant and resolve with a summary.", target: nav("/crm/work"), href: "/crm/work" },
+  { title: "Team Queue", body: "Team Leads assign new complaints to officers here.", target: nav("/crm/team") },
+  help,
+];
 const STAFF: TourStep[] = [
   { title: "My salary advance", body: "Apply for a salary advance, upload your documents and follow your request.", target: nav("/staff-request"), href: "/staff-request" },
   help,
@@ -194,6 +206,10 @@ export function tourFor(role: string): TourStep[] {
       return REPORTING;
     case "STAFF_APPLICANT":
       return STAFF;
+    case "CX_HEAD":
+      return CX_HEAD;
+    case "CRM_AGENT":
+      return CRM_AGENT;
     case "VENDOR_MANAGER":
       return VENDOR;
     case "PRODUCT_CONFIG_APPROVER":
