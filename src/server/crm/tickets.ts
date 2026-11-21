@@ -412,7 +412,9 @@ export async function assignTicket(ctx: Ctx, id: string, officerId: string, reas
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
     const t = await lockTicket(tx, id, lockVersion);
-    if (!canManage(p, t)) throw forbidden("Only the Team Lead of this ticket's team or the CX Head can assign it.");
+    // Team Lead / CX Head assign and reassign; the assigned officer may hand the ticket to a colleague in the same team.
+    const handOn = !canManage(p, t) && t.assignee_id === p.staffId;
+    if (!canManage(p, t) && !handOn) throw forbidden("Only the Team Lead of this ticket's team, the CX Head or the assigned officer can reassign it.");
     if (CLOSED_OR_RESOLVED.includes(t.status)) throw conflict(`This ticket is ${STATUS_LABELS[t.status].toLowerCase()}.`);
     if (!uuidRe.test(officerId) || !(await activeMember(tx, t.team_id, officerId))) throw invalid("Choose an active member of this team.", { officerId: "Not a member of this team." });
     if (officerId === t.creator_id) throw invalid("A complaint cannot be assigned to the person who raised it.", { officerId: "Choose someone else." });

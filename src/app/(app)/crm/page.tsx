@@ -32,7 +32,7 @@ export default async function CrmHome() {
         <Metric k="Waiting for my reply" v={awaitingMe} note="Information requested or resolution to confirm" />
         {p.officerTeams.length > 0 && <Metric k="Assigned to me" v={<Link href="/crm/work">{counts.assigned}</Link>} />}
         {p.leadTeams.length > 0 && <Metric k="Unassigned in my teams" v={<Link href="/crm/team?view=unassigned">{counts.unassigned}</Link>} />}
-        {isOversight(p) && <Metric k="Escalated (all teams)" v={<Link href="/crm/all?escalated=1">{counts.escalated}</Link>} />}
+        {isOversight(p) && <Metric k="Escalated (all teams)" v={<Link href="/crm/escalations">{counts.escalated}</Link>} />}
       </div>
       <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
         <h2 style={{ fontSize: 17 }}>My recent complaints</h2>

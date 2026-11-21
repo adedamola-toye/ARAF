@@ -50,6 +50,8 @@ export interface ActionProps {
   isCreator: boolean;
   isAssignee: boolean;
   canManage: boolean;
+  /** The assigned officer handing the ticket to a colleague in the same team. */
+  canHandOn?: boolean;
   canWork: boolean;
   isCxHead: boolean;
   isMember: boolean;
@@ -61,6 +63,34 @@ export interface ActionProps {
 export function TicketActions(p: ActionProps) {
   const open = !["RESOLVED", "CLOSED"].includes(p.status);
   const blocks: ReactNode[] = [];
+
+  if (p.canHandOn && open)
+    blocks.push(
+      <Fold key="handon" label="Reassign to a colleague">
+        <Op op="assign" id={p.id} lockVersion={p.lockVersion}>
+          <div className="field">
+            <label htmlFor="ho-off">Colleague in this team</label>
+            <select id="ho-off" name="officerId" required defaultValue="">
+              <option value="">Choose…</option>
+              {p.officers
+                .filter((o) => o.id !== p.currentAssignee)
+                .map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ho-why">Reason (required)</label>
+            <textarea id="ho-why" name="reason" rows={2} required minLength={10} />
+          </div>
+          <div>
+            <SubmitButton>Reassign</SubmitButton>
+          </div>
+        </Op>
+      </Fold>,
+    );
 
   if (p.canManage && open)
     blocks.push(
