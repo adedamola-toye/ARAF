@@ -1,4 +1,4 @@
-import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal } from "lucide-react";
+import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal, MessageSquareWarning, MessageSquarePlus, Headset, Radar, BookOpen } from "lucide-react";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -23,6 +23,7 @@ import { onboardingDue } from "@/server/domain/onboarding";
 import { tourFor } from "@/lib/onboarding/tours";
 import { OnboardingRoot } from "@/components/Onboarding";
 import { executiveAccess } from "@/server/executive";
+import { crmNavCounts, crmPrincipal, isOversight } from "@/server/crm/core";
 import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
@@ -69,6 +70,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const icOfficer = roles.includes("INVOICE_CONFIRMATION_OFFICER");
   const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
   const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
+  const crm = await crmPrincipal(db, session.staffId);
+  const crmCounts = await crmNavCounts(db, crm);
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -206,6 +209,54 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
+        <div className="nav-section">
+          <span className="nav-title">CRM</span>
+          <NavLink href="/crm" exact icon={<Headset {...ic} />}>
+            CRM Home
+          </NavLink>
+          <NavLink href="/crm/new" icon={<MessageSquarePlus {...ic} />}>
+            Raise Complaint
+          </NavLink>
+          <NavLink href="/crm/tickets" icon={<MessageSquareWarning {...ic} />}>
+            My Tickets
+          </NavLink>
+          {crm.officerTeams.length > 0 && (
+            <NavLink href="/crm/work" count={crmCounts.assigned} icon={<Inbox {...ic} />}>
+              Assigned to Me
+            </NavLink>
+          )}
+          {crm.leadTeams.length > 0 && (
+            <NavLink href="/crm/team" count={crmCounts.unassigned} icon={<UsersRound {...ic} />}>
+              Team Queue
+            </NavLink>
+          )}
+          {isOversight(crm) && (
+            <>
+              <NavLink href="/crm/cx" exact icon={<Radar {...ic} />}>
+                CX Command Centre
+              </NavLink>
+              <NavLink href="/crm/all" count={crmCounts.escalated} alert icon={<ClipboardList {...ic} />}>
+                All Complaints
+              </NavLink>
+              <NavLink href="/crm/performance" icon={<Gauge {...ic} />}>
+                Team Performance
+              </NavLink>
+              <NavLink href="/crm/reports" icon={<BarChart3 {...ic} />}>
+                CX Reports
+              </NavLink>
+            </>
+          )}
+          {(isOversight(crm) || crm.officerTeams.length > 0) && (
+            <NavLink href="/crm/kb" icon={<BookOpen {...ic} />}>
+              Knowledge base
+            </NavLink>
+          )}
+          {isAdmin && (
+            <NavLink href="/admin/crm" icon={<SlidersHorizontal {...ic} />}>
+              CRM configuration
+            </NavLink>
+          )}
+        </div>
         {staffOk && (
           <div className="nav-section">
             <span className="nav-title">Staff Salary Advance</span>

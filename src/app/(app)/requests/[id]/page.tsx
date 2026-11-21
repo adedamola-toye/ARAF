@@ -188,6 +188,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           </dl>
         </div>
         <div className="row">
+          {app.stage !== "DRAFT" && (
+            <Link className="btn btn-ghost" href={`/crm/new?app=${app.id}`}>
+              Raise a complaint
+            </Link>
+          )}
           {isInitiator && c.openTask?.assignee_id && c.openTask.assignee_id !== session.staffId && waited > REMINDER_MIN_AGE_MS && <ReminderButton applicationId={app.id} />}
           {canEditAsRm && (
             <Link className="btn btn-primary" href={`/requests/${app.id}/edit`}>
