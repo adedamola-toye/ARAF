@@ -77,6 +77,26 @@ export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: str
   });
 }
 
+/** Correct a staff member's name, state or business unit. Role scopes are changed separately on each role. */
+export async function updateStaff(ctx: Ctx, p: { staffId: string; fullName: string; region?: string | null; businessUnit?: string | null }) {
+  return adminOp(ctx, "STAFF_UPDATED", async (tx) => {
+    const current = (
+      await tx.query<{ full_name: string; region: string | null; business_unit: string | null }>(
+        "SELECT full_name, region, business_unit FROM staff WHERE id = $1 FOR UPDATE",
+        [p.staffId],
+      )
+    ).rows[0];
+    if (!current) throw notFound();
+    const fullName = p.fullName.trim();
+    if (fullName.length < 3) throw invalid("Enter the staff member's full name.", { fullName: "Enter the full name." });
+    const region = p.region?.trim() || null;
+    if (region && !isRegion(region)) throw invalid("Unknown state.", { region: "Unknown state." });
+    const businessUnit = (p.businessUnit ?? "").trim().slice(0, 80) || null;
+    await tx.query("UPDATE staff SET full_name = $2, region = $3, business_unit = $4, updated_at = $5 WHERE id = $1", [p.staffId, fullName, region, businessUnit, ctx.now]);
+    await audit(tx, ctx, { action: "STAFF_UPDATED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, before: current, after: { fullName, region, businessUnit } } });
+  });
+}
+
 export async function setStaffStatus(ctx: Ctx, staffId: string, status: "ACTIVE" | "SUSPENDED") {
   return adminOp(ctx, "STAFF_STATUS_CHANGED", async (tx) => {
     if (staffId === ctx.actor!.staffId) throw forbidden("You cannot change your own status.");

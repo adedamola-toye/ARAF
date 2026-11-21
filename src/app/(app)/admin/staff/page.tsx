@@ -65,9 +65,10 @@ export default async function StaffList({ searchParams }: { searchParams: Promis
           </thead>
           <tbody>
             {rows.map((r) => {
-              const scope = r.roles.find((x: { region: string | null; businessUnit: string | null }) => x.region || x.businessUnit) ?? {};
-              const region = r.region ?? scope.region ?? null;
-              const businessUnit = r.business_unit ?? scope.businessUnit ?? null;
+              const roleRegion = r.roles.find((x: { region: string | null }) => x.region)?.region ?? null;
+              const roleUnit = r.roles.find((x: { businessUnit: string | null }) => x.businessUnit)?.businessUnit ?? null;
+              const region = r.region ?? roleRegion;
+              const businessUnit = r.business_unit ?? roleUnit;
               return (
               <tr key={r.id}>
                 <td><input type="checkbox" name="staffId" value={r.id} aria-label={`Select ${r.full_name}`} disabled={r.status !== "ACTIVE"} /></td>

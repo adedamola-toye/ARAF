@@ -17,6 +17,7 @@ import {
   removeGroupMember,
   revokeRole,
   setStaffStatus,
+  updateStaff,
   updateMonthlySchedule,
   updateDhWeeklySchedule,
 } from "@/server/domain/admin";
@@ -55,6 +56,8 @@ export const grantRoleAction = async (_p: ActionState, fd: FormData) =>
   run(fd, (f, ctx) => grantRole(ctx, { staffId: s(f, "staffId"), role: s(f, "role"), region: s(f, "region") || null, businessUnit: s(f, "businessUnit") || null, team: s(f, "team") || null }), "Role granted.");
 export const revokeRoleAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => revokeRole(ctx, { staffId: s(f, "staffId"), role: s(f, "role") }), "Role revoked. Any open tasks under this role were moved to Assignment exceptions.");
 export const statusAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => setStaffStatus(ctx, s(f, "staffId"), s(f, "status") === "SUSPENDED" ? "SUSPENDED" : "ACTIVE"), "Status updated.");
+export const updateStaffAction = async (_p: ActionState, fd: FormData) =>
+  run(fd, (f, ctx) => updateStaff(ctx, { staffId: s(f, "staffId"), fullName: s(f, "fullName"), region: s(f, "region") || null, businessUnit: s(f, "businessUnit") || null }), "Staff details updated.");
 export const addMemberAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => addGroupMember(ctx, s(f, "group"), s(f, "email")), "Recipient added.");
 export const removeMemberAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => removeGroupMember(ctx, s(f, "group"), s(f, "email")), "Recipient removed.");
 export const assignTaskAction = async (_p: ActionState, fd: FormData) => run(fd, (f, ctx) => adminAssignTask(ctx, s(f, "taskId"), s(f, "staffId"), s(f, "note")), "Task assigned.");
