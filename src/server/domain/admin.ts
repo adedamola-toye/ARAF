@@ -77,6 +77,26 @@ export async function provisionStaff(ctx: Ctx, p: { email: string; fullName: str
   });
 }
 
+/** Correct a staff member's name, state or business unit. Role scopes are changed separately on each role. */
+export async function updateStaff(ctx: Ctx, p: { staffId: string; fullName: string; region?: string | null; businessUnit?: string | null }) {
+  return adminOp(ctx, "STAFF_UPDATED", async (tx) => {
+    const current = (
+      await tx.query<{ full_name: string; region: string | null; business_unit: string | null }>(
+        "SELECT full_name, region, business_unit FROM staff WHERE id = $1 FOR UPDATE",
+        [p.staffId],
+      )
+    ).rows[0];
+    if (!current) throw notFound();
+    const fullName = p.fullName.trim();
+    if (fullName.length < 3) throw invalid("Enter the staff member's full name.", { fullName: "Enter the full name." });
+    const region = p.region?.trim() || null;
+    if (region && !isRegion(region)) throw invalid("Unknown state.", { region: "Unknown state." });
+    const businessUnit = (p.businessUnit ?? "").trim().slice(0, 80) || null;
+    await tx.query("UPDATE staff SET full_name = $2, region = $3, business_unit = $4, updated_at = $5 WHERE id = $1", [p.staffId, fullName, region, businessUnit, ctx.now]);
+    await audit(tx, ctx, { action: "STAFF_UPDATED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, before: current, after: { fullName, region, businessUnit } } });
+  });
+}
+
 export async function setStaffStatus(ctx: Ctx, staffId: string, status: "ACTIVE" | "SUSPENDED") {
   return adminOp(ctx, "STAFF_STATUS_CHANGED", async (tx) => {
     if (staffId === ctx.actor!.staffId) throw forbidden("You cannot change your own status.");
@@ -100,6 +120,7 @@ async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: strin
   if (REGION_REQUIRED_ROLES.includes(p.role) && !region) throw invalid("This role requires a state.", { region: "Required." });
   if (region && !isRegion(region)) throw invalid("Unknown state.");
   const team = (p.team ?? "").trim().toUpperCase() || null;
+  const businessUnit = p.businessUnit?.trim() || staff.business_unit || null;
   if (team && !/^[A-Z0-9][A-Z0-9 _-]{1,40}$/.test(team)) throw invalid("Team codes use letters, digits, spaces, - or _.", { team: "Invalid team." });
   if (["RM", "TEAM_LEAD"].includes(p.role) && !team) throw invalid("Relationship Managers and Team Leads need a team so requests can be routed to the right Team Lead.", { team: "Team required." });
   if (SINGLE_HOLDER_ROLES.includes(p.role)) {
@@ -114,12 +135,13 @@ async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: strin
   try {
     await tx.query(
       `INSERT INTO role_assignments (staff_id, role, region, business_unit, granted_by, granted_at, team) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-      [p.staffId, p.role, region, p.businessUnit?.trim() || staff.business_unit || null, ctx.actor!.staffId, ctx.now, team],
+      [p.staffId, p.role, region, businessUnit, ctx.actor!.staffId, ctx.now, team],
     );
   } catch (e) {
     if ((e as { code?: string }).code === "23505") throw conflict("The staff member already holds this role.");
     throw e;
   }
+  await tx.query("UPDATE staff SET region = $2, business_unit = $3, updated_at = $4 WHERE id = $1", [p.staffId, region, businessUnit, ctx.now]);
   await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region, team } });
 }
 

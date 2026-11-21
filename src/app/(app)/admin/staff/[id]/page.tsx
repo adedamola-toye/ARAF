@@ -4,7 +4,7 @@ import { requireSuperAdmin } from "../../guard";
 import { db } from "@/server/db";
 import { ROLES, ROLE_LABELS, REGIONS, SINGLE_HOLDER_ROLES, type Role } from "@/server/domain/roles";
 import { formatLagos } from "@/server/time";
-import { GrantRoleForm, RevokeRoleButton, StatusButton } from "../../AdminForms";
+import { EditStaffForm, GrantRoleForm, RevokeRoleButton, StatusButton } from "../../AdminForms";
 
 export const metadata = { title: "Staff member" };
 
@@ -25,18 +25,26 @@ export default async function StaffDetail({ params, searchParams }: { params: Pr
   const holders = (await db.query("SELECT role, staff_id FROM role_assignments WHERE active AND role = ANY($1::text[])", [SINGLE_HOLDER_ROLES])).rows;
   const self = id === session.staffId;
   const open = Number((await db.query("SELECT count(*) AS n FROM tasks WHERE assignee_id = $1 AND status = 'OPEN'", [id])).rows[0].n);
+  const roleScope = assignments.find((a) => a.active && (a.region || a.business_unit)) ?? {};
+  const region = s.region ?? roleScope.region ?? null;
+  const businessUnit = s.business_unit ?? roleScope.business_unit ?? null;
   return (
     <>
       <div className="page-head">
         <div>
           <p className="small muted" style={{ margin: 0 }}><Link href="/admin/staff">Staff &amp; roles</Link></p>
           <h1>{s.full_name}</h1>
-          <p>{s.email} · {s.region ?? "No state"} · {s.business_unit ?? "No unit"} · {open} open task(s)</p>
+          <p>{s.email} · {region ?? "No state"} · {businessUnit ?? "No unit"} · {open} open task(s)</p>
         </div>
         {!self && <StatusButton staffId={id} status={s.status} />}
       </div>
       {sp.created && <div className="alert alert-success" style={{ marginBottom: 12 }}>Added to the bank directory. Now assign their role below.</div>}
       {self && <div className="alert alert-info" style={{ marginBottom: 12 }}>You cannot change your own role assignments or status (separation of duties).</div>}
+      <div className="card">
+        <h2>Staff details</h2>
+        <p className="small muted" style={{ marginTop: 0 }}>Correct the person&apos;s name, state or business unit here. This is what the staff list shows; no re-upload is needed.</p>
+        <EditStaffForm staffId={id} fullName={s.full_name} region={region} businessUnit={businessUnit} regions={[...REGIONS]} />
+      </div>
       <div className="card">
         <h2>Role assignments</h2>
         <div className="table-wrap">

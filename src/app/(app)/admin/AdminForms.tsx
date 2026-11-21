@@ -68,6 +68,27 @@ export function StatusButton({ staffId, status }: { staffId: string; status: str
   );
 }
 
+export function EditStaffForm({ staffId, fullName, region, businessUnit, regions }: { staffId: string; fullName: string; region: string | null; businessUnit: string | null; regions: string[] }) {
+  return (
+    <ActionForm action={A.updateStaffAction} resetOnSuccess>
+      <input type="hidden" name="staffId" value={staffId} />
+      <div className="grid-3">
+        <div className="field"><label htmlFor="es-name">Full name</label><input id="es-name" name="fullName" defaultValue={fullName} required minLength={3} /></div>
+        <div className="field">
+          <label htmlFor="es-region">State</label>
+          <select id="es-region" name="region" defaultValue={region ?? ""}>
+            <option value="">No state</option>
+            {regions.map((r) => <option key={r}>{r}</option>)}
+          </select>
+        </div>
+        <div className="field"><label htmlFor="es-unit">Business unit</label><input id="es-unit" name="businessUnit" defaultValue={businessUnit ?? ""} maxLength={80} /></div>
+      </div>
+      <div><SubmitButton className="btn btn-dark">Save details</SubmitButton></div>
+      <p className="small muted" style={{ margin: 0 }}>This updates the person&apos;s record and how they appear in the staff list. Existing role scopes are unchanged; revoke and re-grant a role to change its scope.</p>
+    </ActionForm>
+  );
+}
+
 export function GroupMemberForm({ group }: { group: string }) {
   return (
     <ActionForm action={A.addMemberAction} resetOnSuccess>

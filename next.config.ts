@@ -1,6 +1,9 @@
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Pin tracing to this app. A lockfile in a parent folder otherwise makes Next infer the wrong workspace root.
+  outputFileTracingRoot: path.resolve(__dirname),
   // Security hardening: never announce the framework (X-Powered-By). Guarded by tests/security-headers.test.ts.
   poweredByHeader: false,
   serverExternalPackages: ["pg", "exceljs", "nodemailer"],

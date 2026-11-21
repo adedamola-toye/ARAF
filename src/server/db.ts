@@ -13,10 +13,18 @@ const globalForPool = globalThis as unknown as { __wbPool?: Pool; __wbPoolUrl?: 
 export function pool(): Pool {
   const url = config.databaseUrl;
   if (!globalForPool.__wbPool || globalForPool.__wbPoolUrl !== url) {
-    globalForPool.__wbPool = new Pool({ connectionString: url, max: 10 });
+    const previous = globalForPool.__wbPool;
+    if (previous) void previous.end().catch(() => undefined);
+    const next = new Pool({ connectionString: url, max: 10, keepAlive: true, idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000 });
+    globalForPool.__wbPool = next;
     globalForPool.__wbPoolUrl = url;
+    // An idle client can be dropped by the database or its pooler; without this listener Node treats it as an
+    // unhandled error and can take the process down. The pool discards the dead client and reconnects on demand.
+    next.on("error", (err) => {
+      console.error(`Idle database client error: ${err.message}`);
+    });
     // Ensure every session uses UTC.
-    globalForPool.__wbPool.on("connect", (c) => {
+    next.on("connect", (c) => {
       void c.query("SET TIME ZONE 'UTC'");
     });
   }

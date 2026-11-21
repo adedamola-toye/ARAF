@@ -116,8 +116,22 @@ export interface FinFilters {
 const CATEGORY: Record<string, string> = { BUSINESS_OWNER: "Business", SALARY_EARNER: "Salaried" };
 const POST_APPROVAL = ["OFFER_PREPARATION", "CO3_PACK_REVIEW", "DISBURSEMENT_CHECK", "DISBURSEMENT_CORRECTION", "DISBURSEMENT_BOOKING", "PAYMENT_RECONCILIATION", "COMPLETION", "FULFILMENT", "VENDOR_CONFIRMATION", "COMPLETED", "CLOSED"];
 
+/**
+ * Only a real calendar date in YYYY-MM-DD form is used as a bound; a malformed or missing value means "no bound".
+ * Query strings are user input, so they must never reach PostgreSQL's date cast unchecked.
+ */
+export function dateBound(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const s = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+  const d = new Date(`${s}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== s ? null : s;
+}
+
 export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): Promise<FinFact[]> {
   if (scope.kind === "NONE") return [];
+  const from = dateBound(f.from);
+  const to = dateBound(f.to);
   const rows = (
     await q.query(
       `WITH apps AS (
@@ -162,7 +176,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
          LEFT JOIN staff cr ON cr.id = lr.manager_id
          LEFT JOIN staff sr ON sr.id = a.selected_rbe_id
          LEFT JOIN staff rh ON rh.id = a.routing_unit_head_id`,
-      [scope.kind === "STAFF" ? scope.staffIds : null, f.from || null, f.to || null, scope.kind === "STAFF" ? (scope.teams ?? []) : [], scope.kind === "STAFF" ? (scope.regions ?? []) : [], scope.kind === "STAFF" ? (scope.viewerId ?? null) : null],
+      [scope.kind === "STAFF" ? scope.staffIds : null, from, to, scope.kind === "STAFF" ? (scope.teams ?? []) : [], scope.kind === "STAFF" ? (scope.regions ?? []) : [], scope.kind === "STAFF" ? (scope.viewerId ?? null) : null],
     )
   ).rows;
   const facts: FinFact[] = rows.map((r) => {
@@ -242,9 +256,11 @@ export interface TrendPoint {
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 /** Daily buckets up to a month, weekly up to six months, monthly otherwise. Each amount is dated by its own event. */
 export function trend(facts: FinFact[], from?: string | null, to?: string | null): { grain: "day" | "week" | "month"; points: TrendPoint[] } {
+  const fromBound = dateBound(from);
+  const toBound = dateBound(to);
   const dates = facts.flatMap((x) => [x.submittedAt, x.approvedAt, x.disbursedAt]).filter((d): d is Date => !!d).map((d) => new Date(d));
-  const end = to ? new Date(`${to}T23:59:59Z`) : new Date(Math.max(Date.now(), ...dates.map((d) => d.getTime())));
-  const start = from ? new Date(`${from}T00:00:00Z`) : dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date(end.getTime() - 180 * 86_400_000);
+  const end = toBound ? new Date(`${toBound}T23:59:59Z`) : new Date(Math.max(Date.now(), ...dates.map((d) => d.getTime())));
+  const start = fromBound ? new Date(`${fromBound}T00:00:00Z`) : dates.length ? new Date(Math.min(...dates.map((d) => d.getTime()))) : new Date(end.getTime() - 180 * 86_400_000);
   const span = end.getTime() - start.getTime();
   const grain = span <= 31 * 86_400_000 ? "day" : span <= 182 * 86_400_000 ? "week" : "month";
   const bucketOf = (d: Date) => {
@@ -420,6 +436,8 @@ export interface AltFact {
 
 export async function altphonesFacts(q: Db, scope: Scope, f: { from?: string | null; to?: string | null } = {}): Promise<AltFact[]> {
   if (scope.kind === "NONE") return [];
+  const from = dateBound(f.from);
+  const to = dateBound(f.to);
   const rows = (
     await q.query(
       `SELECT a.id, a.ref, a.status, a.reservation_status, a.originator_role, coalesce(a.submitted_at, a.created_at) AS d,
@@ -434,7 +452,7 @@ export async function altphonesFacts(q: Db, scope: Scope, f: { from?: string | n
           AND ($1::uuid[] IS NULL OR a.originator_id = ANY($1))
           AND ($2::date IS NULL OR coalesce(a.submitted_at, a.created_at) >= $2::date)
           AND ($3::date IS NULL OR coalesce(a.submitted_at, a.created_at) < ($3::date + 1))`,
-      [scope.kind === "STAFF" ? scope.staffIds : null, f.from || null, f.to || null],
+      [scope.kind === "STAFF" ? scope.staffIds : null, from, to],
     )
   ).rows;
   return rows.map((r) => ({
