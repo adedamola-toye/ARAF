@@ -6,9 +6,9 @@ The CRM is built into ARAF. It uses ARAF's existing sign-in, roles, audit trail,
 | Person | What they get |
 |---|---|
 | **Every ARAF user** (RM, Team Lead, Delight Officer, Smile Associate, PM, Credit, UH, DH, BPM, Super Admin, …) | CRM Home, Raise Complaint, My Tickets. They can add information and files, reply to information requests, confirm a resolution (with an optional 1–5 rating) or reopen it. They see the public timeline only. |
-| **Resolution Officer** (a member of a CRM team) | Assigned to Me (New, In Progress, Pending Information, Resolved). Start work, add updates or internal notes, request information, transfer, escalate, resolve with a summary and evidence. |
+| **Resolution Officer** (a member of a CRM team) | Assigned to Me (New, In Progress, Pending Information, Resolved). Start work, add updates or internal notes, request information, reassign to a colleague in the same team or transfer to another team (reason required), escalate, resolve with a summary and evidence. |
 | **Team Lead / Queue Manager** (a team member with the lead role) | Team Queue: the Unassigned list, the whole team queue, officer workload and team performance. Can assign and reassign (reason required) and link related tickets. |
-| **CX Head** (new `CX_HEAD` role) | CX Command Centre, All Complaints (search and filters, escalations, overdue), Team Performance, CX Reports (CSV and PDF), knowledge base publishing. Can override routing (reason required), ask a team to act, reopen tickets, and close resolved tickets. It carries no Super Admin or financing authority. |
+| **CX Head** (new `CX_HEAD` role) | CX Command Centre, All Complaints (search and filters), SLA Monitoring (overdue), Escalations, Team Performance, CX Reports (CSV and PDF), knowledge base publishing. Can override routing (reason required), ask a team to act, reopen tickets, and close resolved tickets. It carries no Super Admin or financing authority. |
 | **Super Admin** | CRM configuration (Administration → CRM configuration). Read-only view of every ticket. |
 | **CRM team member** (new `CRM_AGENT` role) | Only for staff who have no other ARAF role. It lets them sign in and work their CRM team's tickets, and grants nothing else. |
 
@@ -38,7 +38,7 @@ Statuses run: New → Unassigned → Assigned → In Progress ↔ Pending Inform
 - **Escalation rules:** awaiting assignment over N minutes; assigned but not started over N; resolution time used reaches N%; deadline exceeded by N; reassigned N times; critical ticket unresolved over N. Each rule fires **once per ticket**. It notifies the Team Lead and/or CX Head (in-app and email), marks the ticket escalated if set to, and is recorded on the timeline and in the audit trail. Officers can also escalate manually.
 
 ## Measurements
-- **Each ticket:** created → routed, waiting for assignment, time with each officer and each team, first response, pending-information time, total elapsed, SLA-adjusted time (business time less paused time), breach, reassignments and reopenings.
+- **Each ticket** (Time measurements on the ticket page, for handlers and the CX Head): creation → routing, waiting for first assignment, first response, investigation (start of work → resolution), time waiting for information, total resolution time (elapsed), SLA-adjusted resolution time (business time less paused time), resolution → closure, SLA breach duration, reassignments and reopenings, plus the time held by each team and officer.
 - **Team and officer handling time:** taken from the hand-off history. A ticket that moves through three teams adds each team's own time to that team; the final resolver is not charged for the others.
 
 ## CX Head reporting

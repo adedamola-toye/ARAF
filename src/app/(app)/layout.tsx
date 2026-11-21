@@ -236,8 +236,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <NavLink href="/crm/cx" exact icon={<Radar {...ic} />}>
                 CX Command Centre
               </NavLink>
-              <NavLink href="/crm/all" count={crmCounts.escalated} alert icon={<ClipboardList {...ic} />}>
+              <NavLink href="/crm/all" icon={<ClipboardList {...ic} />}>
                 All Complaints
+              </NavLink>
+              <NavLink href="/crm/sla" icon={<Timer {...ic} />}>
+                SLA Monitoring
+              </NavLink>
+              <NavLink href="/crm/escalations" count={crmCounts.escalated} alert icon={<Siren {...ic} />}>
+                Escalations
               </NavLink>
               <NavLink href="/crm/performance" icon={<Gauge {...ic} />}>
                 Team Performance

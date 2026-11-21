@@ -307,3 +307,60 @@ export function handlingBreakdown(segs: { team_name: string; officer_name: strin
   }
   return { team: [...team.entries()], officer: [...officer.entries()] };
 }
+
+// ------------------------------------------------------------------ per-ticket time measurements
+
+export interface TicketTimings {
+  creation_to_routing_ms: number | null;
+  awaiting_first_assignment_ms: number | null;
+  first_response_ms: number | null;
+  investigation_ms: number | null;
+  pending_information_ms: number;
+  total_resolution_ms: number | null;
+  sla_resolution_ms: number | null;
+  resolution_to_closure_ms: number | null;
+  breach_ms: number | null;
+  reassignments: number;
+  reopenings: number;
+}
+
+/**
+ * Every §14.1 measurement for one ticket, from server timestamps and the immutable event history.
+ * Open intervals run to `now`. Pending information is the sum of each request → reply (or resolution) interval.
+ */
+export function ticketTimings(
+  t: { created_at: Date; routed_at: Date | null; first_assigned_at: Date | null; first_response_at: Date | null; started_at: Date | null; resolved_at: Date | null; closed_at: Date | null; resolution_due: Date | null; paused_at: Date | null; sla_paused_ms: string | number; sla_business_hours: boolean | null; reassign_count: number; reopen_count: number; status: string },
+  events: { at: Date; kind: string }[],
+  now: Date,
+  cal: Parameters<typeof slaMs>[3],
+): TicketTimings {
+  const ms = (a: Date | null | undefined, b: Date | null | undefined) => (a && b ? Math.max(0, new Date(b).getTime() - new Date(a).getTime()) : null);
+  const created = new Date(t.created_at);
+  let pending = 0;
+  let openAt: Date | null = null;
+  for (const e of [...events].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())) {
+    if (e.kind === "INFO_REQUESTED" && !openAt) openAt = new Date(e.at);
+    else if (openAt && ["RESUMED", "INFO_PROVIDED", "RESOLVED", "TRANSFERRED"].includes(e.kind)) {
+      pending += new Date(e.at).getTime() - openAt.getTime();
+      openAt = null;
+    }
+  }
+  if (openAt) pending += now.getTime() - openAt.getTime();
+  const end = t.resolved_at ? new Date(t.resolved_at) : null;
+  const bh = t.sla_business_hours ?? true;
+  const due = t.resolution_due ? new Date(t.resolution_due) : null;
+  const breachEnd = end ?? (isOpen(t.status) && !t.paused_at ? now : null);
+  return {
+    creation_to_routing_ms: ms(created, t.routed_at),
+    awaiting_first_assignment_ms: t.first_assigned_at ? ms(created, t.first_assigned_at) : isOpen(t.status) ? ms(created, now) : null,
+    first_response_ms: ms(created, t.first_response_at),
+    investigation_ms: t.started_at ? ms(t.started_at, end ?? now) : null,
+    pending_information_ms: pending,
+    total_resolution_ms: ms(created, end),
+    sla_resolution_ms: end ? Math.max(0, slaMs(created, end, bh, cal) - Number(t.sla_paused_ms)) : null,
+    resolution_to_closure_ms: ms(end, t.closed_at),
+    breach_ms: due && breachEnd && breachEnd > due ? slaMs(due, breachEnd, bh, cal) : due ? 0 : null,
+    reassignments: t.reassign_count,
+    reopenings: t.reopen_count,
+  };
+}

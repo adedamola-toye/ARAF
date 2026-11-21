@@ -28,8 +28,8 @@ export default async function CommandCentre({ searchParams }: { searchParams: Pr
         <Metric k="Unassigned" v={<Link href="/crm/all?status=UNASSIGNED">{a.now.unassigned}</Link>} />
         <Metric k="In progress" v={a.now.in_progress} />
         <Metric k="Pending information" v={a.now.pending_info} />
-        <Metric k="Escalated" v={<Link href="/crm/all?escalated=1">{a.now.escalated}</Link>} />
-        <Metric k="Overdue" v={<Link href="/crm/all?overdue=1">{a.now.overdue}</Link>} />
+        <Metric k="Escalated" v={<Link href="/crm/escalations">{a.now.escalated}</Link>} />
+        <Metric k="Overdue" v={<Link href="/crm/sla">{a.now.overdue}</Link>} />
       </div>
       <h2 style={{ fontSize: 15 }}>
         {period.from} to {period.to}

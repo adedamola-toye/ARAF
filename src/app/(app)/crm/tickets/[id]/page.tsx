@@ -5,7 +5,8 @@ import { db } from "@/server/db";
 import { ticketDetail } from "@/server/crm/tickets";
 import { canManage, canWork, isOversight, PRIORITY_LABELS } from "@/server/crm/core";
 import { signAttachmentLink } from "@/server/crm/attachments";
-import { handlingBreakdown } from "@/server/crm/analytics";
+import { handlingBreakdown, ticketTimings } from "@/server/crm/analytics";
+import { crmSettings } from "@/server/crm/core";
 import { caseAccess } from "@/server/domain/access";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { STAGE_LABELS, type Stage } from "@/server/domain/stages";
@@ -57,12 +58,15 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
   const canOpenRequest = t.application_id ? (await caseAccess(db, session.staffId, t.application_id)).canView : false;
   const manage = canManage(p, t);
   const work = canWork(p, t);
-  const officers = manage
+  const handOn = !manage && t.assignee_id === session.staffId && !["RESOLVED", "CLOSED"].includes(t.status);
+  const officers = manage || handOn
     ? (await db.query<{ id: string; name: string; role: string }>("SELECT s.id, s.full_name AS name, m.member_role AS role FROM crm_team_members m JOIN staff s ON s.id = m.staff_id AND s.status = 'ACTIVE' WHERE m.team_id = $1 AND m.active AND s.id <> $2 ORDER BY m.member_role DESC, s.full_name", [t.team_id, t.creator_id])).rows
     : [];
   const teams = work ? (await db.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE active AND id <> $1 ORDER BY name", [t.team_id])).rows : [];
   const ownerSince = d.assignments.find((a) => !a.ended_at)?.started_at ?? null;
   const breakdown = full ? handlingBreakdown(d.assignments, new Date(now)) : null;
+  const tm = full ? ticketTimings(t, d.events, new Date(now), await crmSettings(db)) : null;
+  const D = (v: number | null) => (v === null ? "—" : formatDuration(v));
   const elapsed = (t.closed_at ? new Date(t.closed_at) : t.resolved_at ? new Date(t.resolved_at) : new Date(now)).getTime() - new Date(t.created_at).getTime();
   return (
     <>
@@ -276,6 +280,35 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
                   ))}
                 </dl>
               )}
+              {tm && (
+                <>
+                  <h3 style={{ fontSize: 14, marginTop: 16 }}>Time measurements</h3>
+                  <dl className="kv">
+                    <dt>Creation to routing</dt>
+                    <dd>{D(tm.creation_to_routing_ms)}</dd>
+                    <dt>Waiting for first assignment</dt>
+                    <dd>{D(tm.awaiting_first_assignment_ms)}</dd>
+                    <dt>First response</dt>
+                    <dd>{D(tm.first_response_ms)}</dd>
+                    <dt>Investigation (start of work to resolution)</dt>
+                    <dd>{D(tm.investigation_ms)}</dd>
+                    <dt>Waiting for information</dt>
+                    <dd>{D(tm.pending_information_ms)}</dd>
+                    <dt>Total resolution time (elapsed)</dt>
+                    <dd>{D(tm.total_resolution_ms)}</dd>
+                    <dt>SLA-adjusted resolution time</dt>
+                    <dd>{D(tm.sla_resolution_ms)}</dd>
+                    <dt>Resolution to closure</dt>
+                    <dd>{D(tm.resolution_to_closure_ms)}</dd>
+                    <dt>SLA breach</dt>
+                    <dd>{tm.breach_ms === null ? "No target" : tm.breach_ms > 0 ? <span className="badge badge-red">Breached by {formatDuration(tm.breach_ms)}</span> : "Within target"}</dd>
+                    <dt>Reassignments / reopenings</dt>
+                    <dd>
+                      {tm.reassignments} / {tm.reopenings}
+                    </dd>
+                  </dl>
+                </>
+              )}
               {(d.links.length > 0 || d.children.length > 0) && (
                 <>
                   <h3 style={{ fontSize: 14, marginTop: 16 }}>Related tickets</h3>
@@ -299,6 +332,7 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             isCreator={t.creator_id === p.staffId}
             isAssignee={t.assignee_id === p.staffId}
             canManage={manage}
+            canHandOn={handOn}
             canWork={work}
             isCxHead={p.isCxHead}
             isMember={p.officerTeams.includes(t.team_id)}

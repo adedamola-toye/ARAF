@@ -9,7 +9,7 @@ import { addUpdate, assignTicket, confirmResolution, createTicket, escalateTicke
 import { saveCrmSettings, saveEscalationRule, saveRoutingRule, saveSlaPolicy, saveTeam, setTeamMember, saveSubcategory, saveCategory } from "@/server/crm/config";
 import { runCrmAutoClose, runCrmEscalations } from "@/server/crm/jobs";
 import { addBusinessMs, businessMsBetween } from "@/server/crm/calendar";
-import { crmAnalytics, teamPerformance, officerPerformance } from "@/server/crm/analytics";
+import { crmAnalytics, teamPerformance, officerPerformance, ticketTimings } from "@/server/crm/analytics";
 import { buildCxReport, reportCsv, reportPdf, runCrmReports } from "@/server/crm/reports";
 import { addAttachment, readAttachment } from "@/server/crm/attachments";
 import { fromLagos } from "@/server/time";
@@ -73,7 +73,8 @@ describe("CRM registration, routing and lifecycle", () => {
     expect(b).toEqual({ ...a, created: false });
     // Concurrent submissions get distinct references.
     const bola = await at("rm.bola@altbank.ng", T0);
-    const many = await Promise.all(Array.from({ length: 6 }, (_, n) => createTicket(bola, { idempotencyKey: randomUUID(), productCode: "PLATFORM", ...i, subject: `Parallel ${n} complaint`, description: `Raised at the same time, number ${n}.` }, ).catch((e) => e)));
+    const many = await Promise.all(Array.from({ length: 6 }, (_, n) => createTicket(bola, { idempotencyKey: randomUUID(), productCode: "PLATFORM", ...i, subject: `Parallel ${n} complaint`, description: `Raised at the same time, number ${n}.`, confirmDuplicate: true })));
+    expect(many.every((m) => m.created)).toBe(true);
     expect(new Set(many.map((m) => m.ref)).size).toBe(6);
   });
 
@@ -308,5 +309,54 @@ describe("CX Head, configuration, reports and access", () => {
     expect(await runCrmReports(new Date(at8.getTime() + 60_000))).toBe(0);
     const mail = (await db.query("SELECT to_addresses FROM notification_outbox WHERE kind = 'CRM_REPORT'")).rows;
     expect(mail.flatMap((m) => m.to_addresses)).toEqual(["cx.head@altbank.ng"]);
+  });
+});
+
+describe("Officer hand-off and per-ticket measurements", () => {
+  it("the assigned officer can reassign to a colleague in the same team, with a reason; others cannot", async () => {
+    await person("officer.c@altbank.ng", "Chi Officer-C");
+    await setTeamMember(await at(ADMIN, T0), { teamId: ops, email: "officer.c@altbank.ng", memberRole: "OFFICER", reason: REASON });
+    const A = (await db.query("SELECT id FROM staff WHERE email='officer.a@altbank.ng'")).rows[0].id;
+    const C = (await db.query("SELECT id FROM staff WHERE email='officer.c@altbank.ng'")).rows[0].id;
+    const B = (await db.query("SELECT id FROM staff WHERE email='officer.b@altbank.ng'")).rows[0].id;
+    const t = await raise("rm.ade@altbank.ng", T0);
+    await assignTicket(await at("lead.ops@altbank.ng", T0), t.id, A);
+    await expect(assignTicket(await at("officer.c@altbank.ng", T0), t.id, C, "I will take this one over.")).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(assignTicket(await at("officer.a@altbank.ng", T0), t.id, C)).rejects.toMatchObject({ code: "VALIDATION" }); // reason required
+    await expect(assignTicket(await at("officer.a@altbank.ng", T0), t.id, B, "Handing to tech colleague.")).rejects.toMatchObject({ code: "VALIDATION" }); // other team
+    await assignTicket(await at("officer.a@altbank.ng", new Date(T0.getTime() + H)), t.id, C, "On leave tomorrow; Chi knows this supplier.");
+    const row = (await db.query("SELECT assignee_id, reassign_count FROM crm_tickets WHERE id = $1", [t.id])).rows[0];
+    expect(row).toMatchObject({ assignee_id: C, reassign_count: 1 });
+    expect((await db.query("SELECT reason FROM audit_events WHERE action = 'CRM_TICKET_REASSIGNED'")).rows[0].reason).toBe("On leave tomorrow; Chi knows this supplier.");
+  });
+
+  it("measures routing, assignment wait, first response, investigation, pending information, resolution, closure and breach from timestamps", async () => {
+    const admin = await at(ADMIN, T0);
+    await saveSlaPolicy(admin, { name: "Two hours", resolutionMinutes: 120, businessHours: false, active: true, reason: REASON });
+    const m = (min: number) => new Date(T0.getTime() + min * 60_000);
+    const t = await raise("rm.ade@altbank.ng", T0); // 09:00, due 11:00
+    const A = (await db.query("SELECT id FROM staff WHERE email='officer.a@altbank.ng'")).rows[0].id;
+    await assignTicket(await at("lead.ops@altbank.ng", m(15)), t.id, A);
+    await startWork(await at("officer.a@altbank.ng", m(25)), t.id);
+    await requestInformation(await at("officer.a@altbank.ng", m(40)), t.id, "Which approver is it with?");
+    await addUpdate(await at("rm.ade@altbank.ng", m(70)), t.id, "With the Lagos Unit Head.");
+    await resolveTicket(await at("officer.a@altbank.ng", m(150)), t.id, "Routed the task to the Lagos Unit Head; approved.");
+    await confirmResolution(await at("rm.ade@altbank.ng", m(180)), t.id);
+    const row = (await db.query("SELECT * FROM crm_tickets WHERE id = $1", [t.id])).rows[0];
+    const ev = (await db.query("SELECT at, kind FROM crm_events WHERE ticket_id = $1", [t.id])).rows;
+    const x = ticketTimings(row, ev, m(300), await crmSettings(db));
+    expect(x).toEqual({
+      creation_to_routing_ms: 0,
+      awaiting_first_assignment_ms: 15 * 60_000,
+      first_response_ms: 25 * 60_000,
+      investigation_ms: 125 * 60_000,
+      pending_information_ms: 30 * 60_000,
+      total_resolution_ms: 150 * 60_000,
+      sla_resolution_ms: 150 * 60_000, // continuous clock, pausing not enabled
+      resolution_to_closure_ms: 30 * 60_000,
+      breach_ms: 30 * 60_000, // resolved 11:30 against 11:00
+      reassignments: 0,
+      reopenings: 0,
+    });
   });
 });
