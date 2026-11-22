@@ -14,6 +14,7 @@ import { StageChip, WaitChip } from "@/components/Status";
 import { ArrowRight, Inbox, Search } from "lucide-react";
 import { WalletCard } from "@/components/WalletCard";
 import { walletToday } from "@/server/domain/wallet";
+import { PRIORITY_LABEL, PRIORITY_ORDER, priorityClassifier, type Priority } from "@/server/domain/queue-priority";
 
 export const metadata = { title: "My Action Queue" };
 
@@ -26,21 +27,35 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
   const rmAssigned = myRoles.includes("RM")
     ? (await db.query(`SELECT a.id, a.ref, a.customer_name, a.product_label, a.stage, s.full_name AS do_name FROM applications a JOIN staff s ON s.id = a.initiator_id WHERE a.assigned_rm_id = $1 AND a.stage IN ('DRAFT','INITIATOR_CORRECTION') ORDER BY a.updated_at DESC`, [session.staffId])).rows
     : [];
-  const q = await actionQueue(db, session.staffId, {
+  // Every matching task, grouped by priority (overdue, needs attention, returned, new, other), then paginated here.
+  const all = await actionQueue(db, session.staffId, {
     sort: (sp.sort as QueueSort) ?? "waiting",
     dir: sp.dir === "asc" ? "asc" : "desc",
     stage: sp.stage || null,
     role: sp.role || null,
     q: sp.q || null,
-    page: Number(sp.page ?? 1) || 1,
-    pageSize: Number(sp.size ?? 20) || 20,
+    all: true,
   });
   const now = Date.now();
+  const classify = await priorityClassifier(db, new Date(now));
+  const withPri = all.rows.map((r) => ({ ...r, priority: classify(r) as Priority }));
+  const counts = Object.fromEntries(PRIORITY_ORDER.map((p) => [p, withPri.filter((r) => r.priority === p).length])) as Record<Priority, number>;
+  const pri = (PRIORITY_ORDER as string[]).includes(sp.pri ?? "") ? (sp.pri as Priority) : null;
+  // Without an explicit sort, the most pressing group comes first (stable within the chosen order).
+  const ordered = pri ? withPri.filter((r) => r.priority === pri) : sp.sort ? withPri : [...withPri].sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
+  const pageSize = Math.min(Math.max(Number(sp.size ?? 20) || 20, 5), 100);
+  const pages = Math.max(1, Math.ceil(ordered.length / pageSize));
+  const page = Math.min(Math.max(Number(sp.page ?? 1) || 1, 1), pages);
+  const q = { ...all, rows: ordered.slice((page - 1) * pageSize, page * pageSize), total: ordered.length, page, pages, pageSize };
+  const priHref = (p: Priority | null) => {
+    const u = new URLSearchParams(Object.entries({ ...sp, pri: p ?? undefined, page: undefined }).filter(([, v]) => v) as [string, string][]);
+    return `/queue${u.size ? `?${u}` : ""}`;
+  };
   const sla = await slaPolicy(db);
   const exceptionIds = new Set((await db.query<{ application_id: string }>("SELECT application_id FROM credit_exceptions WHERE status = 'PENDING_REVIEW'")).rows.map((x) => x.application_id));
   const stages = [...new Set(q.facets.map((f) => f.stage))];
   const roles = [...new Set(q.facets.map((f) => f.assignee_role))];
-  const filtered = q.total !== q.allTotal;
+  const filtered = all.total !== all.allTotal;
   return (
     <>
       <PageHeader
@@ -103,6 +118,16 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
           </Link>
         )}
       </form>
+      <nav className="tabs" aria-label="Priority">
+        <Link className="tab" href={priHref(null)} aria-current={!pri ? "page" : undefined}>
+          All ({withPri.length})
+        </Link>
+        {PRIORITY_ORDER.map((p) => (
+          <Link key={p} className="tab" href={priHref(p)} aria-current={pri === p ? "page" : undefined}>
+            {PRIORITY_LABEL[p]} ({counts[p]})
+          </Link>
+        ))}
+      </nav>
       <div className="table-wrap">
         <table className="data responsive">
           <caption className="sr-only">Items awaiting your action</caption>
@@ -125,7 +150,7 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
               <tr>
                 <td colSpan={8} className="empty">
                   <Inbox className="icon" aria-hidden="true" />
-                  {filtered ? "No items match these filters." : "Nothing is waiting for you. New assignments appear here automatically."}
+                  {filtered || pri ? "No items match these filters." : "You're all caught up. New applications requiring your attention will appear here."}
                 </td>
               </tr>
             )}
@@ -154,6 +179,11 @@ export default async function QueuePage({ searchParams }: { searchParams: Promis
                   <td className="small nowrap" data-label="Assigned">{formatLagos(r.assigned_at)}</td>
                   <td className="nowrap" data-label="Waiting">
                     <WaitChip ms={waited} label={formatDuration(waited)} />
+                    {r.priority !== "OTHER" && r.priority !== "OVERDUE" && (
+                      <div>
+                        <span className={`badge ${r.priority === "URGENT" ? "badge-warn" : r.priority === "RETURNED" ? "badge-yellow" : "badge-blue"}`}>{PRIORITY_LABEL[r.priority]}</span>
+                      </div>
+                    )}
                     {slaStatus(r.assigned_at, new Date(now), sla)?.overdue && (
                       <div>
                         <span className="badge badge-red">SLA overdue</span>

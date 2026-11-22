@@ -32,6 +32,8 @@ export interface QueueQuery {
   q?: string | null;
   page?: number;
   pageSize?: number;
+  /** Return every matching row (the page groups them by priority and paginates itself). */
+  all?: boolean;
 }
 
 export interface QueueItem {
@@ -84,7 +86,7 @@ export async function actionQueue(q: Db, staffId: string, query: QueueQuery) {
       `SELECT t.id AS task_id, t.application_id, a.ref, a.customer_name, a.requested_amount_kobo, t.stage, t.assignee_role, t.assigned_at,
               t.required_action, a.applicant_type, a.product_label, a.suspended_at IS NOT NULL AS suspended,
               EXISTS (SELECT 1 FROM vf_photo_reviews pr WHERE pr.application_id = a.id AND pr.decision = 'SKIPPED') AS photo_skipped
-       ${base} ORDER BY ${sortCol} ${dir} NULLS LAST, t.id ASC LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
+       ${base} ORDER BY ${sortCol} ${dir} NULLS LAST, t.id ASC ${query.all ? "LIMIT 2000" : `LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`}`,
       params,
     )
   ).rows;

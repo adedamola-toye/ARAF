@@ -1,6 +1,7 @@
 import { BusinessDecisionForm } from "./RetailClient";
 import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
+import { nextTask } from "@/server/domain/queue-priority";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
@@ -134,6 +135,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   const committed = sp.done
     ? (await db.query(`SELECT d.action, d.created_at, d.stage FROM decisions d WHERE d.application_id = $1 AND d.actor_id = $2 ORDER BY d.seq DESC LIMIT 1`, [id, session.staffId])).rows[0]
     : null;
+  // After a decision: offer the most pressing remaining case (overdue first), so the officer need not go back to the queue.
+  const next = committed ? await nextTask(db, session.staffId, new Date(), myTask?.id ?? null) : null;
   const retail = app.workflow === "RETAIL";
   const milestones = retail ? RETAIL_MILESTONES : MILESTONES;
   const mIndex = (st: Stage) => milestones.findIndex((m) => m.stages.includes(st));
@@ -226,6 +229,15 @@ export default async function CasePage({ params, searchParams }: { params: Promi
             Recorded: <strong>{ACTION_LABELS[committed.action as TaskAction] ?? committed.action}</strong> at {stageLabel(committed.stage as Stage, app.approval_policy)}, {formatLagos(committed.created_at)}. The request is now <strong>{stageLabel(app.stage as Stage, app.approval_policy)}</strong>
             {c.openTask ? ` with ${c.openTask.assignee_name ?? "the Super Admin for assignment"}.` : "."}
           </span>
+          {next ? (
+            <Link className="btn btn-primary btn-sm" href={`/requests/${next.application_id}?task=${next.task_id}`} style={{ marginLeft: "auto" }}>
+              Next case: {next.ref}
+            </Link>
+          ) : (
+            <span className="small" style={{ marginLeft: "auto" }}>
+              You&apos;re all caught up.
+            </span>
+          )}
         </div>
       )}
       {sp.submitted && (
