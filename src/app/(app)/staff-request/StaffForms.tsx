@@ -1,4 +1,5 @@
 "use client";
+import { chunkedUpload } from "@/lib/chunked-upload";
 import { checklistFor } from "@/lib/approval-checklists";
 import { VerifyButton } from "@/components/VerifyDialog";
 import { IncidentCard } from "@/components/Incident";
@@ -275,31 +276,17 @@ export function StaffUpload({ requestId, categories, title = "Upload a document"
   const send = () => {
     const f = file.current?.files?.[0];
     if (!f) return setPhase({ kind: "error", msg: "Choose a file first." });
-    const fd = new FormData();
-    fd.set("requestId", requestId);
-    fd.set("category", category);
-    fd.set("file", f);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/staff-requests/upload");
-    xhr.upload.onprogress = (e) => e.lengthComputable && setPhase({ kind: "uploading", pct: Math.round((e.loaded / e.total) * 100) });
-    xhr.onload = () => {
-      let body: { ok?: boolean; error?: string; scanStatus?: string; incident?: IncidentView } = {};
-      try {
-        body = JSON.parse(xhr.responseText);
-      } catch {
-        /* not JSON */
-      }
-      if (xhr.status === 401) return (window.location.href = "/session-expired?reason=IDLE_TIMEOUT");
-      if (body.ok) {
-        setPhase({ kind: "done", msg: body.scanStatus === "QUARANTINED" ? `${f.name} uploaded; the malware scan will finish shortly.` : `${f.name} uploaded.` });
+    // Sent in parts (resumable); the server applies every document rule to the reassembled file.
+    setPhase({ kind: "uploading", pct: 0 });
+    void chunkedUpload({ file: f, target: "STAFF_REQUEST", targetId: requestId, category, onProgress: (pct) => setPhase({ kind: "uploading", pct }) }).then((r) => {
+      if (!r.ok && r.expired) return void (window.location.href = "/session-expired?reason=IDLE_TIMEOUT");
+      if (r.ok) {
+        setPhase({ kind: "done", msg: r.result.scanStatus === "QUARANTINED" ? `${f.name} uploaded; the malware scan will finish shortly.` : `${f.name} uploaded.` });
         if (file.current) file.current.value = "";
         setName("");
         router.refresh();
-      } else setPhase({ kind: "error", msg: body.error ?? "The upload failed. Try again.", incident: body.incident });
-    };
-    xhr.onerror = () => setPhase({ kind: "error", msg: "Network error. Check your connection and retry." });
-    setPhase({ kind: "uploading", pct: 0 });
-    xhr.send(fd);
+      } else setPhase({ kind: "error", msg: r.error, incident: r.incident });
+    });
   };
   return (
     <div className="upload" role="group" aria-labelledby={`${id}-t`}>

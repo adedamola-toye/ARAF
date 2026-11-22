@@ -153,6 +153,10 @@ export const config = {
   get maxUploadBytes() {
     return int("MAX_UPLOAD_BYTES", 15 * 1024 * 1024);
   },
+  /** Largest document accepted (the whole file). Files above the per-request limit arrive in pieces. */
+  get maxDocumentBytes() {
+    return int("MAX_DOCUMENT_BYTES", 50 * 1024 * 1024);
+  },
   get scannerDriver() {
     return str("SCANNER_DRIVER", "dev") as "none" | "dev" | "defer";
   },

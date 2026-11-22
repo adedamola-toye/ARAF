@@ -271,12 +271,59 @@ async function insertDocumentRow(
 }
 
 /** Upload a document: validate, store in quarantine, record, then scan. */
+/**
+ * Which document types this person may upload on this request right now, and in which role.
+ * Shared by the upload itself and the pre-check that runs before a large file is sent.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function uploadRights(tx: Db, staffId: string, app: Record<string, any>, category: string): Promise<{ allowed: string[]; role: string | null }> {
+  const task = (await tx.query("SELECT * FROM tasks WHERE application_id = $1 AND status = 'OPEN'", [app.id])).rows[0];
+  let role: string | null = null;
+  let allowed: string[] = [];
+  const retail = app.workflow === "RETAIL";
+  const byStage = retail ? RETAIL_UPLOADABLE_BY_STAGE : UPLOADABLE_BY_STAGE;
+  if (app.stage === "DRAFT" && app.initiator_id === staffId) {
+    allowed = byStage.DRAFT!;
+    role = app.initiator_role;
+  } else if (task && task.assignee_id === staffId) {
+    allowed = byStage[task.stage as Stage] ?? [];
+    role = task.assignee_role;
+    const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = $2 AND active", [staffId, role]);
+    if (!held.rowCount) allowed = [];
+  } else if (retail && app.assigned_rm_id === staffId && (app.stage === "DRAFT" || app.stage === "INITIATOR_CORRECTION")) {
+    // Explicitly assigned RM on a Delight Officer case supplies RM-specific evidence.
+    const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = 'RM' AND active", [staffId]);
+    if (held.rowCount) {
+      allowed = ASSIGNED_RM_UPLOADS;
+      role = "RM";
+    }
+  } else if (category === "INVOICE_CONFIRMATION_RESPONSE") {
+    const ic = await tx.query(
+      `SELECT 1 FROM invoice_confirmations WHERE application_id = $1 AND officer_id = $2 AND status = 'PENDING'
+         AND EXISTS (SELECT 1 FROM role_assignments WHERE staff_id = $2 AND role = 'INVOICE_CONFIRMATION_OFFICER' AND active)`,
+      [app.id, staffId],
+    );
+    if (ic.rowCount) {
+      allowed = ["INVOICE_CONFIRMATION_RESPONSE"];
+      role = "INVOICE_CONFIRMATION_OFFICER";
+    }
+  } else if (retail && category === "REPAYMENT_EVIDENCE") {
+    const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = 'COLLECTIONS_OFFICER' AND active", [staffId]);
+    const fac = await tx.query("SELECT 1 FROM facilities WHERE application_id = $1 AND status IN ('ACTIVE','IN_ARREARS','RESTRUCTURED')", [app.id]);
+    if (held.rowCount && fac.rowCount) {
+      allowed = ["REPAYMENT_EVIDENCE"];
+      role = "COLLECTIONS_OFFICER";
+    }
+  }
+  return { allowed, role };
+}
+
 export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id: string; version: number; scanStatus: string }> {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
   const filename = sanitizeFilename(input.filename);
   if (input.data.length === 0) throw invalid("The file is empty.");
-  if (input.data.length > config.maxUploadBytes) throw invalid(`The file exceeds the ${Math.round(config.maxUploadBytes / 1048576)} MB limit.`);
+  if (input.data.length > config.maxDocumentBytes) throw invalid(`The file exceeds the ${Math.round(config.maxDocumentBytes / 1048576)} MB limit.`);
   const mime = sniffAllowedType(filename, input.data);
   if (!mime) throw invalid(`Unsupported or mismatched file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}.`);
   if (input.category === "GENERATED_OFFER" || input.category === "GENERATED_OFFER_PDF") throw forbidden("Generated offers are produced by the system.");
@@ -302,45 +349,9 @@ export async function uploadDocument(ctx: Ctx, input: UploadInput): Promise<{ id
     rec = await withTx(async (tx) => {
       const app = (await tx.query("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [input.applicationId])).rows[0];
       if (!app) throw notFound();
-      const task = (await tx.query("SELECT * FROM tasks WHERE application_id = $1 AND status = 'OPEN'", [app.id])).rows[0];
-      let role: string | null = null;
-      let allowed: string[] = [];
-      const retail = app.workflow === "RETAIL";
-      const byStage = retail ? RETAIL_UPLOADABLE_BY_STAGE : UPLOADABLE_BY_STAGE;
       if (app.suspended_at) throw forbidden("This request is suspended. Uploads are paused until it is resumed.");
-      if (app.stage === "DRAFT" && app.initiator_id === actor.staffId) {
-        allowed = byStage.DRAFT!;
-        role = app.initiator_role;
-      } else if (task && task.assignee_id === actor.staffId) {
-        allowed = byStage[task.stage as Stage] ?? [];
-        role = task.assignee_role;
-        const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = $2 AND active", [actor.staffId, role]);
-        if (!held.rowCount) allowed = [];
-      } else if (retail && app.assigned_rm_id === actor.staffId && (app.stage === "DRAFT" || app.stage === "INITIATOR_CORRECTION")) {
-        // Explicitly assigned RM on a Delight Officer case supplies RM-specific evidence.
-        const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = 'RM' AND active", [actor.staffId]);
-        if (held.rowCount) {
-          allowed = ASSIGNED_RM_UPLOADS;
-          role = "RM";
-        }
-      } else if (input.category === "INVOICE_CONFIRMATION_RESPONSE") {
-        const ic = await tx.query(
-          `SELECT 1 FROM invoice_confirmations WHERE application_id = $1 AND officer_id = $2 AND status = 'PENDING'
-             AND EXISTS (SELECT 1 FROM role_assignments WHERE staff_id = $2 AND role = 'INVOICE_CONFIRMATION_OFFICER' AND active)`,
-          [app.id, actor.staffId],
-        );
-        if (ic.rowCount) {
-          allowed = ["INVOICE_CONFIRMATION_RESPONSE"];
-          role = "INVOICE_CONFIRMATION_OFFICER";
-        }
-      } else if (retail && input.category === "REPAYMENT_EVIDENCE") {
-        const held = await tx.query("SELECT 1 FROM role_assignments WHERE staff_id = $1 AND role = 'COLLECTIONS_OFFICER' AND active", [actor.staffId]);
-        const fac = await tx.query("SELECT 1 FROM facilities WHERE application_id = $1 AND status IN ('ACTIVE','IN_ARREARS','RESTRUCTURED')", [app.id]);
-        if (held.rowCount && fac.rowCount) {
-          allowed = ["REPAYMENT_EVIDENCE"];
-          role = "COLLECTIONS_OFFICER";
-        }
-      }
+      const { allowed, role } = await uploadRights(tx, actor.staffId, app, input.category);
+      const retail = app.workflow === "RETAIL";
       if (!allowed.includes(input.category)) {
         throw forbidden("You cannot upload this document type at the current stage.");
       }

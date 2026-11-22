@@ -20,6 +20,7 @@ import { rescanStaffDocuments } from "../staff/documents";
 import { runCrmAutoClose, runCrmEscalations } from "../crm/jobs";
 import { runCrmReports } from "../crm/reports";
 import { rescanCrmAttachments } from "../crm/attachments";
+import { purgeExpiredUploads } from "../uploads";
 
 /** Retry scans for files left in quarantine (e.g. scanner unavailable at upload time). */
 export async function rescanQuarantined(now = new Date()) {
@@ -71,5 +72,6 @@ export async function workerTick(now = new Date()) {
   results.crmAutoClosed = await runCrmAutoClose(now);
   results.crmReports = await runCrmReports(now);
   await rescanCrmAttachments(now);
+  results.uploadsExpired = await purgeExpiredUploads(now);
   return results;
 }
