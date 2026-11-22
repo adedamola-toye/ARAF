@@ -27,6 +27,9 @@ import { crmNavCounts, crmPrincipal, isOversight } from "@/server/crm/core";
 import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
+import { BottomNav, type BottomItem } from "@/components/BottomNav";
+import { HideAmountsButton, NavCollapseButton, ShellPrefsInit } from "@/components/ShellPrefs";
+import "./araf-theme.css";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 /** Roles that review or approve requests: they get "Requests I approved". */
@@ -73,6 +76,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // The CRM menu must never take the app down (e.g. the web release goes live before the worker has applied migration 052).
   const crm = await crmPrincipal(db, session.staffId).catch(() => ({ staffId: session.staffId, active: true, isAdmin: false, isCxHead: false, leadTeams: [] as string[], officerTeams: [] as string[] }));
   const crmCounts = await crmNavCounts(db, crm).catch(() => ({ assigned: 0, unassigned: 0, escalated: 0 }));
+  const showReports = godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "RBE", "MERCHANT_OFFICER_HEAD"].includes(r));
+  // Mobile bottom navigation: four destinations for the person's main job, plus More (the full menu).
+  const approverOnly = !isInitiatorWs && roles.some((r) => APPROVER_NAV_ROLES.includes(r));
+  const bottom: BottomItem[] = [
+    ...(altWs && alt.originator ? [{ href: "/altphones", label: "New sale", icon: "altphones" as const, exact: true }] : []),
+    ...(!isInitiatorWs && !approverOnly && !altWs && staffOk ? [{ href: "/staff-request", label: "Advance", icon: "salary" as const, count: myOfferCount }] : []),
+    { href: "/queue", label: "Queue", icon: "queue" as const, count: queueCount },
+    ...(isInitiatorWs ? [{ href: "/requests/new", label: "New", icon: "new" as const }] : []),
+    ...(approverOnly ? [{ href: "/requests/approved", label: "Approved", icon: "approved" as const }] : []),
+    { href: "/crm", label: "CRM", icon: "crm" as const },
+    { href: "/notifications", label: "Alerts", icon: "bell" as const, count: unread },
+  ];
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
@@ -82,84 +97,114 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <BankMark />
         </div>
         <div className="nav-section">
-          <span className="nav-title">Work</span>
+          <span className="nav-title">Workspace</span>
           <NavLink href="/queue" count={queueCount} icon={<Inbox {...ic} />}>
             My Action Queue
           </NavLink>
-          {isInitiatorWs && (
-            <>
-              <NavLink href="/requests/new" icon={<FilePlus2 {...ic} />}>
-                New Financing Request
-              </NavLink>
-              <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
-                View Progress
-              </NavLink>
-              <NavLink href="/booked" icon={<BookCheck {...ic} />}>
-                Booked Requests
-              </NavLink>
-            </>
-          )}
-          {roles.some((r) => APPROVER_NAV_ROLES.includes(r)) && (
-            <NavLink href="/requests/approved" icon={<ListChecks {...ic} />}>
-              Requests I approved
-            </NavLink>
-          )}
-          {roles.includes("RM") && (
-            <NavLink href="/wallet" icon={<Wallet {...ic} />}>
-              Requested Today
-            </NavLink>
-          )}
-          {icOfficer && (
-            <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
-              Invoice confirmation
-            </NavLink>
-          )}
-          {isApprover && (
-            <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
-              Exceptions
-            </NavLink>
-          )}
-          {(godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "RBE", "MERCHANT_OFFICER_HEAD"].includes(r))) && !altWs && (
-            <NavLink href="/reports/performance" icon={<BarChart3 {...ic} />}>
-              Performance reports
-            </NavLink>
-          )}
-          {creditExceptionsView && !altWs && (
-            <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
-              Credit score exceptions
-            </NavLink>
-          )}
-          {showPerformance && !altWs && (
-            <NavLink href="/performance" icon={<Target {...ic} />}>
-              {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
-            </NavLink>
-          )}
-          {godsEye && (
-            <NavLink href="/executive" icon={<Gauge {...ic} />}>
-              God&apos;s Eye
-            </NavLink>
-          )}
-          {retailScope && !altWs && (
-            <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
-              Retail dashboard
-            </NavLink>
-          )}
-          {showTracker && !altWs && (
-            <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
-              Repayment monitoring
-            </NavLink>
-          )}
-          {roles.includes("VENDOR_MANAGER") && (
-            <NavLink href="/vendors" icon={<Building2 {...ic} />}>
-              Vendor register
-            </NavLink>
-          )}
-          {roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin && (
-            <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
-              Product configuration
-            </NavLink>
-          )}
+          <NavLink href="/notifications" count={unread} icon={<Bell {...ic} />}>
+            Notifications
+          </NavLink>
         </div>
+        {(isInitiatorWs || roles.some((r) => APPROVER_NAV_ROLES.includes(r)) || roles.includes("RM")) && (
+          <div className="nav-section">
+            <span className="nav-title">Applications</span>
+            {isInitiatorWs && (
+              <>
+                <NavLink href="/requests/new" icon={<FilePlus2 {...ic} />}>
+                  New Financing Request
+                </NavLink>
+                <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
+                  View Progress
+                </NavLink>
+                <NavLink href="/booked" icon={<BookCheck {...ic} />}>
+                  Booked Requests
+                </NavLink>
+              </>
+            )}
+            {roles.some((r) => APPROVER_NAV_ROLES.includes(r)) && (
+              <NavLink href="/requests/approved" icon={<ListChecks {...ic} />}>
+                Requests I approved
+              </NavLink>
+            )}
+            {roles.includes("RM") && (
+              <NavLink href="/wallet" icon={<Wallet {...ic} />}>
+                Requested Today
+              </NavLink>
+            )}
+          </div>
+        )}
+        {(icOfficer || isApprover || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
+          <div className="nav-section">
+            <span className="nav-title">Operations</span>
+            {icOfficer && (
+              <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
+                Invoice confirmation
+              </NavLink>
+            )}
+            {isApprover && (
+              <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
+                Exceptions
+              </NavLink>
+            )}
+            {showTracker && !altWs && (
+              <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
+                Repayment monitoring
+              </NavLink>
+            )}
+            {roles.includes("VENDOR_MANAGER") && (
+              <NavLink href="/vendors" icon={<Building2 {...ic} />}>
+                Vendor register
+              </NavLink>
+            )}
+          </div>
+        )}
+        {!altWs && (showReports || creditExceptionsView || showPerformance || godsEye || retailScope || (roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin) || (canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN"))) && (
+          <div className="nav-section">
+            <span className="nav-title">Performance and governance</span>
+            {showPerformance && (
+              <NavLink href="/performance" icon={<Target {...ic} />}>
+                {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
+              </NavLink>
+            )}
+            {showReports && (
+              <NavLink href="/reports/performance" icon={<BarChart3 {...ic} />}>
+                Performance reports
+              </NavLink>
+            )}
+            {retailScope && (
+              <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
+                Retail dashboard
+              </NavLink>
+            )}
+            {godsEye && (
+              <NavLink href="/executive" icon={<Gauge {...ic} />}>
+                God&apos;s Eye
+              </NavLink>
+            )}
+            {creditExceptionsView && (
+              <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
+                Credit score exceptions
+              </NavLink>
+            )}
+            {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
+              <>
+                <NavLink href="/reports" exact icon={<BarChart3 {...ic} />}>
+                  Reports &amp; exports
+                </NavLink>
+                {!isInitiatorWs && (
+                  <NavLink href="/booked" icon={<BookCheck {...ic} />}>
+                    Booked Requests
+                  </NavLink>
+                )}
+              </>
+            )}
+            {roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin && (
+              <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
+                Product configuration
+              </NavLink>
+            )}
+          </div>
+        )}
         {(alt.any || altMigration || altLocations || altPortfolio) && (
           <div className="nav-section">
             <span className="nav-title">Altphones</span>
@@ -277,17 +322,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
-          <div className="nav-section">
-            <span className="nav-title">Reporting</span>
-            <NavLink href="/reports" icon={<BarChart3 {...ic} />}>
-              Reports &amp; exports
-            </NavLink>
-            <NavLink href="/booked" icon={<BookCheck {...ic} />}>
-              Booked Requests
-            </NavLink>
-          </div>
-        )}
         {isAdmin && ws === "SUPER_ADMIN" && (
           <div className="nav-section">
             <span className="nav-title">Administration</span>
@@ -365,12 +399,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="topbar">
         <div className="topbar-left">
           <MobileNavToggle />
+          <NavCollapseButton />
           <span className="mobile-only">
             <Wordmark href="/queue" />
           </span>
           {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
+          <HideAmountsButton />
           <Link href="/notifications" className="bell" data-tour="bell" aria-label={unread ? `Notifications: ${unread} unread` : "Notifications"}>
             <Bell className="icon" aria-hidden="true" />
             {unread > 0 && <span className="bell-count">{unread > 99 ? "99+" : unread}</span>}
@@ -417,6 +453,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
       </main>
       <Footer />
+      <BottomNav items={bottom} />
+      <ShellPrefsInit />
       <IdleWatcher idleSeconds={config.sessionIdleSeconds} expiresAt={session.idleExpiresAt.toISOString()} />
     </div>
   );
