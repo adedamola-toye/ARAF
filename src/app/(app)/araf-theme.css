@@ -281,3 +281,11 @@
   .shell .btn-sm { min-height: 40px; }
   .shell .check input { width: 22px; height: 22px; }
 }
+/* Large figures sharing a row scale to the space they have instead of being clipped. */
+.shell :is(.grid-2, .grid-3) > :is(.fig-hero, .fig-lg) { container-type: inline-size; }
+.shell :is(.grid-2, .grid-3) > .fig-hero .fig-value { font-size: min(var(--fs-figure-hero), 11.5cqi); }
+.shell :is(.grid-2, .grid-3) > .fig-lg .fig-value { font-size: min(var(--fs-figure-lg), 11.5cqi); }
+/* Long status badges in configuration tiles wrap. */
+.shell .config-tile .badge { white-space: normal; max-width: 100%; }
+/* Sort buttons in report tables: a usable tap area on phones. */
+@media (max-width: 640px) { .shell .po-sort { min-height: 36px; padding: 6px 4px; } }

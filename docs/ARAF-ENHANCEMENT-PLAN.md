@@ -179,5 +179,13 @@ No existing data is changed or deleted. Every migration only adds tables or colu
 - **Reassignment:** stays Super Admin only, with a reason, the previous and new assignee, and an audit record. The previous assignee is now also notified.
 - **Migrations:** 056 adds the personal briefing schedule (off); 057 adds `team_lead_profile_editors`.
 
+## 11. Phase 6 as delivered (quality pass)
+- **Skeleton loading** for every signed-in page (`src/app/(app)/loading.tsx`). Navigation and the header stay in place while the content area shows the page's shape. The pulse stops when reduced motion is requested.
+- **Interaction feedback** of about 150–180 ms: row hover, a button press, tile hover and alerts easing in. Nothing loops and nothing delays an action. Everything respects `prefers-reduced-motion`.
+- **Touch targets on phones:** buttons, tabs and form fields at least 44 px (small buttons 40 px); report table sort buttons 36 px; larger checkboxes.
+- **Responsive sweep:** 23 key screens across six roles (RM, Unit Head, Divisional Head, Disbursement Officer, staff applicant, Super Admin), at 360 (light), 390 (dark), 768, 1024 and 1440 px. That is 115 checks for page overflow, off-screen elements, clipped money figures, small touch targets, unlabelled controls and page errors. The first run found 10 issues: clipped hero figures in three-column rows, a configuration badge overflowing, and small sort buttons. All were fixed; the re-run found 0.
+- **Keyboard:** tabbing through seven key screens. Every focused control shows a visible focus indicator; table rows show it on the whole row.
+- **Landing and sign-in:** compared with the Phase 1 baseline (desktop, tablet, mobile; light and dark), all 12 are pixel-identical. The only differing pixels were the development-mode Next.js badge, which does not exist in production.
+
 ## 7. Rollback
 Each phase is one merge commit on `main`. To roll back, revert that merge commit and push. Vercel and Render redeploy the previous code automatically. All migrations are additive, so the previous code keeps working with the new columns and tables present. Feature switches (for example bouquets) can also be turned off from Administration without a deploy.
