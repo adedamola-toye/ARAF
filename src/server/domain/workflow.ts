@@ -17,6 +17,7 @@ import { hasAcquisitionEvidence } from "./retail-ops";
 import { ACQUISITION_EVIDENCE_MESSAGE } from "./documents";
 import { requireExceptionAck, settleCreditException } from "./credit-exception";
 import { enterTeamLeadReview } from "./photo-review";
+import { activeHold, bookingBlockers } from "./cad";
 import { checkVerification, recordVerification } from "./verification";
 import type { VerificationInput } from "@/lib/approval-checklists";
 import type { Tx } from "../db";
@@ -583,6 +584,11 @@ export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promi
         const subject = { kind: "APPLICATION" as const, id: app.id, ref: app.ref, lockVersion: app.lock_version, versionId: task.version_id, stage: task.stage, action: input.action, role: task.assignee_role, policy: app.approval_policy ?? null, workflow: app.workflow, taskId: task.id };
         const checklist = checkVerification(subject, input.verification);
         if (app.workflow === "RETAIL") await requireExceptionAck(tx, app, task);
+        // A CAD hold blocks moving the request forward at disbursement (returns and corrections stay available).
+        if (["DISBURSEMENT_CHECK", "DISBURSEMENT_BOOKING"].includes(task.stage) && ["OKAY", "DISBURSED", "PROCEED", "APPROVE"].includes(input.action)) {
+          const hold = await activeHold(tx, app.id);
+          if (hold) throw gate(`On hold: ${hold.reason}. Release the hold first.`);
+        }
         const message = await dispatch(tx, ctx, app, task, input, reason);
         await persistApp(tx, app, ctx.now);
         if (checklist) await recordVerification(tx, ctx, subject, checklist, app.stage);
@@ -948,6 +954,37 @@ export async function creditCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: Task
   return "Returned to the first credit reviewer for correction.";
 }
 
+/**
+ * Divisional Head concurrence recorded through a Facility Bouquet. Same effect as an individual Divisional Head
+ * APPROVE (own decision, own task completion, own stage move to offer preparation, own audit) — the caller has
+ * already locked the application and task and checked that nothing changed since the bouquet was frozen.
+ */
+export async function concurAsDivisionalHead(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string, details: Record<string, unknown>): Promise<string> {
+  if (task.stage !== "DIVISIONAL_HEAD_REVIEW" || task.status !== "OPEN") throw conflict(`${app.ref} is no longer awaiting Divisional Head concurrence.`);
+  if (app.workflow === "RETAIL") await requireExceptionAck(tx, app, task);
+  const actor = ctx.actor!;
+  ctx.actor = { ...actor, activeRole: task.assignee_role };
+  try {
+    const assessment = await latestAssessment(tx, app.id);
+    await recordDecision(tx, ctx, app, task, "APPROVE", reason, assessment?.id ?? null);
+    await completeTask(tx, ctx, task, "APPROVE", { bouquet: details });
+    const chosen = await chooseAssignee(tx, app, "OFFER_PREPARATION", {});
+    await moveTo(tx, ctx, app, "OFFER_PREPARATION", chosen);
+    await persistApp(tx, app, ctx.now);
+    await audit(tx, ctx, {
+      action: "TASK_APPROVE",
+      actorRole: task.assignee_role,
+      applicationId: app.id,
+      stage: task.stage,
+      reason,
+      details: { taskId: task.id, nextStage: app.stage, versionId: task.version_id, bouquet: details },
+    });
+    return app.stage;
+  } finally {
+    ctx.actor = actor;
+  }
+}
+
 export async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: string) {
   const r = await tx.query(
     `UPDATE decisions SET invalidated_at=$2, invalidated_reason=$3
@@ -1042,6 +1079,8 @@ async function book(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, booking: Booki
   const approvedSnap = await approvedAssessment(tx, app.id);
   const approved = Number((approvedSnap?.outputs as { amountApprovedKobo?: number } | undefined)?.amountApprovedKobo ?? app.requested_amount_kobo);
   const b = validateBooking(booking, approved);
+  const cad = await bookingBlockers(tx, app.id, b.transactionRef);
+  if (cad.length) throw gate(cad.join(" "));
   const dup = await tx.query("SELECT 1 FROM disbursements WHERE transaction_ref = $1", [b.transactionRef]);
   if (dup.rowCount) throw conflict("This transaction reference is already recorded against another booking.");
   await recordDecision(tx, ctx, app, task, "DISBURSED", null);

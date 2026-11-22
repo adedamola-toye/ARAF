@@ -6,7 +6,7 @@ import { audit } from "../audit";
 import { forbidden, invalid, notFound } from "../errors";
 import { holdsRole } from "./access";
 
-export const SWITCHES = { REPAYMENT_TRACKER: "REPAYMENT_TRACKER", VF_TL_PHOTO_REVIEW: "VF_TL_PHOTO_REVIEW" } as const;
+export const SWITCHES = { REPAYMENT_TRACKER: "REPAYMENT_TRACKER", VF_TL_PHOTO_REVIEW: "VF_TL_PHOTO_REVIEW", BOUQUET_APPROVALS: "BOUQUET_APPROVALS" } as const;
 export type SwitchKey = keyof typeof SWITCHES;
 
 export async function isEnabled(q: Db, key: SwitchKey): Promise<boolean> {
