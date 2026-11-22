@@ -5,6 +5,8 @@ import { formatLagos } from "@/server/time";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { DhScheduleForm, DhTestSendForm, ScheduleForm } from "../AdminForms";
 import { dhPeriodFor, duePeriod } from "@/server/jobs/dh-weekly";
+import { BRIEFING_CODE, BRIEFING_ROLES } from "@/server/jobs/briefing";
+import { BriefingControls } from "./BriefingForms";
 
 export const metadata = { title: "Scheduled emails" };
 
@@ -22,6 +24,14 @@ export default async function Schedules() {
   const dh = (await db.query("SELECT * FROM schedule_settings WHERE code = 'DH_WEEKLY_REPORT'")).rows[0];
   const teamOn = !!(await db.query("SELECT enabled FROM schedule_settings WHERE code = 'TEAM_WEEKLY_REPORT'")).rows[0]?.enabled;
   const dhs = (await db.query<{ full_name: string }>("SELECT s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'DIVISIONAL_HEAD' WHERE s.status = 'ACTIVE' ORDER BY s.full_name")).rows;
+  const briefing = (await db.query("SELECT enabled FROM schedule_settings WHERE code = $1", [BRIEFING_CODE])).rows[0];
+  const officers = (
+    await db.query<{ id: string; full_name: string; roles: string }>(
+      `SELECT s.id, s.full_name, string_agg(DISTINCT ra.role, ',') AS roles FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = ANY($1)
+        WHERE s.status = 'ACTIVE' GROUP BY s.id ORDER BY s.full_name LIMIT 500`,
+      [BRIEFING_ROLES],
+    )
+  ).rows;
   const now = new Date();
   const thisWeek = dhPeriodFor(now, dh?.hour ?? 18, dh?.minute ?? 0);
   const nextDh = now < thisWeek.sendAt ? thisWeek : (duePeriod(now, dh?.hour ?? 18, dh?.minute ?? 0) ?? dhPeriodFor(new Date(now.getTime() + 7 * 86_400_000), dh?.hour ?? 18, dh?.minute ?? 0));
@@ -75,6 +85,20 @@ export default async function Schedules() {
             <DhTestSendForm />
           </div>
           <DhScheduleForm teamEnabled={teamOn} s={dh} staff={staff.map((x) => ({ value: x.id, label: `${x.full_name} (${String(x.roles).split(",").map((r) => ROLE_LABELS[r as Role]).join(", ")})` }))} />
+        </div>
+      )}
+      {briefing && (
+        <div className="card">
+          <div className="card-head">
+            <h2>Weekly Performance Briefing (personal)</h2>
+            <span className={`badge ${briefing.enabled ? "badge-green" : ""}`}>{briefing.enabled ? "ON" : "OFF"}</span>
+          </div>
+          <p className="small">
+            Sent with the Sunday reports to every active originating officer ({BRIEFING_ROLES.map((r) => ROLE_LABELS[r as Role]).join(", ")}): their own week in review, led by successful
+            disbursements compared with the previous week, then applications received, final approvals, median turnaround, applications exceeding the service level, performance by product,
+            month-to-date disbursements and progress against their approved monthly target. Drafts are never counted and approvals are never counted as disbursements. Once per person per week.
+          </p>
+          <BriefingControls enabled={briefing.enabled} officers={officers.map((o) => ({ id: o.id, label: `${o.full_name} (${o.roles.split(",").map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")})` }))} />
         </div>
       )}
       <div className="card">

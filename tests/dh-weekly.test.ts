@@ -58,7 +58,8 @@ describe("Weekly Divisional Head report: delivery", () => {
     expect(body).toMatch(/Final approvals\s+1 · ₦1,000,000/);
     expect(body).toContain("/reports/performance?from=");
     expect(body).not.toMatch(/\d{11}/); // no BVNs or phone numbers
-    expect(mails[0].subject).toContain("weekly report");
+    expect(mails[0].subject).toMatch(/^ARAF \| Weekly Performance Briefing \| Week Ending /);
+    expect(body).toContain("YOUR WEEK IN REVIEW");
     const html: string = mails[0].body_html;
     expect(html).toContain("<table");
     expect(html).toContain("Open the Performance Overview");

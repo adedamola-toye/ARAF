@@ -2,6 +2,7 @@ import { BusinessDecisionForm } from "./RetailClient";
 import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
 import { nextTask } from "@/server/domain/queue-priority";
+import { auditContext, auditLabel } from "@/lib/audit-events";
 import { DocViewer } from "@/components/DocViewer";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
@@ -271,7 +272,13 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           {tab === "activity" && (
             <>
               <History c={c} />
-              <CaseAudit appId={app.id} />
+              <CaseAudit
+                appId={app.id}
+                showAll={sp.audit === "all"}
+                allHref={tabHref("activity", { audit: "all" })}
+                coreHref={tabHref("activity")}
+                exportHref={roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN") ? `/admin/audit/export?ref=${encodeURIComponent(app.ref)}` : null}
+              />
             </>
           )}
         </section>
@@ -735,35 +742,59 @@ function History({ c }: { c: Case }) {
   );
 }
 
-async function CaseAudit({ appId }: { appId: string }) {
+/** Readable history of the request: what happened, who did it, previous and new state, comments and references. */
+async function CaseAudit({ appId, showAll, allHref, coreHref, exportHref }: { appId: string; showAll: boolean; allHref: string; coreHref: string; exportHref: string | null }) {
+  const NOISE = ["CASE_VIEW", "DOCUMENT_VIEW", "DOCUMENT_DOWNLOAD", "DOCUMENT_SCAN_CLEAN", "DRAFT_SAVED", "APPROVAL_VERIFIED"];
   const rows = (await db.query(
-    `SELECT e.occurred_at, e.action, e.outcome, e.actor_role, e.stage, e.reason, s.full_name, e.document_version
-       FROM audit_events e LEFT JOIN staff s ON s.id = e.actor_id WHERE e.application_id = $1 ORDER BY e.id DESC LIMIT 300`,
-    [appId],
+    `SELECT e.occurred_at, e.action, e.outcome, e.actor_role, e.stage, e.reason, e.details, s.full_name, e.document_version
+       FROM audit_events e LEFT JOIN staff s ON s.id = e.actor_id WHERE e.application_id = $1 ${showAll ? "" : "AND NOT (e.action = ANY($2))"} ORDER BY e.id DESC LIMIT 300`,
+    showAll ? [appId] : [appId, NOISE],
   )).rows;
+  const stageLabel = (x: string) => STAGE_LABELS[x as Stage] ?? x;
   return (
     <div className="card">
-      <h2>Audit trail</h2>
-      <div className="table-wrap">
-        <table className="data responsive">
-          <caption className="sr-only">Audit trail for this request</caption>
-          <thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Outcome</th><th>Stage</th><th>Reason</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td className="small nowrap" data-label="Time">{formatLagos(r.occurred_at)}</td>
-                <td className="small" data-label="Actor">{r.full_name ?? "System"}</td>
-                <td className="small" data-label="Role">{r.actor_role ? ROLE_LABELS[r.actor_role as Role] ?? r.actor_role : "—"}</td>
-                <td className="small mono" data-label="Action">{r.action}{r.document_version ? ` (v${r.document_version})` : ""}</td>
-                <td data-label="Outcome"><OutcomeChip outcome={r.outcome} /></td>
-                <td className="small" data-label="Stage">{r.stage ? STAGE_LABELS[r.stage as Stage] ?? r.stage : "—"}</td>
-                <td className="small" data-label="Reason">{r.reason ?? ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="card-head">
+        <h2>History</h2>
+        <div className="row small">
+          {showAll ? <Link href={coreHref}>Key events only</Link> : <Link href={allHref}>Include views, scans and saves</Link>}
+          {exportHref && <a href={exportHref}>Download CSV</a>}
+        </div>
       </div>
-      <p className="small muted" style={{ margin: "8px 0 0" }}>Client IP and device metadata are shown to the Super Admin in the audit trail.</p>
+      <ol className="timeline audit-timeline">
+        {rows.map((r, i) => {
+          const { label, category } = auditLabel(r.action);
+          const ctx = auditContext(r.details, stageLabel);
+          return (
+            <li key={i} className={r.outcome === "SUCCESS" ? "done" : ""}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+                <strong>
+                  {label}
+                  {r.document_version ? ` (v${r.document_version})` : ""}
+                </strong>
+                <span className="small muted nowrap">{formatLagos(r.occurred_at)}</span>
+              </div>
+              <div className="small">
+                {r.full_name ?? "System"}
+                {r.actor_role ? ` · ${ROLE_LABELS[r.actor_role as Role] ?? r.actor_role}` : ""}
+                {r.stage ? ` · at ${stageLabel(r.stage)}` : ""}
+                {r.outcome !== "SUCCESS" && (
+                  <>
+                    {" "}
+                    · <OutcomeChip outcome={r.outcome} />
+                  </>
+                )}
+              </div>
+              {ctx.length > 0 && <div className="small muted">{ctx.join(" · ")}</div>}
+              {r.reason && <div className="small">“{r.reason}”</div>}
+              <div className="small muted" style={{ fontSize: 11 }}>
+                {category} · {r.action}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {!rows.length && <p className="muted">No events recorded.</p>}
+      <p className="small muted" style={{ margin: "8px 0 0" }}>The history cannot be edited or deleted. Client IP and device metadata are shown to the Super Admin in the system audit.</p>
     </div>
   );
 }

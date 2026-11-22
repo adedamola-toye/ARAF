@@ -22,6 +22,7 @@ import { addDaysToDateString, fromLagos, lagosDate, lagosWeekStart } from "../ti
 import { CATCH_UP_MS } from "./schedules";
 import type { Ctx } from "../context";
 import { forbidden, invalid } from "../errors";
+import { briefingHtml, briefingSubject, briefingText, computeBriefing, sendPersonalBriefings } from "./briefing";
 import { holdsRole } from "../domain/access";
 
 export const DH_CODE = "DH_WEEKLY_REPORT";
@@ -534,7 +535,7 @@ export async function buildDhReport(q: Db, p: DhPeriod, now: Date) {
 export function dhEmailHtml(name: string, p: DhPeriod, time: string, sections: string, opts: { heading?: string; intro?: string } = {}) {
   return `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><style>@media only screen and (max-width:480px){.nx{font-size:10.5px !important;padding:4px 2px !important}.card{padding:18px 10px 22px !important}.nfull{display:none !important}.nshort{display:inline !important;max-height:none !important}}</style></head><body style="margin:0;padding:0;background:#f7f9ff"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f9ff"><tr><td style="padding:24px 8px">
 <table role="presentation" cellspacing="0" cellpadding="0" style="max-width:800px;margin:0 auto;background:#ffffff;border:1px solid #dee5f3;border-radius:12px"><tr><td class="card" style="padding:24px 24px 28px">
-<p style="margin:0 0 4px;font:600 11px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#5f6c87">Retail Asset Factory · Weekly report</p>
+<p style="margin:0 0 4px;font:600 11px/1.4 Arial,Helvetica,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#5f6c87">ARAF · Weekly Performance Briefing</p>
 <h1 style="margin:0 0 12px;font:700 20px/1.3 Arial,Helvetica,sans-serif;color:#152b59">${esc(opts.heading ?? `Week ${p.weekLabel} and ${p.monthLabel.split(" (")[0]}`)}</h1>
 <p style="margin:0 0 4px;font:14px/1.5 Arial,Helvetica,sans-serif;color:#2b3f69">Dear ${esc(name)},</p>
 <p style="margin:0;font:14px/1.5 Arial,Helvetica,sans-serif;color:#2b3f69">${esc(opts.intro ?? `Here is the bank-wide report as at ${time} on Sunday (Africa/Lagos). Amounts are in naira; each facility is counted once, credited to its originator.`)}</p>
@@ -566,7 +567,10 @@ export async function sendDhTestReport(ctx: Ctx, target: "DIVISIONAL_HEADS" | "M
           )
     ).rows;
     if (!recipients.length) throw invalid("No active Divisional Head is profiled yet. Grant the Divisional Head role first, or send the test to yourself.");
-    const { body, html } = await buildDhReport(tx, p, now);
+    const built = await buildDhReport(tx, p, now);
+    const brief = await computeBriefing(tx, { kind: "ALL" }, p, { bouquetsForDh: "ALL" });
+    const body = [...briefingText(brief), ...built.body];
+    const html = briefingHtml(brief) + built.html;
     const asAt = now.toLocaleString("en-GB", { timeZone: "Africa/Lagos", weekday: "long", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
     const intro = `TEST REPORT, sent by ${actor.name} from Scheduled emails. Live figures as at ${asAt} (Africa/Lagos): this week so far and month to date. The regular report goes out on Sunday at 18:00.`;
     const stamp = now.getTime();
@@ -575,7 +579,7 @@ export async function sendDhTestReport(ctx: Ctx, target: "DIVISIONAL_HEADS" | "M
         kind: "DH_WEEKLY_REPORT_TEST",
         dedupeKey: `dh-weekly-test:${stamp}:${r.id}`,
         to: [r.email],
-        subject: `[TEST] Retail Asset Factory weekly report: week ${p.weekLabel} and ${p.monthLabel.split(" (")[0]} so far`,
+        subject: `[TEST] ${briefingSubject(p)} (so far)`,
         html: dhEmailHtml(r.full_name, p, asAt, html, { intro }),
         text: simpleEmail([`Dear ${r.full_name},`, "", intro, "", ...body]),
       });
@@ -585,7 +589,7 @@ export async function sendDhTestReport(ctx: Ctx, target: "DIVISIONAL_HEADS" | "M
   });
 }
 
-export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolean; sent: number; teamSent?: number; period: string | null }> {
+export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolean; sent: number; teamSent?: number; briefingsSent?: number; period: string | null }> {
   const s = (await db.query("SELECT * FROM schedule_settings WHERE code = $1", [DH_CODE])).rows[0];
   if (!s?.enabled) return { ran: false, sent: 0, period: null };
   const p = duePeriod(now, s.hour ?? 18, s.minute ?? 0);
@@ -606,7 +610,12 @@ export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolea
         [s.recipient_staff_ids ?? []],
       )
     ).rows;
-    const { body, summary, html, teamReports } = await buildDhReport(tx, p, now);
+    const built = await buildDhReport(tx, p, now);
+    const { summary, teamReports } = built;
+    // Bank-wide "Your week in review" (successful disbursements vs the previous week, bouquets) above the detail.
+    const brief = await computeBriefing(tx, { kind: "ALL" }, p, { bouquetsForDh: "ALL" });
+    const body = [...briefingText(brief), ...built.body];
+    const html = briefingHtml(brief) + built.html;
     const time = `${String(s.hour ?? 18).padStart(2, "0")}:${String(s.minute ?? 0).padStart(2, "0")}`;
     let sent = 0;
     for (const r of recipients) {
@@ -620,7 +629,7 @@ export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolea
         kind: DH_CODE,
         dedupeKey: `dh-weekly:${p.key}:${r.id}`,
         to: [r.email],
-        subject: `Retail Asset Factory weekly report: week ${p.weekLabel} and ${p.monthLabel.split(" (")[0]}`,
+        subject: briefingSubject(p),
         html: dhEmailHtml(r.full_name, p, time, html),
         text: simpleEmail([
           `Dear ${r.full_name},`,
@@ -658,9 +667,11 @@ export async function runDhWeeklyReport(now = new Date()): Promise<{ ran: boolea
         teamSent++;
       }
     }
+    // Personal briefings for originating officers (switched on separately).
+    const briefingsSent = await sendPersonalBriefings(tx, run.id, p, now);
     await tx.query("UPDATE schedule_runs SET status = 'DONE', finished_at = $2 WHERE id = $1", [run.id, now]);
-    await audit(tx, systemCtx(now), { action: "DH_WEEKLY_REPORT_RUN", details: { period: p.key, recipients: recipients.length, sent, teamReports: teamSent } });
-    return { ran: true, sent, teamSent, period: p.key };
+    await audit(tx, systemCtx(now), { action: "DH_WEEKLY_REPORT_RUN", details: { period: p.key, recipients: recipients.length, sent, teamReports: teamSent, personalBriefings: briefingsSent } });
+    return { ran: true, sent, teamSent, briefingsSent, period: p.key };
   });
 }
 
