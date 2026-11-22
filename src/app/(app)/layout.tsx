@@ -1,4 +1,5 @@
 import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal, MessageSquareWarning, MessageSquarePlus, Headset, Radar, BookOpen } from "lucide-react";
+import { isDesignatedEditor } from "@/server/domain/team-profiles";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -72,6 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const godsEye = await executiveAccess(db, session.staffId);
   const icOfficer = roles.includes("INVOICE_CONFIRMATION_OFFICER");
   const isDh = roles.includes("DIVISIONAL_HEAD");
+  const teamEditor = roles.includes("TEAM_LEAD") && (await isDesignatedEditor(db, session.staffId));
   const isCad = roles.includes("DISBURSEMENT_OFFICER_1") || roles.includes("DISBURSEMENT_OFFICER_2");
   const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
   const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
@@ -143,12 +145,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        {(icOfficer || isApprover || isDh || isCad || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
+        {(icOfficer || isApprover || isDh || isCad || teamEditor || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
           <div className="nav-section">
             <span className="nav-title">Operations</span>
             {isDh && (
               <NavLink href="/bouquets" icon={<Landmark {...ic} />}>
                 Concurrence
+              </NavLink>
+            )}
+            {teamEditor && (
+              <NavLink href="/team" icon={<UsersRound {...ic} />}>
+                My team
               </NavLink>
             )}
             {isCad && (
@@ -379,6 +386,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/bouquet-settings" icon={<SlidersHorizontal {...ic} />}>
               Bouquet settings
+            </NavLink>
+            <NavLink href="/admin/profile-editors" icon={<Users {...ic} />}>
+              Team profile editors
             </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Salary advance settings
