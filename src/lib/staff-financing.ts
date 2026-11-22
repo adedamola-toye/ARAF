@@ -149,3 +149,25 @@ export const APPLICANT_SUPPORTING_CATEGORIES: StaffDocCategory[] = ["PAYSLIP", "
 export const OFFER_ACCEPTANCE_HOURS = 24;
 /** A reminder is sent once when this many hours or fewer remain before the offer deadline. */
 export const OFFER_REMINDER_HOURS = 4;
+
+/**
+ * Automatic eligibility from the verified salary register (server recomputes; the browser only displays).
+ *   limit     = verified monthly salary × eligibility percentage, rounded down to the kobo
+ *   available = limit − outstanding advances − amounts reserved by requests in progress (never below zero)
+ * Example: ₦1,900,000 × 50% = ₦950,000 limit.
+ */
+export function eligibilityLimitKobo(monthlySalaryKobo: number, percentBps: number): number {
+  if (!Number.isSafeInteger(monthlySalaryKobo) || monthlySalaryKobo <= 0) return 0;
+  return Number((BigInt(monthlySalaryKobo) * BigInt(percentBps)) / 10000n);
+}
+
+export function availableKobo(limitKobo: number, outstandingKobo: number, reservedKobo: number): number {
+  return Math.max(0, limitKobo - outstandingKobo - reservedKobo);
+}
+
+/** Preset amounts for the slider: quarter steps of the available limit, rounded down to ₦1,000. */
+export function presetAmounts(availableKoboValue: number): number[] {
+  const step = 100_000; // ₦1,000
+  const out = [0.25, 0.5, 0.75].map((f) => Math.floor((availableKoboValue * f) / step) * step).filter((v) => v > 0);
+  return [...new Set([...out, availableKoboValue])];
+}

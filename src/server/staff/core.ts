@@ -36,6 +36,10 @@ export interface StaffSettings {
   tenor_options_months: number[];
   required_document_types: string[];
   unit_head_staff_id: string | null;
+  /** MANUAL: applicant enters account details and the Product Manager verifies salary; SALARY_REGISTER: automatic eligibility. */
+  eligibility_mode: "MANUAL" | "SALARY_REGISTER";
+  eligibility_percent_bps: number;
+  salary_record_max_age_days: number;
   reason: string;
   created_at: Date;
 }
