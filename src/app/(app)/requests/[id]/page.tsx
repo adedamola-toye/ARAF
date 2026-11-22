@@ -32,6 +32,7 @@ function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: un
 import { UploadPanel } from "@/components/UploadPanel";
 import { ClosingDocuments } from "./ClosingDocuments";
 import { RecordsCard } from "./RecordsCard";
+import { BouquetInspectCard, CadPanel } from "./Phase3Panels";
 import { RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
@@ -275,6 +276,13 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           )}
         </section>
         <aside className="split-right" aria-label="Actions and preview">
+          {sp.bouquet && sp.member && <BouquetInspectCard appId={app.id} bouquetId={sp.bouquet} memberId={sp.member} staffId={session.staffId} sampled={!!sp.sampled} />}
+          {app.disbursed_at && (
+            <Link className="btn btn-ghost" href={`/disbursements/${app.id}`}>
+              View disbursement confirmation
+            </Link>
+          )}
+          <CadPanel appId={app.id} stage={app.stage} workflow={app.workflow} staffId={session.staffId} />
           {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
           <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} canSign={!!myTask && ["OFFER_PREPARATION", "DISBURSEMENT_CORRECTION"].includes(myTask.stage)} link={link} />
           <RecordsCard appId={app.id} recordsStatus={app.records_status ?? null} roles={roles} />
@@ -1007,7 +1015,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit to Disbursement Officer 1" doneHref={doneHref} />);
       break;
     case "DISBURSEMENT_BOOKING":
-      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} doneHref={doneHref} />);
+      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} doneHref={`/disbursements/${app.id}?done=1`} />);
       break;
     case "COMPLETION":
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator. The initiator then confirms vendor payment separately.</p>);

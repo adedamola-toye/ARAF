@@ -113,5 +113,26 @@ No existing data is changed or deleted. Every migration only adds tables or colu
 4. **Salary advance repayment:** what counts as a confirmed repayment event (payroll deduction file? manual posting?) and who records it.
 5. **CAD:** whether a payment-system integration is planned. Until then, an officer-confirmed posting reference with maker-checker is the authoritative mechanism.
 
+## 8. Phase 3 as delivered
+- **Facility Bouquet** (`src/server/domain/bouquet.ts`, `/bouquets`, `/admin/bouquet-settings`, migration 054).
+  - Feature switch `BOUQUET_APPROVALS` is **OFF** by default. Even when on, nothing aggregates until a Super Admin names the eligible products.
+  - Facilities with material exceptions are always kept for individual review: credit score exception, DSR exception, policy exception, skipped business photograph, suspension, open correction, or an amount above the configured threshold.
+  - Random sampling uses `crypto.randomInt` and prefers facilities not yet inspected. Inspections, exclusions (with reason), restores and samples are all audited.
+  - Concurrence is all-or-nothing in one transaction. Every facility is re-locked and re-checked: same task, same approved version, unchanged, still eligible. Each facility then gets its own Divisional Head decision, task completion, stage move to offer preparation, audit record and originator notification.
+  - Re-running a concurrence returns the recorded outcome. Concurrence never disburses.
+- **CAD workspace** (`src/server/domain/cad.ts`, `/disbursements`, `/disbursements/[id]`, panel on the request page).
+  - Read-only pre-disbursement checklist computed from records.
+  - Holds with reasons block the DO1 check and the booking.
+  - Failed and uncertain posting attempts. An uncertain attempt blocks booking until someone verifies in core banking whether it posted; a verified posting pins the booking to that reference.
+  - The completion screen exists only for a recorded disbursement. The existing maker-checker (DO1 checks, DO2 books) and the duplicate-reference guard are unchanged.
+- **Offer letters** (`/offers`): status (being generated, awaiting signed acceptance, accepted), how long acceptance has been outstanding, and an in-app preview.
+  - Offers are still generated only from approved terms.
+  - No acceptance period is configured for WakeelBoost or retail products, so nothing expires. The staff 24-hour offer window is unchanged.
+- **Legal and Shariah:** reviewed, no change needed.
+  - WakeelBoost shows "Delivered" only after the email outbox has sent the pack.
+  - The retail archive is marked sent only after the ZIP is stored.
+  - Staff Salary Advance is marked sent only after the hand-off has completed.
+- **Not yet done:** Team Lead, Credit Officer and Unit Head workspace redesigns (the request page already shows the split document view, exceptions and skipped-photo notices). These are carried into later phases.
+
 ## 7. Rollback
 Each phase is one merge commit on `main`. To roll back, revert that merge commit and push. Vercel and Render redeploy the previous code automatically. All migrations are additive, so the previous code keeps working with the new columns and tables present. Feature switches (for example bouquets) can also be turned off from Administration without a deploy.

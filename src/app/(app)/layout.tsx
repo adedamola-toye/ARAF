@@ -71,6 +71,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const unread = await unreadCount(db, session.staffId);
   const godsEye = await executiveAccess(db, session.staffId);
   const icOfficer = roles.includes("INVOICE_CONFIRMATION_OFFICER");
+  const isDh = roles.includes("DIVISIONAL_HEAD");
+  const isCad = roles.includes("DISBURSEMENT_OFFICER_1") || roles.includes("DISBURSEMENT_OFFICER_2");
   const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
   const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
   // The CRM menu must never take the app down (e.g. the web release goes live before the worker has applied migration 052).
@@ -121,6 +123,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
                   View Progress
                 </NavLink>
+                <NavLink href="/offers" icon={<FileText {...ic} />}>
+                  Offer letters
+                </NavLink>
                 <NavLink href="/booked" icon={<BookCheck {...ic} />}>
                   Booked Requests
                 </NavLink>
@@ -138,9 +143,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        {(icOfficer || isApprover || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
+        {(icOfficer || isApprover || isDh || isCad || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
           <div className="nav-section">
             <span className="nav-title">Operations</span>
+            {isDh && (
+              <NavLink href="/bouquets" icon={<Landmark {...ic} />}>
+                Concurrence
+              </NavLink>
+            )}
+            {isCad && (
+              <NavLink href="/disbursements" icon={<BadgeCent {...ic} />}>
+                Disbursements
+              </NavLink>
+            )}
             {icOfficer && (
               <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
                 Invoice confirmation
@@ -356,6 +371,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/feature-controls" icon={<ToggleRight {...ic} />}>
               Feature controls
+            </NavLink>
+            <NavLink href="/admin/bouquet-settings" icon={<SlidersHorizontal {...ic} />}>
+              Bouquet settings
             </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Salary advance settings
