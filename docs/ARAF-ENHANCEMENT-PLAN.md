@@ -158,5 +158,26 @@ No existing data is changed or deleted. Every migration only adds tables or colu
 - **Application:** slider, presets and manual entry, capped at the available amount. "You will receive" is the dominant figure, with the fee and total repayable shown separately. The verified account is shown read-only.
 - **Still open:** who confirms repayments, and from what source (payroll file or manual posting). For now the Salary Register Administrator records them.
 
+## 10. Phase 5 as delivered (governance and reporting)
+- **ARAF Weekly Performance Briefing** (`src/server/jobs/briefing.ts`):
+  - Subject: `ARAF | Weekly Performance Briefing | Week Ending …`.
+  - "Your week in review" leads with successful disbursements (recorded postings) and compares them with the previous week. It then shows: applications received (drafts never counted), final approvals (never counted as disbursements), median turnaround, applications exceeding the service level, performance by product, month-to-date disbursements, progress against the approved monthly target, bouquets concurred (Divisional Head), and attention items.
+  - The Divisional Head report now opens with this bank-wide block.
+  - **Personal briefings** for originating officers (RM, ANM, Merchant Officer line, Team Lead) are **switched off** until a Super Admin turns them on in Scheduled emails. Preview and test send (to the Super Admin only) are available.
+  - Once per person per week, with delivery logging and catch-up (existing schedule machinery).
+  - The email has a white card, restrained yellow accent, Outlook-safe tables, an Open ARAF button and a confidential footer. It contains no customer identifiers or salaries.
+- **Readable audit history** (`src/lib/audit-events.ts`):
+  - Each request's Activity tab shows what happened, who did it and in what role, previous → new state, bouquet and transaction references, and comments.
+  - Views, scans and saves are hidden unless asked for.
+  - The system audit has a "What happened" category filter, readable descriptions and a CSV export with the same filters.
+  - Secrets, salaries, account numbers and long identifiers are redacted. Audit records remain append-only (database triggers).
+- **Configuration centre:** one place for the bouquet, business photograph requirement, salary advance (eligibility %, fee, record validity), salary register, disbursement controls and offer acceptance (24 hours for salary advance; none configured for other products), team profile editors and the weekly briefing, each with its live status.
+- **Team Lead profile editing:**
+  - Only Team Leads a Super Admin designates (Administration → Team profile editors).
+  - Only people in their own team, and only full name and business unit. Never roles, status, region or access.
+  - Audited with before and after values.
+- **Reassignment:** stays Super Admin only, with a reason, the previous and new assignee, and an audit record. The previous assignee is now also notified.
+- **Migrations:** 056 adds the personal briefing schedule (off); 057 adds `team_lead_profile_editors`.
+
 ## 7. Rollback
 Each phase is one merge commit on `main`. To roll back, revert that merge commit and push. Vercel and Render redeploy the previous code automatically. All migrations are additive, so the previous code keeps working with the new columns and tables present. Feature switches (for example bouquets) can also be turned off from Administration without a deploy.
