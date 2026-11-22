@@ -129,7 +129,7 @@ Required on Vercel:
 | `OFFER_PDF_CONVERTER` | `none` |
 
 **Upload limit.** Vercel rejects any function request body over 4.5 MB, so keep
-`MAX_UPLOAD_BYTES` at or below 4 MB. Larger PDFs fail with a 413 before the app sees them.
+`MAX_UPLOAD_BYTES` at or below 4 MB (it caps a single request). Larger documents (bank statements) are sent in resumable 3.5 MB parts through `/api/uploads` and reassembled on the server, so their size is governed by `MAX_DOCUMENT_BYTES` (default 50 MB) instead.
 Supporting larger files requires a direct-to-S3 presigned upload flow (not implemented).
 
 ## 4. Render: background worker

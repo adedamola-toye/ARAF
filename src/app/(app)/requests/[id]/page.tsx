@@ -2,6 +2,7 @@ import { BusinessDecisionForm } from "./RetailClient";
 import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
 import { nextTask } from "@/server/domain/queue-priority";
+import { DocViewer } from "@/components/DocViewer";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
@@ -590,13 +591,15 @@ function Preview({ doc, link, closeHref }: { doc: DocumentRow; link: (id: string
           <Link className="btn btn-sm btn-ghost" href={closeHref} aria-label="Close preview"><X {...ic} /></Link>
         </div>
       </div>
-      <p className="small muted" style={{ marginTop: -6 }}>{doc.filename}</p>
+      <p className="small muted" style={{ marginTop: -6 }}>
+        {doc.filename} · {(Number(doc.size_bytes) / 1048576).toFixed(Number(doc.size_bytes) >= 1048576 ? 1 : 2)} MB · uploaded by {doc.uploader_name ?? "—"}
+        {doc.uploaded_role ? ` (${ROLE_LABELS[doc.uploaded_role as Role] ?? doc.uploaded_role})` : ""} · {formatLagos(doc.uploaded_at)}
+      </p>
       {canInline ? (
-        doc.mime_type.startsWith("image/") ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="preview-img" src={src} alt={`${CATEGORY_LABEL[doc.category]} preview`} />
+        doc.mime_type === "text/html" ? (
+          <iframe className="preview-frame" src={src} title={`Preview of ${doc.filename}`} sandbox="" />
         ) : (
-          <iframe className="preview-frame" src={src} title={`Preview of ${doc.filename}`} sandbox={doc.mime_type === "text/html" ? "" : undefined} />
+          <DocViewer src={src} mime={doc.mime_type} title={`${CATEGORY_LABEL[doc.category] ?? doc.category}: ${doc.filename}`} />
         )
       ) : (
         <p className="muted">This file type cannot be previewed in the browser. Use Download.</p>

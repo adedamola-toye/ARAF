@@ -221,3 +221,14 @@
 .shell .home-main .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .shell .home-row .fig-table { flex: none; }
 @media (max-width: 560px) { .shell .home-row { flex-wrap: wrap; } .shell .home-main .small { white-space: normal; } }
+
+/* Document viewer (split review) */
+.shell .doc-viewer { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface-2); min-height: 70vh; }
+.shell .doc-viewer:fullscreen { min-height: 100vh; border-radius: 0; }
+.shell .doc-viewer-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.shell .doc-viewer-frame { flex: 1; width: 100%; min-height: 70vh; border: 0; background: #fff; }
+.shell .doc-viewer-image { flex: 1; overflow: auto; display: grid; place-items: center; padding: var(--space-4); min-height: 60vh; }
+.shell .doc-viewer-image img { max-width: 100%; transition: transform var(--t-med) var(--ease); transform-origin: center; }
+/* With the preview pane open the document table is narrow: stack the row actions instead of clipping them. */
+.shell .split.wide-preview table.data .row-actions .row { flex-direction: column; align-items: stretch; gap: 6px; }
+.shell .split.wide-preview table.data .row-actions .btn { justify-content: center; }
