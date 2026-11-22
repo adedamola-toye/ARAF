@@ -134,5 +134,29 @@ No existing data is changed or deleted. Every migration only adds tables or colu
   - Staff Salary Advance is marked sent only after the hand-off has completed.
 - **Not yet done:** Team Lead, Credit Officer and Unit Head workspace redesigns (the request page already shows the split document view, exceptions and skipped-photo notices). These are carried into later phases.
 
+## 9. Phase 4 as delivered (Staff Salary Advance)
+- **Off until switched on.** A Super Admin publishes a settings version with *Automatic from the salary register* (Administration → Salary advance settings). Until then the current manual route, including the SeedFi check, is unchanged.
+- **Salary register** (`src/server/staff/register.ts`, `/admin/salary-register`, migration 055), maintained by the new **Salary Register Administrator** role (and Super Admins).
+  - CSV upload with a full preview, validation (format, duplicate staff ID or sign-in, unknown staff, name mismatch, account digits, employment status, dates), apply or discard, and import history.
+  - Individual edits and eligibility holds, each with a reason and an append-only history.
+  - Account numbers are encrypted. The audit trail records which fields changed, never salary values.
+- **Eligibility, computed server-side:**
+  - limit = verified monthly salary × configured % (default 50%);
+  - available = limit − outstanding advances − amounts reserved by requests in progress.
+  - Worked example: ₦1,900,000 → ₦950,000 limit; on ₦950,000 the fee is ₦19,000 and the employee receives ₦931,000; total repayable ₦950,000.
+  - A missing, outdated (older than the configured number of days, default 45), held, or non-active record is an exception with a clear message, never a silent approval.
+  - Submission locks the employee's register record, re-checks availability and stores a snapshot, so two requests cannot use the same limit.
+- **Credit bureau check:** removed on the register route for this product only. Other products are unchanged.
+- **Approvals unchanged:** Product Manager → Unit Head → Divisional Head, then the 24-hour offer and disbursement. On the register route the Product Manager no longer repeats the account, salary and limit checks; the snapshot shows them.
+- **Confidentiality:** salary figures are shown only to the employee, the approvers of that request, and register administrators.
+- **Repayments:** recorded only as confirmed events (payroll deduction file or posted transfer) with a unique reference. They are the only thing that reduces an outstanding balance. ARAF creates no salary deduction or mandate.
+- **Personal home** (`/staff-request` on the register route):
+  - greeting and Available advance with an eligibility badge and **Get an advance**;
+  - while an advance is active: Outstanding balance, repayment progress, amount received, fee, repaid, and available limit;
+  - "All settled" when fully repaid;
+  - previous advances and how it works.
+- **Application:** slider, presets and manual entry, capped at the available amount. "You will receive" is the dominant figure, with the fee and total repayable shown separately. The verified account is shown read-only.
+- **Still open:** who confirms repayments, and from what source (payroll file or manual posting). For now the Salary Register Administrator records them.
+
 ## 7. Rollback
 Each phase is one merge commit on `main`. To roll back, revert that merge commit and push. Vercel and Render redeploy the previous code automatically. All migrations are additive, so the previous code keeps working with the new columns and tables present. Feature switches (for example bouquets) can also be turned off from Administration without a deploy.
