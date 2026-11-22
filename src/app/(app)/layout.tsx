@@ -93,11 +93,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="shell">
       <nav className="sidenav" id="sidenav" aria-label="Main navigation">
         <div className="brand-block desktop-only">
-          <Wordmark href="/queue" />
+          <Wordmark href="/overview" />
           <BankMark />
         </div>
         <div className="nav-section">
           <span className="nav-title">Workspace</span>
+          {!(roles.length === 1 && roles[0] === "STAFF_APPLICANT") && (
+            <NavLink href="/overview" icon={<LayoutGrid {...ic} />}>
+              Overview
+            </NavLink>
+          )}
           <NavLink href="/queue" count={queueCount} icon={<Inbox {...ic} />}>
             My Action Queue
           </NavLink>
@@ -401,7 +406,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <MobileNavToggle />
           <NavCollapseButton />
           <span className="mobile-only">
-            <Wordmark href="/queue" />
+            <Wordmark href="/overview" />
           </span>
           {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>

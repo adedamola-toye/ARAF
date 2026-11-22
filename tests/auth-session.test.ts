@@ -135,10 +135,10 @@ describe("five-minute inactivity timeout (every role)", () => {
 describe("deep links", () => {
   it("only allows same-origin application paths after authentication", () => {
     expect(safeNext("/requests/abc?task=t1")).toBe("/requests/abc?task=t1");
-    expect(safeNext("//evil.com")).toBe("/queue");
-    expect(safeNext("https://evil.com")).toBe("/queue");
-    expect(safeNext("/\\evil.com")).toBe("/queue");
-    expect(safeNext("/api/documents/x")).toBe("/queue");
-    expect(safeNext(null)).toBe("/queue");
+    expect(safeNext("//evil.com")).toBe("/overview");
+    expect(safeNext("https://evil.com")).toBe("/overview");
+    expect(safeNext("/\\evil.com")).toBe("/overview");
+    expect(safeNext("/api/documents/x")).toBe("/overview");
+    expect(safeNext(null)).toBe("/overview");
   });
 });

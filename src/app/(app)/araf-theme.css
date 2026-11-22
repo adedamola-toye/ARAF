@@ -211,3 +211,13 @@
 }
 .shell .topbar-right { gap: var(--space-2); }
 @media (max-width: 960px) { .shell { background: var(--bg); } }
+
+/* Home lists: rows separated by dividers, not boxed in cards */
+.shell .home-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.shell .home-list > li { border-bottom: 1px solid var(--line); }
+.shell .home-row { display: flex; align-items: center; gap: var(--space-3); padding: 12px 4px; color: var(--ink); text-decoration: none; min-width: 0; }
+.shell a.home-row:hover, .shell .home-row:has(a:hover) { background: var(--surface-2); }
+.shell .home-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; color: var(--ink); text-decoration: none; }
+.shell .home-main .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell .home-row .fig-table { flex: none; }
+@media (max-width: 560px) { .shell .home-row { flex-wrap: wrap; } .shell .home-main .small { white-space: normal; } }

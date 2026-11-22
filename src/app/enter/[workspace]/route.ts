@@ -11,7 +11,7 @@ import { lookupSession, switchWorkspace, SESSION_COOKIE } from "@/server/auth/se
  * Staff Salary Advance has no workspace yet; it opens the documented integration point /staff-request.
  */
 const TARGETS: Record<string, { role: string | null; also?: string[]; next: string }> = {
-  "relationship-manager": { role: "RM", next: "/queue" },
+  "relationship-manager": { role: "RM", next: "/overview" },
   // Delight Officer / Smile Associate channel: Altphones only.
   "delight-officer": { role: "DELIGHT_OFFICER", also: ["SMILE_ASSOCIATE"], next: "/altphones" },
   "staff-personal-request": { role: null, next: "/staff-request" },
