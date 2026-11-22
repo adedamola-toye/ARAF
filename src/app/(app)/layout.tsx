@@ -340,6 +340,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 Salary advance queues
               </NavLink>
             )}
+            {(roles.includes("SALARY_REGISTER_ADMIN") || isAdmin) && (
+              <NavLink href="/admin/salary-register" icon={<BookUser {...ic} />}>
+                Salary register
+              </NavLink>
+            )}
           </div>
         )}
         {isAdmin && ws === "SUPER_ADMIN" && (
@@ -377,6 +382,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Salary advance settings
+            </NavLink>
+            <NavLink href="/admin/salary-register" icon={<BookUser {...ic} />}>
+              Salary register
             </NavLink>
             <NavLink href="/admin/locations" icon={<MapPin {...ic} />}>
               Outlet locations

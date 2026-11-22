@@ -232,3 +232,17 @@
 /* With the preview pane open the document table is narrow: stack the row actions instead of clipping them. */
 .shell .split.wide-preview table.data .row-actions .row { flex-direction: column; align-items: stretch; gap: 6px; }
 .shell .split.wide-preview table.data .row-actions .btn { justify-content: center; }
+
+/* ---- Staff Salary Advance personal home (Phase 4) ---- */
+.shell .staff-home { max-width: 760px; display: grid; gap: var(--space-5); }
+.shell .staff-home h1 { margin: 0; }
+.shell .staff-hero { display: grid; gap: var(--space-3); padding: var(--space-6); }
+.shell .btn-lg { min-height: 52px; padding: 0 28px; font-size: 16px; border-radius: 999px; justify-self: start; }
+.shell .staff-settled { display: inline-flex; gap: 8px; align-items: center; margin: 0; color: var(--success); font-weight: 600; animation: staff-fade var(--t-med) var(--ease); }
+@keyframes staff-fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .shell .staff-settled { animation: none; } }
+.shell .staff-repay { height: 8px; border-radius: 4px; }
+.shell .staff-repay > span { background: var(--action); }
+.shell .staff-how { padding-left: 1.2em; display: grid; gap: 6px; margin: 0; }
+.shell .amount-slider { width: 100%; accent-color: var(--action); margin: var(--space-3) 0 var(--space-2); min-height: 32px; }
+@media (max-width: 640px) { .shell .staff-hero { padding: var(--space-5); } .shell .btn-lg { width: 100%; justify-content: center; justify-self: stretch; } }

@@ -1,6 +1,8 @@
 import { CreditCheckPanel, CreditSummary } from "@/components/CreditCheckPanel";
 import { isCurrentPass } from "@/server/credit/seedfi";
 import { latestStaffCheck } from "@/server/staff/credit";
+import { canAdministerRegister, eligibilityFor, repaymentHistory, usesRegister } from "@/server/staff/register";
+import { Money } from "@/components/Money";
 import { staffCreditAction } from "../actions";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
@@ -80,6 +82,9 @@ export default async function StaffRequestPage({ params, searchParams }: { param
   const editable = isApplicant && (status === "DRAFT" || status === "RETURNED_FOR_CORRECTION");
   const staffCheck = editable ? await latestStaffCheck(db, req.id) : undefined;
   const settings = editable ? await currentSettings(db) : await settingsById(db, req.settings_id);
+  const regMode = usesRegister(settings);
+  const elig = editable && regMode ? await eligibilityFor(db, me, new Date(), settings, req.id) : null;
+  const snapshot = (req as typeof req & { eligibility_snapshot?: Record<string, string | number> | null }).eligibility_snapshot ?? null;
   const link = (docId: string, mode: "view" | "download") => staffDocLink(docId, me, session.sessionId, mode);
   const reviewer = !isApplicant;
   const crumbs = isApplicant ? [{ href: "/staff-request", label: "My salary advance" }] : [{ href: "/staff-financing", label: "Salary advance queues" }];
@@ -174,7 +179,14 @@ export default async function StaffRequestPage({ params, searchParams }: { param
             minKobo={settings.min_amount_kobo ? Number(settings.min_amount_kobo) : null}
             maxKobo={settings.max_amount_kobo ? Number(settings.max_amount_kobo) : null}
             returned={status === "RETURNED_FOR_CORRECTION"}
+            register={elig?.record ? { availableKobo: elig.state === "ELIGIBLE" ? elig.availableKobo : 0, staffNumber: elig.record.staff_number, accountLabel: `•••••• ${elig.record.account_last4}`, accountName: elig.record.account_name } : null}
           />
+          {elig && elig.state !== "ELIGIBLE" && (
+            <div className="alert alert-warn" role="alert" style={{ marginTop: "var(--space-4)" }}>
+              <AlertTriangle className="icon" aria-hidden="true" /> {elig.message}
+            </div>
+          )}
+          {!regMode && (
           <div style={{ marginTop: "var(--space-4)" }}>
             <CreditCheckPanel
               persons={[{ key: "APPLICANT", label: req.full_name, bvnLast4: staffCheck?.bvn_last4 ?? null, latest: staffCheck, current: isCurrentPass(staffCheck, staffCheck?.bvn_hash ?? null, new Date()) }]}
@@ -185,6 +197,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
               subjectNoun="you"
             />
           </div>
+          )}
           <section className="card" style={{ marginTop: "var(--space-4)" }} aria-labelledby="docs-h">
             <div className="card-head">
               <h2 id="docs-h">Supporting documents</h2>
@@ -317,6 +330,57 @@ export default async function StaffRequestPage({ params, searchParams }: { param
       }
     }
 
+    if (status === "COMPLETED" && req.gross_kobo) {
+      const reps = await repaymentHistory(db, req.id);
+      const repaid = reps.reduce((t, r) => t + Number(r.amount_kobo), 0);
+      const outstanding = Math.max(0, Number(req.gross_kobo) - repaid);
+      panels.push(
+        <section key="repay" className="card" aria-labelledby="repay-h">
+          <p className="eyebrow">Repayment</p>
+          <h2 id="repay-h" style={{ marginTop: 0 }}>
+            {outstanding === 0 ? "All settled" : "Repayment progress"}
+          </h2>
+          <div className="grid-2">
+            <Money size="lg" label="Outstanding balance" kobo={outstanding} private />
+            <Money size="md" label="Amount repaid" kobo={repaid} private hint={`of ${formatNairaKobo(req.gross_kobo)} repayable`} />
+          </div>
+          {reps.length ? (
+            <ul className="plain-list small" style={{ marginTop: "var(--space-3)" }}>
+              {reps.map((r) => (
+                <li key={r.reference}>
+                  {r.value_date} · {formatNairaKobo(r.amount_kobo)} · {r.source === "PAYROLL_DEDUCTION" ? "payroll deduction" : r.source === "TRANSFER" ? "transfer" : "other"} · ref {r.reference}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="small muted">No repayment has been confirmed yet. Balances change only when a confirmed repayment is recorded.</p>
+          )}
+        </section>,
+      );
+    }
+    // Salary is confidential: the applicant, the approvers of this request and register administrators only.
+    const seesSalary = isApplicant || as.has("PRODUCT_MANAGER") || as.has("UNIT_HEAD") || as.has("DIVISIONAL_HEAD") || (await canAdministerRegister(db, me));
+    if (snapshot?.source === "SALARY_REGISTER" && seesSalary) {
+      panels.push(
+        <section key="elig" className="card" aria-labelledby="elig-h">
+          <p className="eyebrow">Eligibility · salary register</p>
+          <h2 id="elig-h" style={{ marginTop: 0 }}>
+            Verified at submission
+          </h2>
+          <div className="grid-2">
+            <Money size="md" label="Verified monthly salary" kobo={snapshot.salaryKobo} private hint={`Payroll period ${snapshot.salaryAsOf}`} />
+            <Money size="md" label={`Limit (${Number(snapshot.percentBps) / 100}% of salary)`} kobo={snapshot.limitKobo} private />
+            <Money size="md" label="Outstanding advances" kobo={snapshot.outstandingKobo} private />
+            <Money size="md" label="Reserved by other requests" kobo={snapshot.reservedKobo} private />
+            <Money size="md" label="Available when submitted" kobo={snapshot.availableKobo} private />
+          </div>
+          <p className="small muted">
+            Salary account •••••• {String(snapshot.accountLast4)} ({String(snapshot.accountName)}) · employment {String(snapshot.employmentStatus).toLowerCase()}. Checked by ARAF on {formatLagos(new Date(String(snapshot.checkedAt)))}. Confidential: shown
+            only to the applicant and the officers deciding this request.
+          </p>
+        </section>,
+      );
+    }
     if (!isApplicant) {
       const check = await latestStaffCheck(db, req.id);
       if (check) panels.push(<CreditSummary key="credit" checks={[check]} />);
@@ -337,7 +401,7 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           <section key="pm" className="card action-panel stack">
             <p className="eyebrow">Your action · Product Manager</p>
             <h2 style={{ margin: 0 }}>Review and decide</h2>
-            <PmReviewForm id={req.id} lockVersion={lockVersion} netLabel={net} unitHead={{ name: uhPos.name, problem: uhPos.problem }} />
+            <PmReviewForm id={req.id} lockVersion={lockVersion} netLabel={net} unitHead={{ name: uhPos.name, problem: uhPos.problem }} fromRegister={snapshot?.source === "SALARY_REGISTER"} />
             <SimpleAction action={releasePmAction} hidden={{ id: req.id }} label="Release to queue" className="btn btn-ghost btn-sm" />
           </section>,
         );
