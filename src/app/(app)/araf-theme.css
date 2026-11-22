@@ -246,3 +246,38 @@
 .shell .staff-how { padding-left: 1.2em; display: grid; gap: 6px; margin: 0; }
 .shell .amount-slider { width: 100%; accent-color: var(--action); margin: var(--space-3) 0 var(--space-2); min-height: 32px; }
 @media (max-width: 640px) { .shell .staff-hero { padding: var(--space-5); } .shell .btn-lg { width: 100%; justify-content: center; justify-self: stretch; } }
+
+/* ---- Phase 6: interaction quality ---- */
+/* Skeleton loading (content area only). A gentle pulse; static when reduced motion is requested. */
+.shell .skeleton-page { display: grid; gap: var(--space-3); max-width: 960px; }
+.shell .sk { background: var(--surface-3); border-radius: 6px; animation: sk-pulse 1.4s ease-in-out infinite; }
+.shell .sk-eyebrow { height: 10px; width: 120px; }
+.shell .sk-title { height: 28px; width: 320px; max-width: 80%; }
+.shell .sk-line { height: 12px; }
+.shell .sk-thin { height: 10px; opacity: 0.7; }
+.shell .sk-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); margin: var(--space-4) 0; }
+.shell .sk-figure { display: grid; gap: 8px; }
+.shell .sk-label { height: 10px; width: 50%; }
+.shell .sk-value { height: 30px; width: 80%; }
+.shell .sk-list { display: grid; border-top: 1px solid var(--line); }
+.shell .sk-row { display: flex; gap: var(--space-4); align-items: center; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+.shell .sk-amount { height: 14px; width: 110px; flex: none; }
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (max-width: 640px) { .shell .sk-figures { grid-template-columns: 1fr; gap: var(--space-3); } }
+@media (prefers-reduced-motion: reduce) { .shell .sk { animation: none; } }
+
+/* Immediate, short feedback (150ms) on rows and buttons; never delays the action. */
+.shell .home-row { transition: background-color var(--t-fast) var(--ease); border-radius: 8px; }
+.shell .btn:active:not([disabled]) { transform: translateY(1px); }
+.shell .config-tile { transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.shell .config-tile:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+.shell .alert { animation: fx-in 180ms var(--ease); }
+@keyframes fx-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .shell .alert { animation: none; } .shell .btn:active { transform: none; } }
+
+/* Comfortable touch targets on phones. */
+@media (max-width: 640px) {
+  .shell .btn, .shell .tab, .shell select, .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { min-height: 44px; }
+  .shell .btn-sm { min-height: 40px; }
+  .shell .check input { width: 22px; height: 22px; }
+}
