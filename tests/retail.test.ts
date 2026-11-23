@@ -174,18 +174,30 @@ describe("business review routing", () => {
     expect((await openTaskOf(id)).email).toBe("do.ife@altbank.ng");
   });
 
-  it("a general Team Lead with no state scope still receives the state-routed Team Lead review", async () => {
+  it("a Team Lead with no state scope is not used for a state-routed Team Lead review", async () => {
     await vf();
     const tl = await staffId("tl.lagos@altbank.ng");
     await db.query("UPDATE role_assignments SET region = NULL WHERE staff_id = $1 AND role = 'TEAM_LEAD'", [tl]);
     const id = await vfCase();
     const t = await openTaskOf(id);
     expect(t.stage).toBe("TEAM_LEAD_REVIEW");
-    expect(t.email).toBe("tl.lagos@altbank.ng");
-    expect((await app(id)).team_lead_id).toBe(tl);
+    expect(t.assignee_id).toBeNull();
+    expect((await app(id)).team_lead_id).toBeNull();
   });
 
-  it("a Super Admin can reroute a waiting Team Lead review to a lead in another state, and the case records them", async () => {
+  it("prefers the Team Lead whose team matches the initiator's team within the state", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    // Another Lagos lead on a different team must not take the case from the matching lead.
+    await grantRole(admin, { staffId: await staffId("do.ife@altbank.ng"), role: "TEAM_LEAD", region: "LAGOS", team: "RETAIL-LAGOS-2" });
+    const id = await vfCase();
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.email).toBe("tl.lagos@altbank.ng");
+    expect((await app(id)).team_lead_id).toBe(await staffId("tl.lagos@altbank.ng"));
+  });
+
+  it("a Super Admin cannot reroute a Team Lead review to a lead in another state", async () => {
     await vf();
     const admin = await ctxFor("superadmin@altbank.ng");
     await revokeRole(admin, { staffId: await staffId("tl.lagos@altbank.ng"), role: "TEAM_LEAD" });
@@ -194,10 +206,8 @@ describe("business review routing", () => {
     expect(t.assignee_id).toBeNull();
     const outside = await staffId("tl.abuja@altbank.ng");
     const options = await rerouteOptionsForTask(t.id);
-    expect(options.find((o) => o.staff_id === outside)).toMatchObject({ in_scope: false });
-    await adminAssignTask(admin, t.id, outside, "Covering the Lagos queue from Abuja");
-    expect((await openTaskOf(id)).email).toBe("tl.abuja@altbank.ng");
-    expect((await app(id)).team_lead_id).toBe(outside);
+    expect(options.find((o) => o.staff_id === outside)).toBeUndefined();
+    await expect(adminAssignTask(admin, t.id, outside, "Covering the Lagos queue from Abuja")).rejects.toThrow(/not eligible/);
   });
 
   it("the final assessment takes the statement period from the uploaded statements instead of blocking approval", async () => {

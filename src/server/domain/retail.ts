@@ -634,6 +634,23 @@ async function businessStages(tx: Tx, app: AppRow, now: Date): Promise<Stage[]> 
   }) as Stage[];
 }
 
+/**
+ * The Team Lead for the initiator's own team within their state. Team codes are written inconsistently
+ * (RETAIL KANO / RETAIL-KANO / KANO), so compare them with every non-alphanumeric character removed.
+ */
+async function teamLeadFor(tx: Tx, app: AppRow): Promise<string | null> {
+  if (!app.region) return null;
+  const teamKey = app.team ? app.team.toUpperCase().replace(/[^A-Z0-9]/g, "") : null;
+  const r = await tx.query<{ staff_id: string }>(
+    `SELECT ra.staff_id FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
+      WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = 'TEAM_LEAD' AND ra.region = $1
+        AND ($2::text IS NULL OR regexp_replace(upper(coalesce(ra.team, '')), '[^A-Z0-9]', '', 'g') = $2)
+      ORDER BY s.full_name LIMIT 1`,
+    [app.region, teamKey],
+  );
+  return r.rows[0]?.staff_id ?? null;
+}
+
 /** Assign a business-review stage to the right person (preferring whoever held it before). */
 async function enterBusinessStage(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, note?: string) {
   if (stage === "BUSINESS_ENDORSEMENT" || stage === "CX_CREDIT_REVIEW") {
@@ -641,7 +658,16 @@ async function enterBusinessStage(tx: Tx, ctx: Ctx, app: AppRow, stage: Stage, n
     await moveTo(tx, ctx, app, stage, chosen, note);
     return chosen;
   }
-  const preferred = stage === "MO_HEAD_REVIEW" ? (app.mo_head_id ?? null) : stage === "OSS_REVIEW" ? app.oss_reviewer_id : stage === "TEAM_LEAD_REVIEW" ? app.team_lead_id : stage === "HRS_REVIEW" ? app.hrs_id : app.hou_id;
+  const preferred =
+    stage === "MO_HEAD_REVIEW"
+      ? (app.mo_head_id ?? null)
+      : stage === "OSS_REVIEW"
+        ? app.oss_reviewer_id
+        : stage === "TEAM_LEAD_REVIEW"
+          ? (app.team_lead_id ?? (await teamLeadFor(tx, app)))
+          : stage === "HRS_REVIEW"
+            ? app.hrs_id
+            : app.hou_id;
   const chosen = await chooseAssignee(tx, app, stage, { preferred });
   if (stage === "MO_HEAD_REVIEW") app.mo_head_id = chosen.staffId;
   else if (stage === "OSS_REVIEW") app.oss_reviewer_id = chosen.staffId;

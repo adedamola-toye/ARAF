@@ -22,16 +22,16 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
     : null;
   const rows = await Promise.all(unassigned.map(async (t) => ({ t, eligible: await rerouteOptionsForTask(t.id) })));
   const lookupEligible = lookup ? await rerouteOptionsForTask(lookup.id) : [];
-  const option = (e: { staff_id: string; full_name: string; role: Role; in_scope: boolean }) => ({
+  const option = (e: { staff_id: string; full_name: string; role: Role }) => ({
     value: e.staff_id,
-    label: `${e.full_name} (${ROLE_LABELS[e.role] ?? e.role})${e.in_scope ? "" : " — other state/team"}`,
+    label: `${e.full_name} (${ROLE_LABELS[e.role] ?? e.role})`,
   });
   return (
     <>
       <div className="page-head">
         <div>
           <h1>Assignment exceptions</h1>
-          <p>Stages with no active, eligible assignee. A stage can never be skipped: provision or grant the role, then assign. Only eligible officers (role, status, separation of duties) are offered.</p>
+          <p>Stages with no active, eligible assignee. A stage can never be skipped: provision or grant the role, then assign. Only eligible officers (role, state/team scope, separation of duties) are offered. A Team Lead review goes only to a Team Lead in the request&apos;s state.</p>
         </div>
       </div>
       {rows.length === 0 && <div className="card"><p className="muted" style={{ margin: 0 }}>No unassigned stages.</p></div>}
@@ -42,19 +42,14 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
             <span className="badge badge-red">Waiting {formatDuration(Date.now() - new Date(t.entered_at).getTime())}</span>
           </div>
           <p className="small">{STAGE_LABELS[t.stage as Stage]} · requires {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role} · since {formatLagos(t.entered_at)}{t.assignment_note ? ` · ${t.assignment_note}` : ""}</p>
-          {eligible.length === 0 && <p className="small muted" role="status">Nobody holds the required role for this stage yet. Grant the role (state-specific or general) first.</p>}
-          {eligible.some((e) => !e.in_scope) && (
-            <p className="small muted" style={{ margin: 0 }}>
-              Officers outside the request&apos;s state/team are also listed (they hold the required role). Choosing one overrides the state/team scope.
-            </p>
-          )}
+          {eligible.length === 0 && <p className="small muted" role="status">Nobody holds the required role in the request&apos;s state/team yet. Grant the role with the right state (and team) first.</p>}
           <AssignForm taskId={t.id} eligible={eligible.map(option)} />
         </div>
       ))}
       <div className="card">
         <h2>Reroute any open case</h2>
         <p className="small muted" style={{ marginTop: 0 }}>
-          Enter the request ID to hand an assigned or waiting case to another officer. The dropdown lists officers in the request&apos;s state/team first, then any other holder of the required role.
+          Enter the request ID to hand an assigned or waiting case to another eligible officer in the request&apos;s state/team. A Team Lead review can only go to a Team Lead in that state.
         </p>
         <form method="get" className="row" style={{ alignItems: "end" }}>
           <div className="field"><label htmlFor="ref">Request ID</label><input id="ref" name="ref" defaultValue={sp.ref ?? ""} placeholder="ARAF-2026-001001" /></div>
@@ -69,9 +64,9 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
               <Link className="muted" href={`/admin/audit?ref=${lookup.ref}`}>audit trail</Link>
             </p>
             <h3 style={{ fontSize: 15, margin: 0 }}>Reroute to an officer</h3>
-            <p className="small muted" style={{ margin: 0 }}>The officer must hold the role required by this stage. Officers outside the request&apos;s state/team are shown last and override the scope.</p>
+            <p className="small muted" style={{ margin: 0 }}>The officer must hold the role required by this stage and be in the request&apos;s state/team.</p>
             {lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).length === 0 && (
-              <p className="small muted" role="status">No other holder of the required role exists. Grant the role first, or check the state/team scope.</p>
+              <p className="small muted" role="status">No other eligible officer exists for this stage in the request&apos;s state/team. Grant the role with the right scope first.</p>
             )}
             <AssignForm taskId={lookup.id} eligible={lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).map(option)} />
           </div>

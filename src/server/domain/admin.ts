@@ -195,33 +195,16 @@ export async function eligibleForTask(taskId: string) {
 }
 
 export interface RerouteOption extends EligibleStaff {
-  /** False when the officer holds the required role but sits outside the stage's state/team scope. */
+  /** Kept for the form; every option now satisfies the stage's state/team scope. */
   in_scope: boolean;
 }
 
 /**
- * Choices for the Super Admin's reroute dropdown: the scoped pool first, then any other active holder of the
- * required role (a state/team override). The role and separation-of-duties rules are still enforced, so a case
- * can never be handed to somebody who cannot act on it.
+ * Choices for the Super Admin's reroute dropdown. A Team Lead review may only go to a Team Lead in the
+ * request's state, and every other stage keeps its own role and separation-of-duties rules.
  */
 export async function rerouteOptionsForTask(taskId: string): Promise<RerouteOption[]> {
-  return withTx(async (tx) => {
-    const t = (await tx.query("SELECT * FROM tasks WHERE id = $1", [taskId])).rows[0];
-    if (!t) throw notFound();
-    const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1", [t.application_id])).rows[0];
-    const spec = await assignmentSpec(tx, app, t.stage as Stage);
-    if (spec.only && spec.only.filter(Boolean).length === 0) return [];
-    const scoped = await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
-    const byId = new Map<string, RerouteOption>(scoped.map((p) => [p.staff_id, { ...p, in_scope: true }]));
-    if (spec.team || spec.region) {
-      // State/team scope may be overridden by an officer who still holds the required role (never the `only` pin).
-      const widened = await eligibleStaff(tx, spec.roles, spec.exclude, { only: spec.only });
-      for (const p of widened) if (!byId.has(p.staff_id)) byId.set(p.staff_id, { ...p, in_scope: false });
-    }
-    return [...byId.values()].sort(
-      (a, b) => Number(b.in_scope) - Number(a.in_scope) || a.role.localeCompare(b.role) || a.full_name.localeCompare(b.full_name),
-    );
-  });
+  return (await eligibleForTask(taskId)).map((p) => ({ ...p, in_scope: true }));
 }
 
 /** Super Admin resolves a missing assignee (or hands over an assignment) to an eligible officer. */
@@ -236,17 +219,8 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     if (task.status !== "OPEN") throw conflict("This task is no longer open.");
     const spec = await assignmentSpec(tx, app, task.stage as Stage);
     const pool = await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
-    // The scoped pool is preferred. A Super Admin may deliberately reroute outside the state/team scope to any
-    // active holder of the required role; separation of duties and the `only` pin still apply.
-    let pick = pool.find((p) => p.staff_id === staffId);
-    let scopeOverride = false;
-    if (!pick && (spec.team || spec.region)) {
-      const widened = await eligibleStaff(tx, spec.roles, spec.exclude, { only: spec.only });
-      pick = widened.find((p) => p.staff_id === staffId);
-      scopeOverride = !!pick;
-      if (pick) pool.push(...widened.filter((p) => !pool.some((x) => x.staff_id === p.staff_id)));
-    }
-    if (!pick) throw invalid("The selected officer is not eligible for this stage (role, status or separation of duties).");
+    const pick = pool.find((p) => p.staff_id === staffId);
+    if (!pick) throw invalid("The selected officer is not eligible for this stage (role, state/team scope or separation of duties).");
     await tx.query("UPDATE tasks SET assignee_id = $2, assignee_role = $3, assigned_at = $4 WHERE id = $1", [taskId, staffId, pick.role, ctx.now]);
     await tx.query(
       `INSERT INTO assignment_changes (task_id, from_staff_id, to_staff_id, method, eligible_pool, changed_by, changed_at) VALUES ($1,$2,$3,'ADMIN',$4,$5,$6)`,
@@ -254,7 +228,7 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     );
     const col = STAGE_REVIEWER_COLUMN[task.stage as Stage];
     if (col) await tx.query(`UPDATE applications SET ${col} = $2, lock_version = lock_version + 1, updated_at = $3 WHERE id = $1`, [app.id, staffId, ctx.now]);
-    await audit(tx, ctx, { action: "TASK_REASSIGNED", actorRole: "SUPER_ADMIN", applicationId: app.id, stage: task.stage, reason: note, assignmentFrom: task.assignee_id, assignmentTo: staffId, details: { taskId, scopeOverride, scope: { team: spec.team ?? null, region: spec.region ?? null } } });
+    await audit(tx, ctx, { action: "TASK_REASSIGNED", actorRole: "SUPER_ADMIN", applicationId: app.id, stage: task.stage, reason: note, assignmentFrom: task.assignee_id, assignmentTo: staffId, details: { taskId, scope: { team: spec.team ?? null, region: spec.region ?? null } } });
     await notifyAssignment(tx, ctx, app, taskId, task.stage as Stage, staffId, `:admin:${ctx.now.getTime()}`);
     await notifyExceptionReviewer(tx, ctx, app, taskId, task.stage as Stage, staffId);
     // The officer who previously held the task is told it has moved (in-app; no customer details).
