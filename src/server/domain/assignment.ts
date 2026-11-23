@@ -120,6 +120,30 @@ export interface EligibleStaff {
   email: string;
 }
 
+/**
+ * The application column that records who holds a review stage. Automatic routing writes these as it enters
+ * a stage; a manual assignment must write the same column so the case shows its reviewer and later stages can
+ * exclude them (separation of duties).
+ */
+export const STAGE_REVIEWER_COLUMN: Partial<Record<Stage, string>> = {
+  BUSINESS_ENDORSEMENT: "endorser_id",
+  MO_HEAD_REVIEW: "mo_head_id",
+  OSS_REVIEW: "oss_reviewer_id",
+  TEAM_LEAD_REVIEW: "team_lead_id",
+  HRS_REVIEW: "hrs_id",
+  HEAD_OF_UNIT_APPROVAL: "hou_id",
+  UNIT_HEAD_REVIEW: "hou_id",
+  CX_CREDIT_REVIEW: "cx_reviewer_id",
+  FIRST_CREDIT_REVIEW: "first_reviewer_id",
+  CREDIT_CORRECTION: "first_reviewer_id",
+  SECOND_CREDIT_REVIEW: "second_reviewer_id",
+  CO3_PACK_REVIEW: "pack_co3_id",
+  DISBURSEMENT_CORRECTION: "pack_co3_id",
+  COMPLETION: "pack_co3_id",
+  DISBURSEMENT_CHECK: "do1_id",
+  DISBURSEMENT_BOOKING: "do2_id",
+};
+
 export async function eligibleStaff(
   tx: Tx,
   roles: readonly Role[],
@@ -128,6 +152,9 @@ export async function eligibleStaff(
 ): Promise<EligibleStaff[]> {
   const ex = exclude.filter((x): x is string => !!x);
   const only = scope.only ? scope.only.filter((x): x is string => !!x) : null;
+  const region = scope.region ?? null;
+  // A state-scoped stage accepts officers scoped to that state *and* general officers with no state scope.
+  // State-specific officers are listed first so automatic routing prefers the right state when both exist.
   const r = await tx.query<EligibleStaff>(
     `SELECT ra.staff_id, ra.role, s.full_name, s.email
        FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
@@ -135,9 +162,9 @@ export async function eligibleStaff(
         AND NOT (ra.staff_id = ANY($2::uuid[]))
         AND ($3::text IS NULL OR ra.team = $3)
         AND ($4::uuid[] IS NULL OR ra.staff_id = ANY($4::uuid[]))
-        AND ($5::text IS NULL OR ra.region = $5)
-      ORDER BY ra.role, s.full_name`,
-    [roles, ex, scope.team ?? null, only, scope.region ?? null],
+        AND ($5::text IS NULL OR ra.region = $5 OR ra.region IS NULL)
+      ORDER BY (CASE WHEN $5::text IS NOT NULL AND ra.region = $5 THEN 0 ELSE 1 END), ra.role, s.full_name`,
+    [roles, ex, scope.team ?? null, only, region],
   );
   return r.rows;
 }

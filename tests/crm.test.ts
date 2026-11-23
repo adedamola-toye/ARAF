@@ -5,7 +5,7 @@ import { resetDb } from "./helpers";
 import { ctxFor, createSubmittedCase } from "@/server/demo/scenario";
 import type { Ctx } from "@/server/context";
 import { crmCatalogue, crmProducts, crmSettings, FALLBACK_TEAM_ID } from "@/server/crm/core";
-import { addUpdate, assignTicket, confirmResolution, createTicket, escalateTicket, listTickets, reopenTicket, requestInformation, resolveTicket, startWork, ticketDetail, transferTicket, DuplicateComplaint } from "@/server/crm/tickets";
+import { addUpdate, assignTicket, confirmResolution, createTicket, escalateTicket, listTickets, reopenTicket, requestInformation, resolveTicket, rerouteTicket, startWork, ticketDetail, transferTicket, DuplicateComplaint } from "@/server/crm/tickets";
 import { saveCrmSettings, saveEscalationRule, saveRoutingRule, saveSlaPolicy, saveTeam, setTeamMember, saveSubcategory, saveCategory } from "@/server/crm/config";
 import { runCrmAutoClose, runCrmEscalations } from "@/server/crm/jobs";
 import { addBusinessMs, businessMsBetween } from "@/server/crm/calendar";
@@ -328,6 +328,19 @@ describe("Officer hand-off and per-ticket measurements", () => {
     const row = (await db.query("SELECT assignee_id, reassign_count FROM crm_tickets WHERE id = $1", [t.id])).rows[0];
     expect(row).toMatchObject({ assignee_id: C, reassign_count: 1 });
     expect((await db.query("SELECT reason FROM audit_events WHERE action = 'CRM_TICKET_REASSIGNED'")).rows[0].reason).toBe("On leave tomorrow; Chi knows this supplier.");
+  });
+
+  it("the CX Head or Super Admin can reroute a ticket straight to an officer in another team; a team lead cannot", async () => {
+    const A = (await db.query("SELECT id FROM staff WHERE email='officer.a@altbank.ng'")).rows[0].id;
+    const B = (await db.query("SELECT id FROM staff WHERE email='officer.b@altbank.ng'")).rows[0].id;
+    const t = await raise("rm.ade@altbank.ng", T0);
+    await assignTicket(await at("lead.ops@altbank.ng", T0), t.id, A);
+    await expect(rerouteTicket(await at("lead.ops@altbank.ng", T0), t.id, tech, B, "Technology owns this integration issue.")).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await rerouteTicket(await at("cx.head@altbank.ng", T0), t.id, tech, B, "Technology owns this integration issue now.");
+    const row = (await db.query("SELECT team_id, assignee_id, reassign_count FROM crm_tickets WHERE id = $1", [t.id])).rows[0];
+    expect(row).toMatchObject({ team_id: tech, assignee_id: B, reassign_count: 1 });
+    const open = (await db.query("SELECT team_id, officer_id FROM crm_assignments WHERE ticket_id = $1 AND ended_at IS NULL", [t.id])).rows[0];
+    expect(open).toMatchObject({ team_id: tech, officer_id: B });
   });
 
   it("measures routing, assignment wait, first response, investigation, pending information, resolution, closure and breach from timestamps", async () => {

@@ -179,6 +179,8 @@ describe("random assignment eligibility and separation of duties", () => {
     await expect(adminAssignTask(admin, t.id, await staffId("co1@altbank.ng"), "cover")).rejects.toThrow(/not eligible/);
     await adminAssignTask(admin, t.id, await staffId("lead2@altbank.ng"), "Covering Unit Head");
     expect((await openTaskOf(id)).email).toBe("lead2@altbank.ng");
+    // The manual assignment is recorded on the application too, so the case shows its Unit Head.
+    expect((await appRow(id)).hou_id).toBe(await staffId("lead2@altbank.ng"));
     await act(id, "APPROVE");
     expect((await openTaskOf(id)).stage).toBe("DIVISIONAL_HEAD_REVIEW");
   });

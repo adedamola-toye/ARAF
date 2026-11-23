@@ -433,6 +433,36 @@ export async function assignTicket(ctx: Ctx, id: string, officerId: string, reas
   });
 }
 
+/**
+ * CX Head / Super Admin reroute: move the ticket straight to an officer in any team (no separate transfer step).
+ * The previous segment is closed so handling time stays with the team that spent it.
+ */
+export async function rerouteTicket(ctx: Ctx, id: string, teamId: string, officerId: string, reason: string, lockVersion?: number | null) {
+  const why = reasonOk(reason);
+  return withTx(async (tx) => {
+    const p = await principalFor(tx, ctx);
+    if (!isOversight(p)) throw forbidden("Only the CX Head or a Super Admin can reroute a ticket to another team.");
+    const t = await lockTicket(tx, id, lockVersion);
+    if (CLOSED_OR_RESOLVED.includes(t.status)) throw conflict(`This ticket is ${STATUS_LABELS[t.status].toLowerCase()}.`);
+    if (!uuidRe.test(teamId) || !uuidRe.test(officerId)) throw invalid("Choose a team and an officer.", { target: "Choose an officer." });
+    const team = (await tx.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE id = $1 AND active", [teamId])).rows[0];
+    if (!team) throw invalid("Choose an active team.", { target: "Not available." });
+    if (!(await activeMember(tx, team.id, officerId))) throw invalid("Choose an active member of that team.", { target: "Not a member of that team." });
+    if (officerId === t.creator_id) throw invalid("A complaint cannot be assigned to the person who raised it.", { target: "Choose someone else." });
+    if (officerId === t.assignee_id && team.id === t.team_id) throw conflict("The ticket is already with this officer in this team.");
+    const isReassign = !!t.assignee_id;
+    await endSegment(tx, t.id, ctx.now, isReassign ? "REASSIGNED" : "ASSIGNED");
+    await openSegment(tx, { ticketId: t.id, teamId: team.id, officerId, now: ctx.now, by: p.staffId, reason: why });
+    const nextStatus: TicketStatus = t.status === "PENDING_INFO" ? "PENDING_INFO" : "ASSIGNED";
+    await touch(tx, t.id, ctx.now, `team_id = $3, assignee_id = $4, status = $5, first_assigned_at = coalesce(first_assigned_at, $2)${isReassign ? ", reassign_count = reassign_count + 1" : ""}`, [team.id, officerId, nextStatus]);
+    const officer = await staffById(tx, officerId);
+    await event(tx, t.id, ctx.now, p.staffId, "REROUTED", "PUBLIC", `Rerouted to ${officer?.full_name ?? "an officer"} in ${team.name}.`, { fromTeam: t.team_id, toTeam: team.id, officerId, from: t.assignee_id });
+    await event(tx, t.id, ctx.now, p.staffId, "TRANSFER_REASON", "INTERNAL", why, { override: true });
+    await crmAudit(tx, ctx, "CRM_TICKET_REROUTED", t, { reason: why, from: t.team_id, to: team.id, details: { officerId } });
+    if (officer) await tell(tx, ctx.now, [officer], { kind: "CRM_TICKET_ASSIGNED", title: `Complaint ${t.ref} assigned to you`, body: `${PRIORITY_LABELS[t.priority]} priority · ${t.category_name} — ${t.subcategory_name}: “${t.subject}”.`, ticketId: t.id, dedupe: `crm-rerouted:${t.id}:${ctx.now.getTime()}`, email: true });
+  });
+}
+
 /** The assigned officer starts work: In Progress, accepted, first response recorded. */
 export async function startWork(ctx: Ctx, id: string, lockVersion?: number | null) {
   return withTx(async (tx) => {

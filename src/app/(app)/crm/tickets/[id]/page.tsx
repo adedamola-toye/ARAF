@@ -31,6 +31,7 @@ const EVENT_LABEL: Record<string, string> = {
   RESUMED: "Resumed",
   TRANSFERRED: "Transferred",
   TRANSFER_REASON: "Transfer reason",
+  REROUTED: "Rerouted",
   ESCALATED: "Escalated",
   AUTO_ESCALATED: "Escalated automatically",
   ACTION_REQUESTED: "CX Head requested action",
@@ -63,6 +64,16 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
     ? (await db.query<{ id: string; name: string; role: string }>("SELECT s.id, s.full_name AS name, m.member_role AS role FROM crm_team_members m JOIN staff s ON s.id = m.staff_id AND s.status = 'ACTIVE' WHERE m.team_id = $1 AND m.active AND s.id <> $2 ORDER BY m.member_role DESC, s.full_name", [t.team_id, t.creator_id])).rows
     : [];
   const teams = work ? (await db.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE active AND id <> $1 ORDER BY name", [t.team_id])).rows : [];
+  const rerouteOptions = isOversight(p)
+    ? (
+        await db.query<{ id: string; name: string; role: string; team_id: string; team_name: string }>(
+          `SELECT s.id, s.full_name AS name, m.member_role AS role, t.id AS team_id, t.name AS team_name
+             FROM crm_team_members m JOIN staff s ON s.id = m.staff_id AND s.status = 'ACTIVE'
+             JOIN crm_teams t ON t.id = m.team_id AND t.active
+            WHERE m.active ORDER BY t.name, m.member_role DESC, s.full_name`,
+        )
+      ).rows
+    : [];
   const ownerSince = d.assignments.find((a) => !a.ended_at)?.started_at ?? null;
   const breakdown = full ? handlingBreakdown(d.assignments, new Date(now)) : null;
   const tm = full ? ticketTimings(t, d.events, new Date(now), await crmSettings(db)) : null;
@@ -339,6 +350,7 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             isMember={p.officerTeams.includes(t.team_id)}
             officers={officers}
             teams={teams}
+            rerouteOptions={rerouteOptions}
             currentAssignee={t.assignee_id}
           />
         </aside>

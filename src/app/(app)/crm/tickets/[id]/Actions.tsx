@@ -60,6 +60,8 @@ export interface ActionProps {
   isMember: boolean;
   officers: { id: string; name: string; role: string }[];
   teams: { id: string; name: string }[];
+  /** CX Head / Super Admin: every active member of every team, for a direct cross-team reroute. */
+  rerouteOptions: { id: string; name: string; role: string; team_id: string; team_name: string }[];
   currentAssignee: string | null;
 }
 
@@ -273,6 +275,40 @@ export function TicketActions(p: ActionProps) {
         </Op>
       </Fold>,
     );
+
+  if (p.isOversight && open && p.rerouteOptions.length) {
+    const teams = [...new Map(p.rerouteOptions.map((o) => [o.team_id, o.team_name])).entries()];
+    blocks.push(
+      <Fold key="reroute" label="Reroute to any officer">
+        <Op op="reroute" id={p.id} lockVersion={p.lockVersion}>
+          <div className="field">
+            <label htmlFor="rr-target">Officer (grouped by team)</label>
+            <select id="rr-target" name="target" required defaultValue="">
+              <option value="">Choose…</option>
+              {teams.map(([teamId, teamName]) => (
+                <optgroup key={teamId} label={teamName}>
+                  {p.rerouteOptions
+                    .filter((o) => o.team_id === teamId && o.id !== p.currentAssignee)
+                    .map((o) => (
+                      <option key={`${teamId}-${o.id}`} value={`${teamId}|${o.id}`}>
+                        {o.name} {o.role === "LEAD" ? "(Team Lead)" : ""}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="rr-why">Reason (required)</label>
+            <textarea id="rr-why" name="reason" rows={2} required minLength={10} />
+          </div>
+          <div>
+            <SubmitButton>Reroute</SubmitButton>
+          </div>
+        </Op>
+      </Fold>,
+    );
+  }
 
   if (p.isOversight) {
     blocks.push(

@@ -194,6 +194,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           </dl>
         </div>
         <div className="row">
+          {roles.includes("SUPER_ADMIN") && c.openTask && (
+            <Link className="btn btn-ghost" href={`/admin/exceptions?ref=${encodeURIComponent(app.ref)}`}>
+              Reroute case
+            </Link>
+          )}
           {app.stage !== "DRAFT" && (
             <Link className="btn btn-ghost" href={`/crm/new?app=${app.id}`}>
               Raise a complaint

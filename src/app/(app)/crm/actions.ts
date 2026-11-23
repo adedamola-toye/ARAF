@@ -15,6 +15,7 @@ import {
   requestAction,
   requestInformation,
   resolveTicket,
+  rerouteTicket,
   startWork,
   transferTicket,
   DuplicateComplaint,
@@ -72,6 +73,11 @@ export async function raiseComplaintAction(_p: ActionState, fd: FormData): Promi
 type Op = (ctx: Awaited<ReturnType<typeof requireUser>>["ctx"], id: string, fd: FormData) => Promise<string>;
 const ops: Record<string, Op> = {
   assign: async (ctx, id, fd) => (await assignTicket(ctx, id, s(fd, "officerId"), s(fd, "reason") || null, lv(fd)), "Assigned. The officer has been notified."),
+  reroute: async (ctx, id, fd) => {
+    const [teamId = "", officerId = ""] = s(fd, "target").split("|");
+    await rerouteTicket(ctx, id, teamId, officerId, s(fd, "reason"), lv(fd));
+    return "Rerouted. The officer has been notified.";
+  },
   start: async (ctx, id, fd) => (await startWork(ctx, id, lv(fd)), "Work started."),
   update: async (ctx, id, fd) => {
     const internal = fd.get("internal") === "on";

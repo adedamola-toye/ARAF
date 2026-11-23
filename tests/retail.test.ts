@@ -29,7 +29,7 @@ import { walletDay, walletMonth } from "@/server/domain/wallet";
 import { verifyVendorAccount, proposeBeneficiary } from "@/server/domain/vendors";
 import { bvnError, phoneError } from "@/server/domain/retail-data";
 import { createSubmittedCase, driveToOffer, driveToClosed } from "@/server/demo/scenario";
-import { grantRole } from "@/server/domain/admin";
+import { grantRole, revokeRole, adminAssignTask, rerouteOptionsForTask } from "@/server/domain/admin";
 import { lagosDate } from "@/server/time";
 
 const N = (n: number) => n * 100;
@@ -155,6 +155,49 @@ describe("business review routing", () => {
     const t = await openTaskOf(id);
     expect(t.stage).toBe("OSS_REVIEW");
     expect(t.assignee_id).toBeNull();
+  });
+
+  it("a manual assignment to an unassigned Team Lead review records the Team Lead on the case", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    await revokeRole(admin, { staffId: await staffId("tl.lagos@altbank.ng"), role: "TEAM_LEAD" });
+    const id = await vfCase();
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.assignee_id).toBeNull();
+    expect((await app(id)).team_lead_id).toBeNull();
+    // A manager provisioned for the request's state can pick the case up from the exception queue.
+    const covering = await staffId("do.ife@altbank.ng");
+    await grantRole(admin, { staffId: covering, role: "TEAM_LEAD", region: "LAGOS", team: "RETAIL-LAGOS-1" });
+    await adminAssignTask(admin, t.id, covering, "Covering the Lagos Team Lead");
+    expect((await app(id)).team_lead_id).toBe(covering);
+    expect((await openTaskOf(id)).email).toBe("do.ife@altbank.ng");
+  });
+
+  it("a general Team Lead with no state scope still receives the state-routed Team Lead review", async () => {
+    await vf();
+    const tl = await staffId("tl.lagos@altbank.ng");
+    await db.query("UPDATE role_assignments SET region = NULL WHERE staff_id = $1 AND role = 'TEAM_LEAD'", [tl]);
+    const id = await vfCase();
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.email).toBe("tl.lagos@altbank.ng");
+    expect((await app(id)).team_lead_id).toBe(tl);
+  });
+
+  it("a Super Admin can reroute a waiting Team Lead review to a lead in another state, and the case records them", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    await revokeRole(admin, { staffId: await staffId("tl.lagos@altbank.ng"), role: "TEAM_LEAD" });
+    const id = await vfCase();
+    const t = await openTaskOf(id);
+    expect(t.assignee_id).toBeNull();
+    const outside = await staffId("tl.abuja@altbank.ng");
+    const options = await rerouteOptionsForTask(t.id);
+    expect(options.find((o) => o.staff_id === outside)).toMatchObject({ in_scope: false });
+    await adminAssignTask(admin, t.id, outside, "Covering the Lagos queue from Abuja");
+    expect((await openTaskOf(id)).email).toBe("tl.abuja@altbank.ng");
+    expect((await app(id)).team_lead_id).toBe(outside);
   });
 
   it("Head of Unit is configurable: NOT_REQUIRED goes straight to credit; a person holding both HRS and HoU is never used twice", async () => {
