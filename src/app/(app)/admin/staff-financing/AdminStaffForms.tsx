@@ -2,7 +2,7 @@
 import { ActionForm, SubmitButton } from "@/components/forms";
 import { staffSettingsAction, staffTemplateAction } from "../../staff-request/actions";
 
-export function StaffSettingsForm({ current, categories, unitHeads }: { current: { deductionPercent: string; minAmount: string; maxAmount: string; tenorOptions: string; requiredDocuments: string[]; unitHeadId: string }; categories: { code: string; label: string }[]; unitHeads: { id: string; label: string }[] }) {
+export function StaffSettingsForm({ current, categories, unitHeads }: { current: { deductionPercent: string; minAmount: string; maxAmount: string; tenorOptions: string; requiredDocuments: string[]; unitHeadId: string; eligibilityMode: string; eligibilityPercent: string; salaryRecordMaxAgeDays: string }; categories: { code: string; label: string }[]; unitHeads: { id: string; label: string }[] }) {
   return (
     <ActionForm action={staffSettingsAction} className="stack" >
       {(state) => {
@@ -20,6 +20,27 @@ export function StaffSettingsForm({ current, categories, unitHeads }: { current:
                 ))}
               </select>
               <span className={err("unitHeadId") ? "err" : "hint"}>{err("unitHeadId") ?? "Every request the Product Manager forwards goes to this person, who must hold the Unit Head role."}</span>
+            </div>
+            <fieldset className="field">
+              <legend>How eligibility is established</legend>
+              <label className="check">
+                <input type="radio" name="eligibilityMode" value="MANUAL" defaultChecked={current.eligibilityMode !== "SALARY_REGISTER"} /> Manual: the applicant enters their account and the Product Manager verifies salary (SeedFi check applies)
+              </label>
+              <label className="check">
+                <input type="radio" name="eligibilityMode" value="SALARY_REGISTER" defaultChecked={current.eligibilityMode === "SALARY_REGISTER"} /> Automatic from the salary register (no SeedFi check for this product; approvals unchanged)
+              </label>
+            </fieldset>
+            <div className="grid-2">
+              <div className="field">
+                <label htmlFor="sf-ep">Eligibility (% of verified monthly salary)</label>
+                <input id="sf-ep" name="eligibilityPercent" defaultValue={current.eligibilityPercent} inputMode="decimal" aria-invalid={!!err("eligibilityPercent")} />
+                {err("eligibilityPercent") && <span className="err">{err("eligibilityPercent")}</span>}
+              </div>
+              <div className="field">
+                <label htmlFor="sf-age">Salary record valid for (days)</label>
+                <input id="sf-age" name="salaryRecordMaxAgeDays" defaultValue={current.salaryRecordMaxAgeDays} inputMode="numeric" aria-invalid={!!err("salaryRecordMaxAgeDays")} />
+                <span className={err("salaryRecordMaxAgeDays") ? "err" : "hint"}>{err("salaryRecordMaxAgeDays") ?? "Older records are treated as outdated until refreshed."}</span>
+              </div>
             </div>
             <div className="grid-2">
               <div className="field">

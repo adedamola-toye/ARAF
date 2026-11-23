@@ -1,4 +1,5 @@
 "use client";
+import { chunkedUpload } from "@/lib/chunked-upload";
 import { checklistFor } from "@/lib/approval-checklists";
 import { VerifyButton } from "@/components/VerifyDialog";
 import { IncidentCard } from "@/components/Incident";
@@ -8,7 +9,8 @@ import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Clock, RotateCcw, Upload } from "lucide-react";
 import { ActionForm, FormMessages, SubmitButton, useActionPending, type FormState } from "@/components/forms";
 import { AmountInput, amountToKobo } from "@/components/inputs";
-import { bpsLabel, computeStaffFinancing, formatNairaKobo } from "@/lib/staff-financing";
+import { bpsLabel, computeStaffFinancing, formatNairaKobo, presetAmounts } from "@/lib/staff-financing";
+import { Money } from "@/components/Money";
 import {
   saveStaffDraftAction,
   pmDecisionAction,
@@ -76,7 +78,34 @@ export interface OriginationValues {
   declaration: boolean;
 }
 
-export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, returned }: { v: OriginationValues; rateBps: number; tenorOptions: number[]; minKobo: number | null; maxKobo: number | null; returned: boolean }) {
+/** Present when eligibility comes from the salary register: verified details are shown, not typed. */
+export interface RegisterContext {
+  availableKobo: number;
+  staffNumber: string;
+  accountLabel: string;
+  accountName: string;
+}
+
+const koboToCanonical = (k: number) => (k % 100 ? (k / 100).toFixed(2) : String(k / 100));
+
+export function OriginationForm({
+  v,
+  rateBps,
+  tenorOptions,
+  minKobo,
+  maxKobo: productMax,
+  returned,
+  register,
+}: {
+  v: OriginationValues;
+  rateBps: number;
+  tenorOptions: number[];
+  minKobo: number | null;
+  maxKobo: number | null;
+  returned: boolean;
+  register?: RegisterContext | null;
+}) {
+  const maxKobo = register ? (productMax !== null ? Math.min(productMax, register.availableKobo) : register.availableKobo) : productMax;
   const [amount, setAmount] = useState(v.amount);
   const gross = amountToKobo(amount);
   const net = gross && gross > 0 ? computeStaffFinancing(gross, rateBps).netKobo : null;
@@ -107,7 +136,14 @@ export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, re
                 <div className="grid-2">
                   <ReadOnly label="Staff name" value={v.fullName} />
                   <ReadOnly label="Staff email" value={v.email} />
-                  <Field id="staffNumber" label="Staff ID" required defaultValue={v.staffNumber} error={err("staffNumber")} hint="As on your staff ID card" autoComplete="off" />
+                  {register ? (
+                    <>
+                      <ReadOnly label="Staff ID" value={register.staffNumber} />
+                      <input type="hidden" name="staffNumber" value={register.staffNumber} />
+                    </>
+                  ) : (
+                    <Field id="staffNumber" label="Staff ID" required defaultValue={v.staffNumber} error={err("staffNumber")} hint="As on your staff ID card" autoComplete="off" />
+                  )}
                   <Field id="phone" label="Phone number" required defaultValue={v.phone} error={err("phone")} inputMode="numeric" hint="11 digits, for example 08031234567" autoComplete="tel" />
                   <Field id="department" label="Department" required defaultValue={v.department} error={err("department")} />
                   <Field id="unit" label="Unit" required defaultValue={v.unit} error={err("unit")} />
@@ -118,13 +154,27 @@ export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, re
                   <h2 id="sec-account">Salary account</h2>
                   <span className="small muted">The net amount is paid into this account</span>
                 </div>
-                <div className="grid-2">
-                  <Field id="salaryAccountNumber" label="Account number" required defaultValue={v.salaryAccountNumber} error={err("salaryAccountNumber")} inputMode="numeric" hint="10 digits" autoComplete="off" />
-                  <Field id="salaryAccountName" label="Account name" required defaultValue={v.salaryAccountName} error={err("salaryAccountName")} autoComplete="off" />
-                </div>
-                <p className="small muted" style={{ margin: "10px 0 0" }}>
-                  The Product Manager verifies this account manually against your salary records. The format check here is not a verification.
-                </p>
+                {register ? (
+                  <>
+                    <div className="grid-2">
+                      <ReadOnly label="Verified account" value={register.accountLabel} />
+                      <ReadOnly label="Account name" value={register.accountName} />
+                    </div>
+                    <p className="small muted" style={{ margin: "10px 0 0" }}>
+                      From the bank&apos;s verified salary register. If it is wrong, contact the Salary Register Administrator (HR) before you apply.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid-2">
+                      <Field id="salaryAccountNumber" label="Account number" required defaultValue={v.salaryAccountNumber} error={err("salaryAccountNumber")} inputMode="numeric" hint="10 digits" autoComplete="off" />
+                      <Field id="salaryAccountName" label="Account name" required defaultValue={v.salaryAccountName} error={err("salaryAccountName")} autoComplete="off" />
+                    </div>
+                    <p className="small muted" style={{ margin: "10px 0 0" }}>
+                      The Product Manager verifies this account manually against your salary records. The format check here is not a verification.
+                    </p>
+                  </>
+                )}
               </section>
               <section className="card" aria-labelledby="sec-financing">
                 <h2 id="sec-financing">Financing request</h2>
@@ -136,8 +186,36 @@ export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, re
                     <AmountInput id="amount" value={amount} onChange={setAmount} invalid={!!err("amount") || over || under} describedBy="amount-help" max={maxKobo} />
                     <input type="hidden" name="amount" value={amount} />
                     <span id="amount-help" className={over || under || err("amount") ? "err" : "hint"}>
-                      {err("amount") ?? (over ? `The maximum is ${formatNairaKobo(maxKobo)}.` : under ? `The minimum is ${formatNairaKobo(minKobo)}.` : "Gross amount, before the deduction.")}
+                      {err("amount") ??
+                        (over
+                          ? `The maximum ${register ? "available to you now" : ""} is ${formatNairaKobo(maxKobo)}.`
+                          : under
+                            ? `The minimum is ${formatNairaKobo(minKobo)}.`
+                            : register
+                              ? `Up to ${formatNairaKobo(maxKobo)}. The fee is deducted from this amount.`
+                              : "Gross amount, before the deduction.")}
                     </span>
+                    {register && maxKobo !== null && maxKobo > 0 && (
+                      <>
+                        <input
+                          type="range"
+                          className="amount-slider"
+                          aria-label="Choose the amount"
+                          min={Math.min(minKobo ?? 100_000, maxKobo)}
+                          max={maxKobo}
+                          step={Math.min(100_000, maxKobo)}
+                          value={Math.min(Math.max(gross ?? 0, Math.min(minKobo ?? 100_000, maxKobo)), maxKobo)}
+                          onChange={(e) => setAmount(koboToCanonical(Number(e.target.value)))}
+                        />
+                        <div className="row" role="group" aria-label="Preset amounts">
+                          {presetAmounts(maxKobo).map((k) => (
+                            <button key={k} type="button" className={`btn btn-sm ${gross === k ? "btn-dark" : ""}`} aria-pressed={gross === k} onClick={() => setAmount(koboToCanonical(k))}>
+                              {k === maxKobo ? "Maximum" : formatNairaKobo(k).replace(".00", "")}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                   {tenorOptions.length > 0 && (
                     <div className="field">
@@ -163,6 +241,11 @@ export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, re
               </section>
             </div>
             <aside className="origination-side stack" aria-label="Calculation and submission">
+              {register && (
+                <section className="card" aria-live="polite">
+                  <Money size="hero" label="You will receive" kobo={net ?? 0} hint={`Management fee ${bpsLabel(rateBps)}: ${net !== null && gross ? formatNairaKobo(gross - net) : "₦0.00"} · total repayable ${gross ? formatNairaKobo(gross) : "₦0.00"}`} />
+                </section>
+              )}
               <CalculatorCard grossKobo={gross} rateBps={rateBps} live />
               <section className="card stack" aria-labelledby="sec-confirm">
                 <h2 id="sec-confirm" style={{ margin: 0 }}>
@@ -178,8 +261,9 @@ export function OriginationForm({ v, rateBps, tenorOptions, minKobo, maxKobo, re
                 <label className={`check ${err("declaration") && !declaration ? "check-error" : ""}`}>
                   <input type="checkbox" name="declaration" checked={declaration} onChange={(e) => setDeclaration(e.target.checked)} />
                   <span>
-                    I declare that the information I have given is true and complete, and I consent to the bank verifying my account, salary history and existing
-                    repayment obligations to assess this request.
+                    {register
+                      ? "I declare that the information I have given is true and complete. I understand that the total repayable is the full amount requested, that approval is not automatic, and that the bank uses my verified salary record to assess this request."
+                      : "I declare that the information I have given is true and complete, and I consent to the bank verifying my account, salary history and existing repayment obligations to assess this request."}
                   </span>
                 </label>
                 {err("documents") && <p className="err">{err("documents")}</p>}
@@ -275,31 +359,17 @@ export function StaffUpload({ requestId, categories, title = "Upload a document"
   const send = () => {
     const f = file.current?.files?.[0];
     if (!f) return setPhase({ kind: "error", msg: "Choose a file first." });
-    const fd = new FormData();
-    fd.set("requestId", requestId);
-    fd.set("category", category);
-    fd.set("file", f);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/staff-requests/upload");
-    xhr.upload.onprogress = (e) => e.lengthComputable && setPhase({ kind: "uploading", pct: Math.round((e.loaded / e.total) * 100) });
-    xhr.onload = () => {
-      let body: { ok?: boolean; error?: string; scanStatus?: string; incident?: IncidentView } = {};
-      try {
-        body = JSON.parse(xhr.responseText);
-      } catch {
-        /* not JSON */
-      }
-      if (xhr.status === 401) return (window.location.href = "/session-expired?reason=IDLE_TIMEOUT");
-      if (body.ok) {
-        setPhase({ kind: "done", msg: body.scanStatus === "QUARANTINED" ? `${f.name} uploaded; the malware scan will finish shortly.` : `${f.name} uploaded.` });
+    // Sent in parts (resumable); the server applies every document rule to the reassembled file.
+    setPhase({ kind: "uploading", pct: 0 });
+    void chunkedUpload({ file: f, target: "STAFF_REQUEST", targetId: requestId, category, onProgress: (pct) => setPhase({ kind: "uploading", pct }) }).then((r) => {
+      if (!r.ok && r.expired) return void (window.location.href = "/session-expired?reason=IDLE_TIMEOUT");
+      if (r.ok) {
+        setPhase({ kind: "done", msg: r.result.scanStatus === "QUARANTINED" ? `${f.name} uploaded; the malware scan will finish shortly.` : `${f.name} uploaded.` });
         if (file.current) file.current.value = "";
         setName("");
         router.refresh();
-      } else setPhase({ kind: "error", msg: body.error ?? "The upload failed. Try again.", incident: body.incident });
-    };
-    xhr.onerror = () => setPhase({ kind: "error", msg: "Network error. Check your connection and retry." });
-    setPhase({ kind: "uploading", pct: 0 });
-    xhr.send(fd);
+      } else setPhase({ kind: "error", msg: r.error, incident: r.incident });
+    });
   };
   return (
     <div className="upload" role="group" aria-labelledby={`${id}-t`}>
@@ -389,8 +459,8 @@ export function ConfirmButton({ label, title, body, className = "btn btn-primary
 
 // ------------------------------------------------------------------ Product Manager
 
-export function PmReviewForm({ id, lockVersion, unitHead, netLabel }: { id: string; lockVersion: number; unitHead: { name: string | null; problem: string | null }; netLabel: string }) {
-  const [checks, setChecks] = useState({ accountVerified: false, salaryHistoryReviewed: false, repaymentWithinLimit: false });
+export function PmReviewForm({ id, lockVersion, unitHead, netLabel, fromRegister = false }: { id: string; lockVersion: number; unitHead: { name: string | null; problem: string | null }; netLabel: string; fromRegister?: boolean }) {
+  const [checks, setChecks] = useState({ accountVerified: fromRegister, salaryHistoryReviewed: fromRegister, repaymentWithinLimit: fromRegister });
   const all = checks.accountVerified && checks.salaryHistoryReviewed && checks.repaymentWithinLimit;
   const uh = !unitHead.problem && !!unitHead.name;
   const [rec, setRec] = useState("");
@@ -411,6 +481,12 @@ export function PmReviewForm({ id, lockVersion, unitHead, netLabel }: { id: stri
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="lockVersion" value={lockVersion} />
           <input type="hidden" name="decision" defaultValue="FORWARD" />
+          {fromRegister ? (
+            <div className="summary-box small">
+              <CheckCircle2 className="icon" aria-hidden="true" /> Salary, salary account and the limit were verified from the salary register when the request was submitted (see Eligibility). Review
+              any exceptions and record your recommendation.
+            </div>
+          ) : (
           <fieldset className="checklist-gate">
             <legend>Mandatory eligibility checklist</legend>
             <p className="small muted" style={{ margin: "0 0 8px" }}>
@@ -423,6 +499,7 @@ export function PmReviewForm({ id, lockVersion, unitHead, netLabel }: { id: stri
               {all ? <CheckCircle2 className="icon" aria-hidden="true" /> : <Clock className="icon" aria-hidden="true" />} {Object.values(checks).filter(Boolean).length} of 3 checks confirmed
             </p>
           </fieldset>
+          )}
           <div className="grid-2">
             <div className="field">
               <label htmlFor={`${formId}-th`}>Verified take-home pay (optional)</label>
@@ -452,7 +529,7 @@ export function PmReviewForm({ id, lockVersion, unitHead, netLabel }: { id: stri
               label="Forward to Unit Head"
               title="Forward to the Unit Head?"
               confirmLabel="Confirm and forward"
-              body={<p>You confirm all three checks were completed manually. The request ({netLabel} net) goes to {unitHead.name}, Unit Head for the staff route.</p>}
+              body={<p>{fromRegister ? "Eligibility was verified from the salary register." : "You confirm all three checks were completed manually."} The request ({netLabel} net) goes to {unitHead.name}, Unit Head for the staff route.</p>}
             />
             <DecisionButton value="RETURN" label="Return for correction" />
             <DecisionButton value="DECLINE" label="Decline request" danger />

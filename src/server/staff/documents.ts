@@ -81,7 +81,7 @@ export async function uploadStaffDocument(ctx: Ctx, input: StaffUploadInput): Pr
   const filename = sanitizeFilename(input.filename);
   if (!(input.category in STAFF_DOC_CATEGORIES)) throw invalid("Choose a document type.");
   if (input.data.length === 0) throw invalid("The file is empty.");
-  if (input.data.length > config.maxUploadBytes) throw invalid(`The file exceeds the ${Math.round(config.maxUploadBytes / 1048576)} MB limit.`);
+  if (input.data.length > config.maxDocumentBytes) throw invalid(`The file exceeds the ${Math.round(config.maxDocumentBytes / 1048576)} MB limit.`);
   const mime = sniffAllowedType(filename, input.data);
   if (!mime) throw invalid(`Unsupported or mismatched file type. Allowed: ${ALLOWED_EXTENSIONS.join(", ")}.`);
   const docId = randomUUID();

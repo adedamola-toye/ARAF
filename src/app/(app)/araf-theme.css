@@ -1,0 +1,291 @@
+/*
+ * ARAF design system for authenticated routes ONLY.
+ *
+ * Every rule here is scoped under .shell (the signed-in application frame), so the approved public landing
+ * page, sign-in and OTP screens keep their own tokens and typography unchanged. Typography: Manrope for page
+ * titles and financial figures, Inter for everything else (self-hosted from /public/fonts, OFL 1.1).
+ * Manrope has no naira sign: the stacks list Inter second so ₦ renders from Inter rather than a system font.
+ * Colour: charcoal ink on white, neutral grey surfaces, #FFC928 yellow reserved for primary actions and the
+ * active navigation item.
+ */
+
+@font-face { font-family: "Inter"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(/fonts/inter-latin-ext-wght-normal.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Inter"; font-style: normal; font-display: swap; font-weight: 100 900; src: url(/fonts/inter-latin-wght-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+@font-face { font-family: "Manrope"; font-style: normal; font-display: swap; font-weight: 200 800; src: url(/fonts/manrope-latin-ext-wght-normal.woff2) format("woff2"); unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF; }
+@font-face { font-family: "Manrope"; font-style: normal; font-display: swap; font-weight: 200 800; src: url(/fonts/manrope-latin-wght-normal.woff2) format("woff2"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
+
+/* ------------------------------------------------------------------ tokens (light) */
+.shell {
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-display: "Manrope", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-figure: "Manrope", "Inter", system-ui, sans-serif;
+
+  /* 4px base, 8px rhythm */
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+  --radius-sm: 8px; --radius: 10px; --radius-lg: 12px; --radius-xl: 14px;
+  --control-h: 40px;
+  --t-fast: 0.12s; --t-med: 0.2s;
+
+  /* Type scale (responsive tokens) */
+  --fs-figure-hero: clamp(28px, 2.2vw + 18px, 56px);
+  --fs-figure-lg: clamp(24px, 1vw + 18px, 32px);
+  --fs-figure-md: clamp(18px, 0.5vw + 15px, 22px);
+  --fs-title: clamp(24px, 0.8vw + 18px, 32px);
+  --fs-section: clamp(16px, 0.3vw + 14px, 20px);
+  --fs-body: 14.5px;
+  --fs-table: 13.5px;
+  --fs-label: 12.5px;
+
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f6f6f7;
+  --surface-3: #ececee;
+  --ink: #1c1d20;
+  --ink-2: #3b3c42;
+  --muted: #6b6d76;
+  --line: #e8e8eb;
+  --line-strong: #d5d5da;
+  --nav-bg: #fafafa;
+  --nav-ink: #1c1d20;
+  --nav-muted: #6b6d76;
+  /* Strong surfaces (avatar, calculator, dark buttons): charcoal, never yellow */
+  --brand: #1c1d20;
+  --brand-hover: #000000;
+  --brand-ink: #ffffff;
+  --brand-soft-ink: #c9cad0;
+  /* Primary action: the bank's yellow, used sparingly */
+  --action: #ffc928;
+  --action-hover: #f2b90c;
+  --action-ink: #1c1d20;
+  --accent: #7a5900;            /* text-safe dark gold (5.9:1 on white) for eyebrows, tabs and indicators */
+  --accent-soft: #fff6d9;
+  --link: #1c1d20;
+  --focus: #b07f00;
+  --danger: #b42318;
+  --danger-bg: #fdeceb;
+  --success: #1b6b44;
+  --success-bg: #e8f4ed;
+  --warn: #87570a;
+  --warn-bg: #fdf3dc;
+  --info: #3c4658;
+  --info-bg: #eff1f5;
+  --disabled: #a1a3ab;
+  --shadow-sm: 0 1px 2px rgb(16 17 20 / 5%);
+  --shadow-card: 0 1px 2px rgb(16 17 20 / 4%), 0 4px 12px rgb(16 17 20 / 4%);
+  --shadow-float: 0 12px 32px rgb(16 17 20 / 14%);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  letter-spacing: 0;
+  background: linear-gradient(to right, var(--nav-bg) calc(var(--nav-w) - 1px), var(--line) calc(var(--nav-w) - 1px), var(--line) var(--nav-w), transparent var(--nav-w)), var(--bg);
+}
+
+/* ------------------------------------------------------------------ tokens (dark) */
+:root[data-theme="dark"] .shell {
+  --bg: #111214; --surface: #17181b; --surface-2: #1e1f23; --surface-3: #2a2b30;
+  --ink: #f4f4f5; --ink-2: #d6d6da; --muted: #a3a4ac; --line: #2a2b30; --line-strong: #3b3c43;
+  --nav-bg: #141518; --nav-ink: #f4f4f5; --nav-muted: #a3a4ac;
+  --brand: #2c2d33; --brand-hover: #383a41; --brand-ink: #ffffff; --brand-soft-ink: #b9bac2;
+  --action: #ffc928; --action-hover: #ffd75a; --action-ink: #1c1d20;
+  --accent: #ffd24d; --accent-soft: rgb(255 201 40 / 12%); --link: #f4f4f5; --focus: #ffc928;
+  --danger: #ffb4ab; --danger-bg: rgb(255 120 105 / 14%); --success: #9fd8b6; --success-bg: #1c3a2a;
+  --warn: #f5cf73; --warn-bg: #3d3114; --info: #c6ccd8; --info-bg: rgb(198 204 216 / 10%); --disabled: #63646c;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%); --shadow-card: 0 1px 2px rgb(0 0 0 / 35%); --shadow-float: 0 16px 40px rgb(0 0 0 / 55%);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) .shell {
+    --bg: #111214; --surface: #17181b; --surface-2: #1e1f23; --surface-3: #2a2b30;
+    --ink: #f4f4f5; --ink-2: #d6d6da; --muted: #a3a4ac; --line: #2a2b30; --line-strong: #3b3c43;
+    --nav-bg: #141518; --nav-ink: #f4f4f5; --nav-muted: #a3a4ac;
+    --brand: #2c2d33; --brand-hover: #383a41; --brand-ink: #ffffff; --brand-soft-ink: #b9bac2;
+    --action: #ffc928; --action-hover: #ffd75a; --action-ink: #1c1d20;
+    --accent: #ffd24d; --accent-soft: rgb(255 201 40 / 12%); --link: #f4f4f5; --focus: #ffc928;
+    --danger: #ffb4ab; --danger-bg: rgb(255 120 105 / 14%); --success: #9fd8b6; --success-bg: #1c3a2a;
+    --warn: #f5cf73; --warn-bg: #3d3114; --info: #c6ccd8; --info-bg: rgb(198 204 216 / 10%); --disabled: #63646c;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%); --shadow-card: 0 1px 2px rgb(0 0 0 / 35%); --shadow-float: 0 16px 40px rgb(0 0 0 / 55%);
+  }
+}
+
+/* ------------------------------------------------------------------ typography */
+.shell h1 { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+.shell h2, .shell h3, .shell h4 { font-family: var(--font); font-weight: 600; letter-spacing: -0.01em; }
+.shell h2 { font-size: var(--fs-section); }
+.shell h3 { font-size: 15px; }
+.shell .card h2 { font-size: 16px; }
+.shell .tnum, .shell td, .shell .mono { font-variant-numeric: tabular-nums lining-nums; }
+/* Supporting labels: Inter 12–13px, 500–600 (no heavy display caps) */
+.shell .eyebrow, .shell .nav-title, .shell table.data th, .shell .metric .k, .shell .case-facts dt, .shell .menu-caption, .shell .kv-inline dt, .shell .wallet-label, .shell .role-tag, .shell .theme-option span, .shell table.data.responsive td[data-label]::before {
+  font-family: var(--font); font-weight: 600; letter-spacing: 0.04em;
+}
+.shell .eyebrow { color: var(--muted); font-size: 12px; }
+.shell table.data th { font-size: 11.5px; color: var(--muted); }
+.shell table.data { font-size: var(--fs-table); }
+.shell .empty strong, .shell .empty h2, .shell .empty h3 { font-family: var(--font); font-weight: 600; }
+.shell .wordmark-text { font-family: var(--font-display); font-weight: 800; letter-spacing: -0.03em; }
+.shell .avatar { font-family: var(--font); font-weight: 600; }
+
+/* Metric tiles: label on its own line, figure below in Manrope (never run together) */
+.shell .metric .k { display: block; font-size: 11.5px; margin-bottom: 6px; }
+.shell .metric .v { display: block; font-family: var(--font-figure); font-weight: 700; font-size: var(--fs-figure-md); letter-spacing: -0.02em; font-variant-numeric: tabular-nums lining-nums; }
+.shell .wallet-amount, .shell .calc-net strong { font-family: var(--font-figure); font-weight: 700; letter-spacing: -0.025em; font-variant-numeric: tabular-nums lining-nums; }
+
+/* ------------------------------------------------------------------ actions and navigation */
+.shell .btn { font-family: var(--font); font-weight: 600; }
+.shell .btn-primary { background: var(--action); border-color: var(--action); color: var(--action-ink); }
+.shell .btn-primary:hover { background: var(--action-hover); border-color: var(--action-hover); color: var(--action-ink); }
+.shell .btn-primary[disabled], .shell .btn-primary[aria-disabled="true"] { background: var(--surface-3); border-color: var(--surface-3); color: var(--disabled); }
+.shell .nav-link[aria-current="page"] { background: var(--surface-3); color: var(--ink); font-weight: 600; }
+.shell .nav-link[aria-current="page"] svg.icon { color: var(--ink); }
+.shell .nav-link[aria-current="page"]::before { background: var(--action); width: 3px; }
+.shell .nav-count { background: var(--ink); color: var(--bg); }
+.shell .nav-count.alert { background: var(--danger); color: #fff; }
+.shell .tab[aria-current="page"] { border-bottom-color: var(--action); }
+.shell input[type="checkbox"], .shell input[type="radio"] { accent-color: var(--ink); }
+.shell :focus-visible { outline-color: var(--focus); }
+.shell a { color: var(--link); text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 3px; }
+.shell .card { box-shadow: none; border-color: var(--line); }
+
+/* Respect reduced motion everywhere in the app */
+@media (prefers-reduced-motion: reduce) {
+  .shell *, .shell *::before, .shell *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* ------------------------------------------------------------------ financial figures (components/Money.tsx) */
+.shell .fig { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.shell .fig-label { font-size: var(--fs-label); font-weight: 500; color: var(--muted); line-height: 1.3; }
+.shell .fig-value { font-family: var(--font-figure); font-weight: 700; color: var(--ink); line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; max-width: 100%; }
+.shell .fig-value .fig-cur { font-weight: 600; margin-right: 0.04em; }
+.shell .fig-value .fig-dec { font-size: 0.62em; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.shell .fig-hint { font-size: 12.5px; color: var(--muted); }
+.shell .fig-hero .fig-value { font-size: var(--fs-figure-hero); letter-spacing: -0.03em; }
+.shell .fig-lg .fig-value { font-size: var(--fs-figure-lg); }
+.shell .fig-md .fig-value { font-size: var(--fs-figure-md); }
+.shell .fig-sm .fig-value { font-size: 16px; font-weight: 600; }
+.shell .fig-table { text-align: right; }
+.shell .fig-table .fig-value { font-family: var(--font); font-size: var(--fs-table); font-weight: 500; letter-spacing: 0; }
+.shell .fig-table .fig-value .fig-dec { font-size: 1em; color: inherit; font-weight: inherit; }
+.shell .fig-negative .fig-value { color: var(--danger); }
+.shell .fig-loading .fig-value { color: transparent; background: var(--surface-3); border-radius: 6px; min-width: 8ch; animation: fig-pulse 1.2s ease-in-out infinite; }
+@keyframes fig-pulse { 50% { opacity: 0.55; } }
+/* Privacy masking: amounts hidden until the person reveals them (preference kept per browser). */
+.shell[data-hide-amounts="1"] .fig[data-private] .fig-value > span { visibility: hidden; }
+.shell[data-hide-amounts="1"] .fig[data-private] .fig-value { position: relative; }
+.shell[data-hide-amounts="1"] .fig[data-private] .fig-value::after { content: "₦ ••••••"; position: absolute; left: 0; top: 0; color: var(--muted); letter-spacing: 0.08em; }
+
+/* Figure rows: label left, figure right, aligned; wrap cleanly on small screens */
+.shell .fig-rows { display: grid; gap: 0; margin: 0; }
+.shell .fig-rows > div { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-4); padding: 10px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.shell .fig-rows > div:last-child { border-bottom: 0; }
+.shell .fig-rows dt { color: var(--muted); font-size: 13.5px; }
+.shell .fig-rows dd { margin: 0; font-variant-numeric: tabular-nums lining-nums; font-weight: 600; text-align: right; }
+
+/* ------------------------------------------------------------------ collapsible sidebar (desktop) and bottom navigation (mobile) */
+@media (min-width: 961px) {
+  .shell[data-nav="rail"] { --nav-w: 72px; }
+  .shell[data-nav="rail"] .sidenav .nav-label, .shell[data-nav="rail"] .sidenav .nav-title, .shell[data-nav="rail"] .sidenav .brand-block, .shell[data-nav="rail"] .sidenav .nav-count { display: none; }
+  .shell[data-nav="rail"] .sidenav .nav-link { justify-content: center; padding: 10px; }
+  .shell[data-nav="rail"] .sidenav .nav-section { border-top: 1px solid var(--line); padding-top: var(--space-2); }
+}
+.shell .nav-collapse { display: none; }
+@media (min-width: 961px) { .shell .nav-collapse { display: inline-flex; } }
+.shell .bottom-nav { display: none; }
+@media (max-width: 960px) {
+  .shell .bottom-nav { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; background: var(--surface); border-top: 1px solid var(--line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .shell .bottom-nav a, .shell .bottom-nav button { display: flex; flex-direction: column; align-items: center; gap: 3px; min-height: 48px; justify-content: center; font: 500 11px/1.2 var(--font); color: var(--muted); text-decoration: none; background: none; border: 0; position: relative; cursor: pointer; }
+  .shell .bottom-nav [aria-current="page"] { color: var(--ink); font-weight: 600; }
+  .shell .bottom-nav [aria-current="page"]::before { content: ""; position: absolute; top: -6px; left: 30%; right: 30%; height: 3px; border-radius: 0 0 3px 3px; background: var(--action); }
+  .shell .bottom-nav svg { width: 20px; height: 20px; }
+  .shell .bottom-nav .bn-count { position: absolute; top: 4px; left: calc(50% + 6px); background: var(--danger); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 5px; line-height: 16px; }
+  .shell .main, .shell .footer { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 960px) {
+  /* The bottom bar's More button opens the full menu; the top Menu button is not needed alongside it. */
+  .shell .topbar button[aria-controls="sidenav"] { display: none !important; }
+  .shell .sidenav.open { bottom: calc(61px + env(safe-area-inset-bottom)); z-index: 39; }
+}
+
+/* Request progress on small screens: scroll horizontally instead of squeezing labels into each other
+   (the page sets the column count inline, so the track is redefined here). */
+@media (max-width: 720px) {
+  .shell .progress { grid-template-columns: none !important; grid-auto-flow: column; grid-auto-columns: minmax(104px, 1fr); overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+}
+.shell .topbar-right { gap: var(--space-2); }
+@media (max-width: 960px) { .shell { background: var(--bg); } }
+
+/* Home lists: rows separated by dividers, not boxed in cards */
+.shell .home-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.shell .home-list > li { border-bottom: 1px solid var(--line); }
+.shell .home-row { display: flex; align-items: center; gap: var(--space-3); padding: 12px 4px; color: var(--ink); text-decoration: none; min-width: 0; }
+.shell a.home-row:hover, .shell .home-row:has(a:hover) { background: var(--surface-2); }
+.shell .home-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; color: var(--ink); text-decoration: none; }
+.shell .home-main .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shell .home-row .fig-table { flex: none; }
+@media (max-width: 560px) { .shell .home-row { flex-wrap: wrap; } .shell .home-main .small { white-space: normal; } }
+
+/* Document viewer (split review) */
+.shell .doc-viewer { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface-2); min-height: 70vh; }
+.shell .doc-viewer:fullscreen { min-height: 100vh; border-radius: 0; }
+.shell .doc-viewer-bar { display: flex; align-items: center; gap: 4px; padding: 6px 8px; background: var(--surface); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.shell .doc-viewer-frame { flex: 1; width: 100%; min-height: 70vh; border: 0; background: #fff; }
+.shell .doc-viewer-image { flex: 1; overflow: auto; display: grid; place-items: center; padding: var(--space-4); min-height: 60vh; }
+.shell .doc-viewer-image img { max-width: 100%; transition: transform var(--t-med) var(--ease); transform-origin: center; }
+/* With the preview pane open the document table is narrow: stack the row actions instead of clipping them. */
+.shell .split.wide-preview table.data .row-actions .row { flex-direction: column; align-items: stretch; gap: 6px; }
+.shell .split.wide-preview table.data .row-actions .btn { justify-content: center; }
+
+/* ---- Staff Salary Advance personal home (Phase 4) ---- */
+.shell .staff-home { max-width: 760px; display: grid; gap: var(--space-5); }
+.shell .staff-home h1 { margin: 0; }
+.shell .staff-hero { display: grid; gap: var(--space-3); padding: var(--space-6); }
+.shell .btn-lg { min-height: 52px; padding: 0 28px; font-size: 16px; border-radius: 999px; justify-self: start; }
+.shell .staff-settled { display: inline-flex; gap: 8px; align-items: center; margin: 0; color: var(--success); font-weight: 600; animation: staff-fade var(--t-med) var(--ease); }
+@keyframes staff-fade { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .shell .staff-settled { animation: none; } }
+.shell .staff-repay { height: 8px; border-radius: 4px; }
+.shell .staff-repay > span { background: var(--action); }
+.shell .staff-how { padding-left: 1.2em; display: grid; gap: 6px; margin: 0; }
+.shell .amount-slider { width: 100%; accent-color: var(--action); margin: var(--space-3) 0 var(--space-2); min-height: 32px; }
+@media (max-width: 640px) { .shell .staff-hero { padding: var(--space-5); } .shell .btn-lg { width: 100%; justify-content: center; justify-self: stretch; } }
+
+/* ---- Phase 6: interaction quality ---- */
+/* Skeleton loading (content area only). A gentle pulse; static when reduced motion is requested. */
+.shell .skeleton-page { display: grid; gap: var(--space-3); max-width: 960px; }
+.shell .sk { background: var(--surface-3); border-radius: 6px; animation: sk-pulse 1.4s ease-in-out infinite; }
+.shell .sk-eyebrow { height: 10px; width: 120px; }
+.shell .sk-title { height: 28px; width: 320px; max-width: 80%; }
+.shell .sk-line { height: 12px; }
+.shell .sk-thin { height: 10px; opacity: 0.7; }
+.shell .sk-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-5); margin: var(--space-4) 0; }
+.shell .sk-figure { display: grid; gap: 8px; }
+.shell .sk-label { height: 10px; width: 50%; }
+.shell .sk-value { height: 30px; width: 80%; }
+.shell .sk-list { display: grid; border-top: 1px solid var(--line); }
+.shell .sk-row { display: flex; gap: var(--space-4); align-items: center; padding: 14px 4px; border-bottom: 1px solid var(--line); }
+.shell .sk-amount { height: 14px; width: 110px; flex: none; }
+@keyframes sk-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+@media (max-width: 640px) { .shell .sk-figures { grid-template-columns: 1fr; gap: var(--space-3); } }
+@media (prefers-reduced-motion: reduce) { .shell .sk { animation: none; } }
+
+/* Immediate, short feedback (150ms) on rows and buttons; never delays the action. */
+.shell .home-row { transition: background-color var(--t-fast) var(--ease); border-radius: 8px; }
+.shell .btn:active:not([disabled]) { transform: translateY(1px); }
+.shell .config-tile { transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+.shell .config-tile:hover { border-color: var(--line-strong); box-shadow: var(--shadow-sm); }
+.shell .alert { animation: fx-in 180ms var(--ease); }
+@keyframes fx-in { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .shell .alert { animation: none; } .shell .btn:active { transform: none; } }
+
+/* Comfortable touch targets on phones. */
+@media (max-width: 640px) {
+  .shell .btn, .shell .tab, .shell select, .shell input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) { min-height: 44px; }
+  .shell .btn-sm { min-height: 40px; }
+  .shell .check input { width: 22px; height: 22px; }
+}
+/* Large figures sharing a row scale to the space they have instead of being clipped. */
+.shell :is(.grid-2, .grid-3) > :is(.fig-hero, .fig-lg) { container-type: inline-size; }
+.shell :is(.grid-2, .grid-3) > .fig-hero .fig-value { font-size: min(var(--fs-figure-hero), 11.5cqi); }
+.shell :is(.grid-2, .grid-3) > .fig-lg .fig-value { font-size: min(var(--fs-figure-lg), 11.5cqi); }
+/* Long status badges in configuration tiles wrap. */
+.shell .config-tile .badge { white-space: normal; max-width: 100%; }
+/* Sort buttons in report tables: a usable tap area on phones. */
+@media (max-width: 640px) { .shell .po-sort { min-height: 36px; padding: 6px 4px; } }

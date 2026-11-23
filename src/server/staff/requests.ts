@@ -37,6 +37,7 @@ import {
 } from "./core";
 import { issueOffer } from "./offer";
 import { staffCreditProblem } from "./credit";
+import { accountNumber, eligibilityFor, usesRegister } from "./register";
 
 const MAX_GROSS_KOBO = 100_000_000_000 * 100; // ₦100bn sanity ceiling against typing errors; product limits come from settings
 
@@ -92,6 +93,9 @@ export async function createStaffDraft(ctx: Ctx): Promise<{ id: string; ref: str
     if (!st || st.status !== "ACTIVE") throw forbidden("Only active staff can apply.");
     const profile = await staffProfile(tx, actor.staffId);
     const settings = await currentSettings(tx);
+    // Automatic eligibility: only an eligible employee with an available limit can start a request.
+    const elig = usesRegister(settings) ? await eligibilityFor(tx, actor.staffId, ctx.now, settings) : null;
+    if (elig && elig.state !== "ELIGIBLE") throw gate(elig.message);
     const ref = await nextRef(tx, ctx.now);
     const req = (
       await tx.query<StaffRequestRow>(
@@ -100,7 +104,11 @@ export async function createStaffDraft(ctx: Ctx): Promise<{ id: string; ref: str
         [ref, actor.staffId, settings.id, profile.fullName, profile.email, profile.department, profile.unit, ctx.now],
       )
     ).rows[0];
-    await recordEvent(tx, ctx, req, { action: "DRAFT_CREATED", to: "DRAFT", role: "APPLICANT", details: { settingsVersion: settings.version } });
+    if (elig?.record) {
+      // Verified details come from the register; the applicant does not type them.
+      await tx.query("UPDATE staff_requests SET staff_number = $2, salary_account_number = $3, salary_account_name = $4 WHERE id = $1", [req.id, elig.record.staff_number, accountNumber(elig.record), elig.record.account_name]);
+    }
+    await recordEvent(tx, ctx, req, { action: "DRAFT_CREATED", to: "DRAFT", role: "APPLICANT", details: { settingsVersion: settings.version, eligibilityMode: settings.eligibility_mode } });
     return { id: req.id, ref };
   });
 }
@@ -147,12 +155,22 @@ export async function saveStaffDraft(ctx: Ctx, id: string, input: DraftInput) {
         purpose: clean(input.purpose, 500) || null,
         settings_id: settings.id,
       };
+      const elig = usesRegister(settings) ? await eligibilityFor(tx, actor.staffId, ctx.now, settings, req.id) : null;
+      if (elig?.record) {
+        set.staff_number = elig.record.staff_number;
+        set.salary_account_number = accountNumber(elig.record);
+        set.salary_account_name = elig.record.account_name;
+      }
       const amountRaw = (input.amount ?? "").trim();
       let grossKobo: number | null = null;
       if (amountRaw) {
         grossKobo = parseNairaToKobo(amountRaw);
         if (grossKobo === null || grossKobo <= 0) fields.amount = "Enter the amount in naira, for example 1,500,000.00.";
         else if (grossKobo > MAX_GROSS_KOBO) fields.amount = "The amount is too large.";
+      }
+      if (!fields.amount && grossKobo && elig) {
+        if (elig.state !== "ELIGIBLE") fields.amount = elig.message;
+        else if (grossKobo > elig.availableKobo) fields.amount = `The most you can request now is ${formatNairaKobo(elig.availableKobo)}.`;
       }
       if (fields.amount) throw invalid("Check the financing amount.", fields);
       if (grossKobo) {
@@ -196,8 +214,15 @@ export async function submissionProblems(q: Db, req: StaffRequestRow): Promise<R
   if (settings.tenor_options_months.length && !req.tenor_months) p.tenorMonths = "Choose a repayment tenor.";
   if (!req.deduction_acknowledged_at) p.acknowledgement = `Confirm that you have read the ${bpsLabel(settings.deduction_rate_bps)} deduction and the net amount you will receive.`;
   if (!req.declaration_accepted_at) p.declaration = "Accept the declaration and consent.";
-  const credit = await staffCreditProblem(q, req.id, new Date());
-  if (credit) p.creditCheck = credit;
+  if (usesRegister(settings)) {
+    // Automatic eligibility replaces the bureau check for this product only.
+    const elig = await eligibilityFor(q, req.applicant_id, new Date(), settings, req.id);
+    if (elig.state !== "ELIGIBLE") p.amount = elig.message;
+    else if (req.gross_kobo && Number(req.gross_kobo) > elig.availableKobo) p.amount = `The most you can request now is ${formatNairaKobo(elig.availableKobo)}.`;
+  } else {
+    const credit = await staffCreditProblem(q, req.id, new Date());
+    if (credit) p.creditCheck = credit;
+  }
   if (settings.required_document_types.length) {
     const docs = (await q.query<{ category: string }>("SELECT DISTINCT category FROM staff_request_documents WHERE request_id = $1 AND removed_at IS NULL AND scan_status = 'CLEAN'", [req.id])).rows.map((r) => r.category);
     const missing = settings.required_document_types.filter((c) => !docs.includes(c));
@@ -225,8 +250,34 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
       const settings = await settingsById(tx, req.settings_id);
       // Only a change that affects the figures or the submission rules requires a re-save.
       const cur = await currentSettings(tx);
-      const terms = (x: typeof cur) => JSON.stringify([x.deduction_rate_bps, x.min_amount_kobo, x.max_amount_kobo, x.tenor_options_months, x.required_document_types]);
+      const terms = (x: typeof cur) => JSON.stringify([x.deduction_rate_bps, x.min_amount_kobo, x.max_amount_kobo, x.tenor_options_months, x.required_document_types, x.eligibility_mode, x.eligibility_percent_bps]);
       if (cur.id !== settings.id && terms(cur) !== terms(settings)) throw conflict("The salary advance settings changed since you last saved. Save the form again to see the updated figures, then submit.");
+      let snapshot: Record<string, unknown> | null = null;
+      if (usesRegister(settings)) {
+        // Serialise this employee's submissions so two requests cannot both use the same limit.
+        await tx.query("SELECT 1 FROM salary_register WHERE staff_id = $1 FOR UPDATE", [req.applicant_id]);
+        const elig = await eligibilityFor(tx, req.applicant_id, ctx.now, settings, req.id);
+        if (elig.state === "ELIGIBLE" && elig.record && Number(req.gross_kobo ?? 0) <= elig.availableKobo) {
+          snapshot = {
+            source: "SALARY_REGISTER",
+            salaryKobo: elig.salaryKobo,
+            salaryAsOf: elig.salaryAsOf,
+            percentBps: elig.percentBps,
+            limitKobo: elig.limitKobo,
+            outstandingKobo: elig.outstandingKobo,
+            reservedKobo: elig.reservedKobo,
+            availableKobo: elig.availableKobo,
+            employmentStatus: elig.record.employment_status,
+            accountLast4: elig.record.account_last4,
+            accountName: elig.record.account_name,
+            checkedAt: ctx.now.toISOString(),
+          };
+          await tx.query("UPDATE staff_requests SET staff_number = $2, salary_account_number = $3, salary_account_name = $4 WHERE id = $1", [req.id, elig.record.staff_number, accountNumber(elig.record), elig.record.account_name]);
+          req.staff_number = elig.record.staff_number;
+          req.salary_account_number = accountNumber(elig.record);
+          req.salary_account_name = elig.record.account_name;
+        }
+      }
       const problems = await submissionProblems(tx, req);
       if (Object.keys(problems).length) throw invalid("Complete the highlighted items before submitting.", problems);
       const f = computeStaffFinancing(Number(req.gross_kobo), settings.deduction_rate_bps);
@@ -250,8 +301,9 @@ export async function submitStaffRequest(ctx: Ctx, id: string, opts: { lockVersi
           pm_claimed_at: null,
           unit_head_id: null,
           divisional_head_id: null,
+          eligibility_snapshot: snapshot ? JSON.stringify(snapshot) : null,
         },
-        details: { grossKobo: f.grossKobo, deductionRateBps: f.deductionRateBps, deductionKobo: f.deductionKobo, netKobo: f.netKobo, tenorMonths: req.tenor_months, settingsVersion: settings.version },
+        details: { eligibilityMode: settings.eligibility_mode, grossKobo: f.grossKobo, deductionRateBps: f.deductionRateBps, deductionKobo: f.deductionKobo, netKobo: f.netKobo, tenorMonths: req.tenor_months, settingsVersion: settings.version },
       });
       await notifyStaff(tx, ctx, fresh, "SUBMITTED", [req.applicant_id], "Salary advance request submitted", [
         `Your salary advance request ${req.ref} was ${resubmission ? "resubmitted" : "submitted"} and is in the Product Manager queue.`,
@@ -325,14 +377,20 @@ export async function pmDecision(ctx: Ctx, id: string, input: PmDecisionInput) {
       const repayment = input.monthlyRepayment?.trim() ? parseNairaToKobo(input.monthlyRepayment) : null;
       if (input.verifiedTakeHome?.trim() && takeHome === null) throw invalid("Enter the take-home pay in naira.", { verifiedTakeHome: "Enter a naira amount." });
       if (input.monthlyRepayment?.trim() && repayment === null) throw invalid("Enter the monthly repayment in naira.", { monthlyRepayment: "Enter a naira amount." });
-      const checklist = {
-        accountVerified: !!input.checklist.accountVerified,
-        salaryHistoryReviewed: !!input.checklist.salaryHistoryReviewed,
-        repaymentWithinLimit: !!input.checklist.repaymentWithinLimit,
-        verifiedTakeHomeKobo: takeHome,
-        monthlyRepaymentKobo: repayment,
-        method: "MANUAL (no payroll or core-banking API is connected)",
-      };
+      // Register route: account, salary and limit were verified from the salary register at submission (snapshot);
+      // the Product Manager does not repeat those checks and focuses on exceptions.
+      const snap = (req as StaffRequestRow & { eligibility_snapshot?: { source?: string; salaryKobo?: number } | null }).eligibility_snapshot;
+      const fromRegister = snap?.source === "SALARY_REGISTER";
+      const checklist = fromRegister
+        ? { accountVerified: true, salaryHistoryReviewed: true, repaymentWithinLimit: true, verifiedTakeHomeKobo: takeHome, monthlyRepaymentKobo: repayment, method: "SALARY_REGISTER (verified salary and account; limit enforced by ARAF)" }
+        : {
+            accountVerified: !!input.checklist.accountVerified,
+            salaryHistoryReviewed: !!input.checklist.salaryHistoryReviewed,
+            repaymentWithinLimit: !!input.checklist.repaymentWithinLimit,
+            verifiedTakeHomeKobo: takeHome,
+            monthlyRepaymentKobo: repayment,
+            method: "MANUAL (no payroll or core-banking API is connected)",
+          };
       let to: StaffStatus;
       const set: Record<string, unknown> = {};
       let designated: string | null = null;

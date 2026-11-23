@@ -10,6 +10,9 @@ import { setRmClassification } from "@/server/domain/rm-routing";
 const N = (n: number) => n * 100;
 const sid = async (email: string) => (await db.query("SELECT id FROM staff WHERE email = $1", [email])).rows[0].id as string;
 
+// A fixed mid-week moment: with the real clock, a run after 18:00 on Sunday falls into the next report week.
+const FIXED_NOW = new Date("2026-11-18T10:00:00Z");
+
 beforeEach(resetDb);
 
 /** The Week and MTD figures under a person's name row in the plain-text report: [requests, requested, disbursed, (altphones), decisions, actions]. */
@@ -37,7 +40,7 @@ describe("Weekly Divisional Head report: timing", () => {
 
 describe("Weekly Divisional Head report: delivery", () => {
   it("emails every Divisional Head once with the week and month-to-date figures; reruns send nothing new", async () => {
-    const now = new Date();
+    const now = FIXED_NOW;
     const a = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000), now });
     await createSubmittedCase({ initiator: "MERCHANT_OFFICER", amountKobo: N(2_000_000), now });
     await driveToOffer(a, now);
@@ -55,7 +58,8 @@ describe("Weekly Divisional Head report: delivery", () => {
     expect(body).toMatch(/Final approvals\s+1 · ₦1,000,000/);
     expect(body).toContain("/reports/performance?from=");
     expect(body).not.toMatch(/\d{11}/); // no BVNs or phone numbers
-    expect(mails[0].subject).toContain("weekly report");
+    expect(mails[0].subject).toMatch(/^ARAF \| Weekly Performance Briefing \| Week Ending /);
+    expect(body).toContain("YOUR WEEK IN REVIEW");
     const html: string = mails[0].body_html;
     expect(html).toContain("<table");
     expect(html).toContain("Open the Performance Overview");
@@ -69,7 +73,7 @@ describe("Weekly Divisional Head report: delivery", () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     const uh = await sid("unit.head@altbank.ng");
     await setOrgLink(admin, { staffId: await sid("rm.ade@altbank.ng"), relation: "UNIT_HEAD", managerId: uh, reason: "Ade reports to Olu for reporting." });
-    const now = new Date();
+    const now = FIXED_NOW;
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_500_000), now });
     await driveToOffer(id, now); // includes a Unit Head approval
     const lonely = (await db.query("INSERT INTO staff (email, full_name) VALUES ('uh.two@altbank.ng','Second Unit-Head') RETURNING id")).rows[0].id;
@@ -107,7 +111,7 @@ describe("Weekly Divisional Head report: delivery", () => {
   it("unit totals cover Non-DBC teams, the Merchant Officer line and every other function, with an all-staff total", async () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     await setRmClassification(admin, { staffId: await sid("rm.ade@altbank.ng"), segment: "NON_DBC", rbeId: await sid("rbe.lagos@altbank.ng"), reason: "Ade is a Non-DBC RM under Tunde." });
-    const now = new Date();
+    const now = FIXED_NOW;
     const cx = (await db.query("INSERT INTO staff (email, full_name) VALUES ('cx.r@altbank.ng','Ada CX-Reviewer') RETURNING id")).rows[0].id;
     await db.query("INSERT INTO role_assignments (staff_id, role) VALUES ($1,'CX_CREDIT_REVIEWER')", [cx]);
     const nd = await createSubmittedCase({ initiator: "RM", amountKobo: N(2_000_000), now });
@@ -130,7 +134,7 @@ describe("Weekly Divisional Head report: delivery", () => {
   });
 
   it("the Super Admin can send a [TEST] report now, to the Divisional Heads or to themself, without affecting Sunday's run", async () => {
-    const now = new Date();
+    const now = FIXED_NOW;
     await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000), now });
     const admin = await ctxFor("superadmin@altbank.ng", now);
     expect(await sendDhTestReport(admin, "ME")).toMatchObject({ sent: 1 });
@@ -150,7 +154,7 @@ describe("Weekly Divisional Head report: delivery", () => {
     const admin = await ctxFor("superadmin@altbank.ng");
     const extra = await sid("unit.head@altbank.ng");
     await updateDhWeeklySchedule(admin, { enabled: true, hour: 19, minute: 30, recipientIds: [extra] });
-    const p = dhPeriodFor(new Date(), 19, 30);
+    const p = dhPeriodFor(FIXED_NOW, 19, 30);
     expect((await runDhWeeklyReport(new Date(p.sendAt.getTime() - 60_000))).ran).toBe(false);
     expect((await runDhWeeklyReport(new Date(p.sendAt.getTime() + 60_000))).sent).toBe(2);
     expect((await outbox("DH_WEEKLY_REPORT")).map((m) => m.to_addresses[0]).sort()).toEqual(["div.head@altbank.ng", "unit.head@altbank.ng"]);

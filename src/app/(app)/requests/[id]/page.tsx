@@ -1,6 +1,9 @@
 import { BusinessDecisionForm } from "./RetailClient";
 import { checklistFor } from "@/lib/approval-checklists";
 import Link from "next/link";
+import { nextTask } from "@/server/domain/queue-priority";
+import { auditContext, auditLabel } from "@/lib/audit-events";
+import { DocViewer } from "@/components/DocViewer";
 import { notFound } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Circle, Download, Eye, FileText, Mail, X } from "lucide-react";
 import { requireUser } from "../../../_lib/auth";
@@ -30,6 +33,7 @@ function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: un
 import { UploadPanel } from "@/components/UploadPanel";
 import { ClosingDocuments } from "./ClosingDocuments";
 import { RecordsCard } from "./RecordsCard";
+import { BouquetInspectCard, CadPanel } from "./Phase3Panels";
 import { RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
@@ -134,6 +138,8 @@ export default async function CasePage({ params, searchParams }: { params: Promi
   const committed = sp.done
     ? (await db.query(`SELECT d.action, d.created_at, d.stage FROM decisions d WHERE d.application_id = $1 AND d.actor_id = $2 ORDER BY d.seq DESC LIMIT 1`, [id, session.staffId])).rows[0]
     : null;
+  // After a decision: offer the most pressing remaining case (overdue first), so the officer need not go back to the queue.
+  const next = committed ? await nextTask(db, session.staffId, new Date(), myTask?.id ?? null) : null;
   const retail = app.workflow === "RETAIL";
   const milestones = retail ? RETAIL_MILESTONES : MILESTONES;
   const mIndex = (st: Stage) => milestones.findIndex((m) => m.stages.includes(st));
@@ -188,6 +194,11 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           </dl>
         </div>
         <div className="row">
+          {app.stage !== "DRAFT" && (
+            <Link className="btn btn-ghost" href={`/crm/new?app=${app.id}`}>
+              Raise a complaint
+            </Link>
+          )}
           {isInitiator && c.openTask?.assignee_id && c.openTask.assignee_id !== session.staffId && waited > REMINDER_MIN_AGE_MS && <ReminderButton applicationId={app.id} />}
           {canEditAsRm && (
             <Link className="btn btn-primary" href={`/requests/${app.id}/edit`}>
@@ -221,6 +232,15 @@ export default async function CasePage({ params, searchParams }: { params: Promi
             Recorded: <strong>{ACTION_LABELS[committed.action as TaskAction] ?? committed.action}</strong> at {stageLabel(committed.stage as Stage, app.approval_policy)}, {formatLagos(committed.created_at)}. The request is now <strong>{stageLabel(app.stage as Stage, app.approval_policy)}</strong>
             {c.openTask ? ` with ${c.openTask.assignee_name ?? "the Super Admin for assignment"}.` : "."}
           </span>
+          {next ? (
+            <Link className="btn btn-primary btn-sm" href={`/requests/${next.application_id}?task=${next.task_id}`} style={{ marginLeft: "auto" }}>
+              Next case: {next.ref}
+            </Link>
+          ) : (
+            <span className="small" style={{ marginLeft: "auto" }}>
+              You&apos;re all caught up.
+            </span>
+          )}
         </div>
       )}
       {sp.submitted && (
@@ -252,11 +272,24 @@ export default async function CasePage({ params, searchParams }: { params: Promi
           {tab === "activity" && (
             <>
               <History c={c} />
-              <CaseAudit appId={app.id} />
+              <CaseAudit
+                appId={app.id}
+                showAll={sp.audit === "all"}
+                allHref={tabHref("activity", { audit: "all" })}
+                coreHref={tabHref("activity")}
+                exportHref={roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN") ? `/admin/audit/export?ref=${encodeURIComponent(app.ref)}` : null}
+              />
             </>
           )}
         </section>
         <aside className="split-right" aria-label="Actions and preview">
+          {sp.bouquet && sp.member && <BouquetInspectCard appId={app.id} bouquetId={sp.bouquet} memberId={sp.member} staffId={session.staffId} sampled={!!sp.sampled} />}
+          {app.disbursed_at && (
+            <Link className="btn btn-ghost" href={`/disbursements/${app.id}`}>
+              View disbursement confirmation
+            </Link>
+          )}
+          <CadPanel appId={app.id} stage={app.stage} workflow={app.workflow} staffId={session.staffId} />
           {myTask && (retailPanel ?? <ActionPanel c={c} task={myTask} data={data} doneHref={doneHref} />)}
           <ClosingDocuments appId={app.id} canEdit={isInitiator || roles.includes("SUPER_ADMIN")} canSign={!!myTask && ["OFFER_PREPARATION", "DISBURSEMENT_CORRECTION"].includes(myTask.stage)} link={link} />
           <RecordsCard appId={app.id} recordsStatus={app.records_status ?? null} roles={roles} />
@@ -573,13 +606,15 @@ function Preview({ doc, link, closeHref }: { doc: DocumentRow; link: (id: string
           <Link className="btn btn-sm btn-ghost" href={closeHref} aria-label="Close preview"><X {...ic} /></Link>
         </div>
       </div>
-      <p className="small muted" style={{ marginTop: -6 }}>{doc.filename}</p>
+      <p className="small muted" style={{ marginTop: -6 }}>
+        {doc.filename} · {(Number(doc.size_bytes) / 1048576).toFixed(Number(doc.size_bytes) >= 1048576 ? 1 : 2)} MB · uploaded by {doc.uploader_name ?? "—"}
+        {doc.uploaded_role ? ` (${ROLE_LABELS[doc.uploaded_role as Role] ?? doc.uploaded_role})` : ""} · {formatLagos(doc.uploaded_at)}
+      </p>
       {canInline ? (
-        doc.mime_type.startsWith("image/") ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img className="preview-img" src={src} alt={`${CATEGORY_LABEL[doc.category]} preview`} />
+        doc.mime_type === "text/html" ? (
+          <iframe className="preview-frame" src={src} title={`Preview of ${doc.filename}`} sandbox="" />
         ) : (
-          <iframe className="preview-frame" src={src} title={`Preview of ${doc.filename}`} sandbox={doc.mime_type === "text/html" ? "" : undefined} />
+          <DocViewer src={src} mime={doc.mime_type} title={`${CATEGORY_LABEL[doc.category] ?? doc.category}: ${doc.filename}`} />
         )
       ) : (
         <p className="muted">This file type cannot be previewed in the browser. Use Download.</p>
@@ -707,35 +742,59 @@ function History({ c }: { c: Case }) {
   );
 }
 
-async function CaseAudit({ appId }: { appId: string }) {
+/** Readable history of the request: what happened, who did it, previous and new state, comments and references. */
+async function CaseAudit({ appId, showAll, allHref, coreHref, exportHref }: { appId: string; showAll: boolean; allHref: string; coreHref: string; exportHref: string | null }) {
+  const NOISE = ["CASE_VIEW", "DOCUMENT_VIEW", "DOCUMENT_DOWNLOAD", "DOCUMENT_SCAN_CLEAN", "DRAFT_SAVED", "APPROVAL_VERIFIED"];
   const rows = (await db.query(
-    `SELECT e.occurred_at, e.action, e.outcome, e.actor_role, e.stage, e.reason, s.full_name, e.document_version
-       FROM audit_events e LEFT JOIN staff s ON s.id = e.actor_id WHERE e.application_id = $1 ORDER BY e.id DESC LIMIT 300`,
-    [appId],
+    `SELECT e.occurred_at, e.action, e.outcome, e.actor_role, e.stage, e.reason, e.details, s.full_name, e.document_version
+       FROM audit_events e LEFT JOIN staff s ON s.id = e.actor_id WHERE e.application_id = $1 ${showAll ? "" : "AND NOT (e.action = ANY($2))"} ORDER BY e.id DESC LIMIT 300`,
+    showAll ? [appId] : [appId, NOISE],
   )).rows;
+  const stageLabel = (x: string) => STAGE_LABELS[x as Stage] ?? x;
   return (
     <div className="card">
-      <h2>Audit trail</h2>
-      <div className="table-wrap">
-        <table className="data responsive">
-          <caption className="sr-only">Audit trail for this request</caption>
-          <thead><tr><th>Time</th><th>Actor</th><th>Role</th><th>Action</th><th>Outcome</th><th>Stage</th><th>Reason</th></tr></thead>
-          <tbody>
-            {rows.map((r, i) => (
-              <tr key={i}>
-                <td className="small nowrap" data-label="Time">{formatLagos(r.occurred_at)}</td>
-                <td className="small" data-label="Actor">{r.full_name ?? "System"}</td>
-                <td className="small" data-label="Role">{r.actor_role ? ROLE_LABELS[r.actor_role as Role] ?? r.actor_role : "—"}</td>
-                <td className="small mono" data-label="Action">{r.action}{r.document_version ? ` (v${r.document_version})` : ""}</td>
-                <td data-label="Outcome"><OutcomeChip outcome={r.outcome} /></td>
-                <td className="small" data-label="Stage">{r.stage ? STAGE_LABELS[r.stage as Stage] ?? r.stage : "—"}</td>
-                <td className="small" data-label="Reason">{r.reason ?? ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="card-head">
+        <h2>History</h2>
+        <div className="row small">
+          {showAll ? <Link href={coreHref}>Key events only</Link> : <Link href={allHref}>Include views, scans and saves</Link>}
+          {exportHref && <a href={exportHref}>Download CSV</a>}
+        </div>
       </div>
-      <p className="small muted" style={{ margin: "8px 0 0" }}>Client IP and device metadata are shown to the Super Admin in the audit trail.</p>
+      <ol className="timeline audit-timeline">
+        {rows.map((r, i) => {
+          const { label, category } = auditLabel(r.action);
+          const ctx = auditContext(r.details, stageLabel);
+          return (
+            <li key={i} className={r.outcome === "SUCCESS" ? "done" : ""}>
+              <div className="row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
+                <strong>
+                  {label}
+                  {r.document_version ? ` (v${r.document_version})` : ""}
+                </strong>
+                <span className="small muted nowrap">{formatLagos(r.occurred_at)}</span>
+              </div>
+              <div className="small">
+                {r.full_name ?? "System"}
+                {r.actor_role ? ` · ${ROLE_LABELS[r.actor_role as Role] ?? r.actor_role}` : ""}
+                {r.stage ? ` · at ${stageLabel(r.stage)}` : ""}
+                {r.outcome !== "SUCCESS" && (
+                  <>
+                    {" "}
+                    · <OutcomeChip outcome={r.outcome} />
+                  </>
+                )}
+              </div>
+              {ctx.length > 0 && <div className="small muted">{ctx.join(" · ")}</div>}
+              {r.reason && <div className="small">“{r.reason}”</div>}
+              <div className="small muted" style={{ fontSize: 11 }}>
+                {category} · {r.action}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {!rows.length && <p className="muted">No events recorded.</p>}
+      <p className="small muted" style={{ margin: "8px 0 0" }}>The history cannot be edited or deleted. Client IP and device metadata are shown to the Super Admin in the system audit.</p>
     </div>
   );
 }
@@ -987,7 +1046,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
       body.push(<TaskButton key="r" hidden={hidden} action="RESUBMIT" label="Resubmit to Disbursement Officer 1" doneHref={doneHref} />);
       break;
     case "DISBURSEMENT_BOOKING":
-      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} doneHref={doneHref} />);
+      body.push(<BookingForm key="b" hidden={hidden} approved={koboToNairaString(Number(app.requested_amount_kobo))} defaultDate={lagosDate(new Date())} doneHref={`/disbursements/${app.id}?done=1`} />);
       break;
     case "COMPLETION":
       body.push(<p key="t" className="small" style={{ margin: 0 }}>Queues one closure email with the full document pack and transaction summary to Legal and Shariah Compliance, copying the initiator. The initiator then confirms vendor payment separately.</p>);

@@ -57,14 +57,14 @@ export default async function StaffFinancingAdmin() {
           </table>
           <details>
             <summary className="btn btn-sm">Save a new version</summary>
-            <StaffSettingsForm current={{ deductionPercent: (cur.deduction_rate_bps / 100).toString(), minAmount: cur.min_amount_kobo ? String(Number(cur.min_amount_kobo) / 100) : "", maxAmount: cur.max_amount_kobo ? String(Number(cur.max_amount_kobo) / 100) : "", tenorOptions: cur.tenor_options_months.join(", "), requiredDocuments: cur.required_document_types, unitHeadId: cur.unit_head_staff_id ?? "" }} unitHeads={unitHeads.map((u) => ({ id: u.id, label: u.full_name }))} categories={APPLICANT_SUPPORTING_CATEGORIES.map((c) => ({ code: c, label: STAFF_DOC_CATEGORIES[c] }))} />
+            <StaffSettingsForm current={{ deductionPercent: (cur.deduction_rate_bps / 100).toString(), minAmount: cur.min_amount_kobo ? String(Number(cur.min_amount_kobo) / 100) : "", maxAmount: cur.max_amount_kobo ? String(Number(cur.max_amount_kobo) / 100) : "", tenorOptions: cur.tenor_options_months.join(", "), requiredDocuments: cur.required_document_types, unitHeadId: cur.unit_head_staff_id ?? "", eligibilityMode: cur.eligibility_mode, eligibilityPercent: String(cur.eligibility_percent_bps / 100), salaryRecordMaxAgeDays: String(cur.salary_record_max_age_days) }} unitHeads={unitHeads.map((u) => ({ id: u.id, label: u.full_name }))} categories={APPLICANT_SUPPORTING_CATEGORIES.map((c) => ({ code: c, label: STAFF_DOC_CATEGORIES[c] }))} />
           </details>
           <details>
             <summary className="small">History</summary>
             <ul className="timeline" style={{ marginTop: 8 }}>
               {versions.map((v) => (
                 <li key={v.id} className="done">
-                  <strong>v{v.version} · {bpsLabel(v.deduction_rate_bps)}</strong>
+                  <strong>v{v.version} · {bpsLabel(v.deduction_rate_bps)} · {v.eligibility_mode === "SALARY_REGISTER" ? `automatic eligibility ${v.eligibility_percent_bps / 100}%` : "manual verification"}</strong>
                   <div className="small muted">{v.created_by_name ?? "Migration"} · {formatLagos(v.created_at)}</div>
                   <div className="small">{v.reason}</div>
                 </li>

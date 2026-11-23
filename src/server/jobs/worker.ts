@@ -17,6 +17,10 @@ import { refreshArrears } from "../domain/retail-ops";
 import { expireStaffOffers, remindStaffOffers, retryBlockedOffers } from "../staff/offer";
 import { processStaffDocumentation } from "../staff/pipeline";
 import { rescanStaffDocuments } from "../staff/documents";
+import { runCrmAutoClose, runCrmEscalations } from "../crm/jobs";
+import { runCrmReports } from "../crm/reports";
+import { rescanCrmAttachments } from "../crm/attachments";
+import { purgeExpiredUploads } from "../uploads";
 
 /** Retry scans for files left in quarantine (e.g. scanner unavailable at upload time). */
 export async function rescanQuarantined(now = new Date()) {
@@ -63,5 +67,11 @@ export async function workerTick(now = new Date()) {
   results.staffOffersIssued = await retryBlockedOffers(now);
   await rescanStaffDocuments(now);
   results.staffDocumentation = await processStaffDocumentation(now);
+  // CRM: configured escalations and SLA warnings, the optional closure timeout, scheduled CX reports, attachment scans.
+  results.crmEscalations = await runCrmEscalations(now);
+  results.crmAutoClosed = await runCrmAutoClose(now);
+  results.crmReports = await runCrmReports(now);
+  await rescanCrmAttachments(now);
+  results.uploadsExpired = await purgeExpiredUploads(now);
   return results;
 }

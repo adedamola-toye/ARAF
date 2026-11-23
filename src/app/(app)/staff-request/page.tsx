@@ -12,16 +12,19 @@ import { bpsLabel, formatNairaKobo, STAFF_NEXT_ACTION, STAFF_STATUS_LABELS, STAF
 import { StaffStatusBadge, eventLabel } from "./StatusBadge";
 import { Countdown } from "./StaffForms";
 import { startStaffRequestAction } from "./actions";
+import { RegisterHome } from "./RegisterHome";
+import { usesRegister } from "@/server/staff/register";
 
 export const metadata = { title: "Staff Salary Advance" };
 
-export default async function StaffRequestHub() {
+export default async function StaffRequestHub({ searchParams }: { searchParams: Promise<{ ineligible?: string }> }) {
   const a = await requireUser();
   const home = await staffFinancingGate(a, "VIEW_MY_REQUESTS");
   if (home) return <AccessRestricted product="Staff Salary Advance" dashboardHref={home} />;
   const { session } = a;
   const rows = await myRequestRows(db, session.staffId);
   const settings = await currentSettings(db);
+  if (usesRegister(settings)) return <RegisterHome staffId={session.staffId} fullName={session.fullName} settings={settings} ineligibleNotice={!!(await searchParams).ineligible} />;
   const offers = rows.filter((r) => r.status === "AWAITING_SIGNED_OFFER" && !r.signed_offer_received_at);
   const open = rows.filter((r) => !["COMPLETED", "DECLINED", "OFFER_EXPIRED"].includes(r.status));
   const done = rows.filter((r) => r.status === "COMPLETED");

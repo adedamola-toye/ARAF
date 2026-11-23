@@ -1,4 +1,5 @@
-import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal } from "lucide-react";
+import { GitBranch, Smartphone, Boxes, ClipboardCheck, BadgeCent, ListChecks, Settings2, BookUser, Building2, Gauge, Landmark, MapPin, PackageCheck, ShieldAlert, Timer, Wallet, Percent, BarChart3, BookCheck, ClipboardList, FilePlus2, FileText, History, Inbox, LayoutGrid, Mail, Route, ShieldCheck, Users, UsersRound, CalendarClock, Siren, Target, Bell, ToggleRight, FileCheck2, SlidersHorizontal, MessageSquareWarning, MessageSquarePlus, Headset, Radar, BookOpen } from "lucide-react";
+import { isDesignatedEditor } from "@/server/domain/team-profiles";
 import { requireUser } from "../_lib/auth";
 import { staffFinancingAccess } from "@/server/staff/permission";
 import { themePreference } from "../_lib/theme";
@@ -23,9 +24,13 @@ import { onboardingDue } from "@/server/domain/onboarding";
 import { tourFor } from "@/lib/onboarding/tours";
 import { OnboardingRoot } from "@/components/Onboarding";
 import { executiveAccess } from "@/server/executive";
+import { crmNavCounts, crmPrincipal, isOversight } from "@/server/crm/core";
 import Link from "next/link";
 import { PerformanceSummary } from "@/components/Performance";
 import { DailySummaryDialog } from "./performance/DailySummaryDialog";
+import { BottomNav, type BottomItem } from "@/components/BottomNav";
+import { HideAmountsButton, NavCollapseButton, ShellPrefsInit } from "@/components/ShellPrefs";
+import "./araf-theme.css";
 
 const ic = { className: "icon", "aria-hidden": true } as const;
 /** Roles that review or approve requests: they get "Requests I approved". */
@@ -67,95 +72,166 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const unread = await unreadCount(db, session.staffId);
   const godsEye = await executiveAccess(db, session.staffId);
   const icOfficer = roles.includes("INVOICE_CONFIRMATION_OFFICER");
+  const isDh = roles.includes("DIVISIONAL_HEAD");
+  const teamEditor = roles.includes("TEAM_LEAD") && (await isDesignatedEditor(db, session.staffId));
+  const isCad = roles.includes("DISBURSEMENT_OFFICER_1") || roles.includes("DISBURSEMENT_OFFICER_2");
   const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
   const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
+  // The CRM menu must never take the app down (e.g. the web release goes live before the worker has applied migration 052).
+  const crm = await crmPrincipal(db, session.staffId).catch(() => ({ staffId: session.staffId, active: true, isAdmin: false, isCxHead: false, leadTeams: [] as string[], officerTeams: [] as string[] }));
+  const crmCounts = await crmNavCounts(db, crm).catch(() => ({ assigned: 0, unassigned: 0, escalated: 0 }));
+  const showReports = godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "RBE", "MERCHANT_OFFICER_HEAD"].includes(r));
+  // Mobile bottom navigation: four destinations for the person's main job, plus More (the full menu).
+  const approverOnly = !isInitiatorWs && roles.some((r) => APPROVER_NAV_ROLES.includes(r));
+  const bottom: BottomItem[] = [
+    ...(altWs && alt.originator ? [{ href: "/altphones", label: "New sale", icon: "altphones" as const, exact: true }] : []),
+    ...(!isInitiatorWs && !approverOnly && !altWs && staffOk ? [{ href: "/staff-request", label: "Advance", icon: "salary" as const, count: myOfferCount }] : []),
+    { href: "/queue", label: "Queue", icon: "queue" as const, count: queueCount },
+    ...(isInitiatorWs ? [{ href: "/requests/new", label: "New", icon: "new" as const }] : []),
+    ...(approverOnly ? [{ href: "/requests/approved", label: "Approved", icon: "approved" as const }] : []),
+    { href: "/crm", label: "CRM", icon: "crm" as const },
+    { href: "/notifications", label: "Alerts", icon: "bell" as const, count: unread },
+  ];
   const initials = session.fullName.split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase();
   return (
     <div className="shell">
       <nav className="sidenav" id="sidenav" aria-label="Main navigation">
         <div className="brand-block desktop-only">
-          <Wordmark href="/queue" />
+          <Wordmark href="/overview" />
           <BankMark />
         </div>
         <div className="nav-section">
-          <span className="nav-title">Work</span>
+          <span className="nav-title">Workspace</span>
+          {!(roles.length === 1 && roles[0] === "STAFF_APPLICANT") && (
+            <NavLink href="/overview" icon={<LayoutGrid {...ic} />}>
+              Overview
+            </NavLink>
+          )}
           <NavLink href="/queue" count={queueCount} icon={<Inbox {...ic} />}>
             My Action Queue
           </NavLink>
-          {isInitiatorWs && (
-            <>
-              <NavLink href="/requests/new" icon={<FilePlus2 {...ic} />}>
-                New Financing Request
-              </NavLink>
-              <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
-                View Progress
-              </NavLink>
-              <NavLink href="/booked" icon={<BookCheck {...ic} />}>
-                Booked Requests
-              </NavLink>
-            </>
-          )}
-          {roles.some((r) => APPROVER_NAV_ROLES.includes(r)) && (
-            <NavLink href="/requests/approved" icon={<ListChecks {...ic} />}>
-              Requests I approved
-            </NavLink>
-          )}
-          {roles.includes("RM") && (
-            <NavLink href="/wallet" icon={<Wallet {...ic} />}>
-              Requested Today
-            </NavLink>
-          )}
-          {icOfficer && (
-            <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
-              Invoice confirmation
-            </NavLink>
-          )}
-          {isApprover && (
-            <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
-              Exceptions
-            </NavLink>
-          )}
-          {(godsEye || roles.some((r) => ["SUPER_ADMIN", "REPORTING_ADMIN", "UNIT_HEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "RBE", "MERCHANT_OFFICER_HEAD"].includes(r))) && !altWs && (
-            <NavLink href="/reports/performance" icon={<BarChart3 {...ic} />}>
-              Performance reports
-            </NavLink>
-          )}
-          {creditExceptionsView && !altWs && (
-            <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
-              Credit score exceptions
-            </NavLink>
-          )}
-          {showPerformance && !altWs && (
-            <NavLink href="/performance" icon={<Target {...ic} />}>
-              {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
-            </NavLink>
-          )}
-          {godsEye && (
-            <NavLink href="/executive" icon={<Gauge {...ic} />}>
-              God&apos;s Eye
-            </NavLink>
-          )}
-          {retailScope && !altWs && (
-            <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
-              Retail dashboard
-            </NavLink>
-          )}
-          {showTracker && !altWs && (
-            <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
-              Repayment monitoring
-            </NavLink>
-          )}
-          {roles.includes("VENDOR_MANAGER") && (
-            <NavLink href="/vendors" icon={<Building2 {...ic} />}>
-              Vendor register
-            </NavLink>
-          )}
-          {roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin && (
-            <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
-              Product configuration
-            </NavLink>
-          )}
+          <NavLink href="/notifications" count={unread} icon={<Bell {...ic} />}>
+            Notifications
+          </NavLink>
         </div>
+        {(isInitiatorWs || roles.some((r) => APPROVER_NAV_ROLES.includes(r)) || roles.includes("RM")) && (
+          <div className="nav-section">
+            <span className="nav-title">Applications</span>
+            {isInitiatorWs && (
+              <>
+                <NavLink href="/requests/new" icon={<FilePlus2 {...ic} />}>
+                  New Financing Request
+                </NavLink>
+                <NavLink href="/requests" exact icon={<ClipboardList {...ic} />}>
+                  View Progress
+                </NavLink>
+                <NavLink href="/offers" icon={<FileText {...ic} />}>
+                  Offer letters
+                </NavLink>
+                <NavLink href="/booked" icon={<BookCheck {...ic} />}>
+                  Booked Requests
+                </NavLink>
+              </>
+            )}
+            {roles.some((r) => APPROVER_NAV_ROLES.includes(r)) && (
+              <NavLink href="/requests/approved" icon={<ListChecks {...ic} />}>
+                Requests I approved
+              </NavLink>
+            )}
+            {roles.includes("RM") && (
+              <NavLink href="/wallet" icon={<Wallet {...ic} />}>
+                Requested Today
+              </NavLink>
+            )}
+          </div>
+        )}
+        {(icOfficer || isApprover || isDh || isCad || teamEditor || (showTracker && !altWs) || roles.includes("VENDOR_MANAGER")) && (
+          <div className="nav-section">
+            <span className="nav-title">Operations</span>
+            {isDh && (
+              <NavLink href="/bouquets" icon={<Landmark {...ic} />}>
+                Concurrence
+              </NavLink>
+            )}
+            {teamEditor && (
+              <NavLink href="/team" icon={<UsersRound {...ic} />}>
+                My team
+              </NavLink>
+            )}
+            {isCad && (
+              <NavLink href="/disbursements" icon={<BadgeCent {...ic} />}>
+                Disbursements
+              </NavLink>
+            )}
+            {icOfficer && (
+              <NavLink href="/invoice-confirmation" count={icCount} icon={<FileCheck2 {...ic} />}>
+                Invoice confirmation
+              </NavLink>
+            )}
+            {isApprover && (
+              <NavLink href="/exceptions" count={pendingExceptions} icon={<ShieldAlert {...ic} />}>
+                Exceptions
+              </NavLink>
+            )}
+            {showTracker && !altWs && (
+              <NavLink href="/repayments" icon={<CalendarClock {...ic} />}>
+                Repayment monitoring
+              </NavLink>
+            )}
+            {roles.includes("VENDOR_MANAGER") && (
+              <NavLink href="/vendors" icon={<Building2 {...ic} />}>
+                Vendor register
+              </NavLink>
+            )}
+          </div>
+        )}
+        {!altWs && (showReports || creditExceptionsView || showPerformance || godsEye || retailScope || (roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin) || (canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN"))) && (
+          <div className="nav-section">
+            <span className="nav-title">Performance and governance</span>
+            {showPerformance && (
+              <NavLink href="/performance" icon={<Target {...ic} />}>
+                {roles.includes("RM") || roles.includes("TEAM_LEAD") ? "My performance" : "Performance targets"}
+              </NavLink>
+            )}
+            {showReports && (
+              <NavLink href="/reports/performance" icon={<BarChart3 {...ic} />}>
+                Performance reports
+              </NavLink>
+            )}
+            {retailScope && (
+              <NavLink href="/dashboard" icon={<Gauge {...ic} />}>
+                Retail dashboard
+              </NavLink>
+            )}
+            {godsEye && (
+              <NavLink href="/executive" icon={<Gauge {...ic} />}>
+                God&apos;s Eye
+              </NavLink>
+            )}
+            {creditExceptionsView && (
+              <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
+                Credit score exceptions
+              </NavLink>
+            )}
+            {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
+              <>
+                <NavLink href="/reports" exact icon={<BarChart3 {...ic} />}>
+                  Reports &amp; exports
+                </NavLink>
+                {!isInitiatorWs && (
+                  <NavLink href="/booked" icon={<BookCheck {...ic} />}>
+                    Booked Requests
+                  </NavLink>
+                )}
+              </>
+            )}
+            {roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin && (
+              <NavLink href="/admin/products" icon={<PackageCheck {...ic} />}>
+                Product configuration
+              </NavLink>
+            )}
+          </div>
+        )}
         {(alt.any || altMigration || altLocations || altPortfolio) && (
           <div className="nav-section">
             <span className="nav-title">Altphones</span>
@@ -206,6 +282,60 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
+        <div className="nav-section">
+          <span className="nav-title">CRM</span>
+          <NavLink href="/crm" exact icon={<Headset {...ic} />}>
+            CRM Home
+          </NavLink>
+          <NavLink href="/crm/new" icon={<MessageSquarePlus {...ic} />}>
+            Raise Complaint
+          </NavLink>
+          <NavLink href="/crm/tickets" icon={<MessageSquareWarning {...ic} />}>
+            My Tickets
+          </NavLink>
+          {crm.officerTeams.length > 0 && (
+            <NavLink href="/crm/work" count={crmCounts.assigned} icon={<Inbox {...ic} />}>
+              Assigned to Me
+            </NavLink>
+          )}
+          {crm.leadTeams.length > 0 && (
+            <NavLink href="/crm/team" count={crmCounts.unassigned} icon={<UsersRound {...ic} />}>
+              Team Queue
+            </NavLink>
+          )}
+          {isOversight(crm) && (
+            <>
+              <NavLink href="/crm/cx" exact icon={<Radar {...ic} />}>
+                CX Command Centre
+              </NavLink>
+              <NavLink href="/crm/all" icon={<ClipboardList {...ic} />}>
+                All Complaints
+              </NavLink>
+              <NavLink href="/crm/sla" icon={<Timer {...ic} />}>
+                SLA Monitoring
+              </NavLink>
+              <NavLink href="/crm/escalations" count={crmCounts.escalated} alert icon={<Siren {...ic} />}>
+                Escalations
+              </NavLink>
+              <NavLink href="/crm/performance" icon={<Gauge {...ic} />}>
+                Team Performance
+              </NavLink>
+              <NavLink href="/crm/reports" icon={<BarChart3 {...ic} />}>
+                CX Reports
+              </NavLink>
+            </>
+          )}
+          {(isOversight(crm) || crm.officerTeams.length > 0) && (
+            <NavLink href="/crm/kb" icon={<BookOpen {...ic} />}>
+              Knowledge base
+            </NavLink>
+          )}
+          {isAdmin && (
+            <NavLink href="/admin/crm" icon={<SlidersHorizontal {...ic} />}>
+              CRM configuration
+            </NavLink>
+          )}
+        </div>
         {staffOk && (
           <div className="nav-section">
             <span className="nav-title">Staff Salary Advance</span>
@@ -217,17 +347,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 Salary advance queues
               </NavLink>
             )}
-          </div>
-        )}
-        {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (
-          <div className="nav-section">
-            <span className="nav-title">Reporting</span>
-            <NavLink href="/reports" icon={<BarChart3 {...ic} />}>
-              Reports &amp; exports
-            </NavLink>
-            <NavLink href="/booked" icon={<BookCheck {...ic} />}>
-              Booked Requests
-            </NavLink>
+            {(roles.includes("SALARY_REGISTER_ADMIN") || isAdmin) && (
+              <NavLink href="/admin/salary-register" icon={<BookUser {...ic} />}>
+                Salary register
+              </NavLink>
+            )}
           </div>
         )}
         {isAdmin && ws === "SUPER_ADMIN" && (
@@ -260,8 +384,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <NavLink href="/admin/feature-controls" icon={<ToggleRight {...ic} />}>
               Feature controls
             </NavLink>
+            <NavLink href="/admin/bouquet-settings" icon={<SlidersHorizontal {...ic} />}>
+              Bouquet settings
+            </NavLink>
+            <NavLink href="/admin/profile-editors" icon={<Users {...ic} />}>
+              Team profile editors
+            </NavLink>
             <NavLink href="/admin/staff-financing" icon={<Settings2 {...ic} />}>
               Salary advance settings
+            </NavLink>
+            <NavLink href="/admin/salary-register" icon={<BookUser {...ic} />}>
+              Salary register
             </NavLink>
             <NavLink href="/admin/locations" icon={<MapPin {...ic} />}>
               Outlet locations
@@ -307,12 +440,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <header className="topbar">
         <div className="topbar-left">
           <MobileNavToggle />
+          <NavCollapseButton />
           <span className="mobile-only">
-            <Wordmark href="/queue" />
+            <Wordmark href="/overview" />
           </span>
           {ws && <span className="ws-indicator desktop-only">{ROLE_LABELS[ws]} workspace</span>}
         </div>
         <div className="topbar-right">
+          <HideAmountsButton />
           <Link href="/notifications" className="bell" data-tour="bell" aria-label={unread ? `Notifications: ${unread} unread` : "Notifications"}>
             <Bell className="icon" aria-hidden="true" />
             {unread > 0 && <span className="bell-count">{unread > 99 ? "99+" : unread}</span>}
@@ -359,6 +494,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         )}
       </main>
       <Footer />
+      <BottomNav items={bottom} />
+      <ShellPrefsInit />
       <IdleWatcher idleSeconds={config.sessionIdleSeconds} expiresAt={session.idleExpiresAt.toISOString()} />
     </div>
   );

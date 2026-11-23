@@ -8,6 +8,7 @@ import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
 import { type AppRow, assignmentSpec, eligibleStaff, notifyAssignment } from "./assignment";
 import { notifyExceptionReviewer } from "./credit-exception";
+import { notify } from "./notifications";
 import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, normaliseNigerianState, type Role } from "./roles";
 import type { Stage } from "./stages";
 import { validateTemplate, DOCX_MIME } from "./offer";
@@ -227,6 +228,19 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     await audit(tx, ctx, { action: "TASK_REASSIGNED", actorRole: "SUPER_ADMIN", applicationId: app.id, stage: task.stage, reason: note, assignmentFrom: task.assignee_id, assignmentTo: staffId, details: { taskId } });
     await notifyAssignment(tx, ctx, app, taskId, task.stage as Stage, staffId, `:admin:${ctx.now.getTime()}`);
     await notifyExceptionReviewer(tx, ctx, app, taskId, task.stage as Stage, staffId);
+    // The officer who previously held the task is told it has moved (in-app; no customer details).
+    if (task.assignee_id && task.assignee_id !== staffId) {
+      const to = (await tx.query<{ full_name: string }>("SELECT full_name FROM staff WHERE id = $1", [staffId])).rows[0]?.full_name ?? "another officer";
+      await notify(tx, ctx.now, {
+        recipientId: task.assignee_id,
+        kind: "TASK_REASSIGNED_AWAY",
+        title: `${app.ref} reassigned`,
+        body: `The Super Admin reassigned ${app.ref} to ${to}. Reason: ${note.trim()}`,
+        applicationId: app.id,
+        link: `/requests/${app.id}`,
+        dedupeKey: `reassigned-away:${taskId}:${ctx.now.getTime()}`,
+      });
+    }
   });
 }
 

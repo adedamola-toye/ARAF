@@ -42,6 +42,12 @@ export const ROLES = [
   "EXECUTIVE_VIEW",
   // Confirms supplier / vehicle invoices with the issuer after final approval (one queue, all products)
   "INVOICE_CONFIRMATION_OFFICER",
+  // CRM: organisation-wide complaint oversight, analytics and reports (no Super Admin or financing authority)
+  "CX_HEAD",
+  // CRM only: lets staff who have no other ARAF role sign in to work complaints (no financing or admin rights)
+  "CRM_AGENT",
+  // Staff Salary Advance: maintains the confidential salary register and records confirmed repayments
+  "SALARY_REGISTER_ADMIN",
 ] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -96,6 +102,9 @@ export const ROLE_LABELS: Record<Role, string> = {
   CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
   EXECUTIVE_VIEW: "Executive View (God's Eye, read-only)",
   INVOICE_CONFIRMATION_OFFICER: "Invoice Confirmation Officer",
+  CX_HEAD: "CX Head (complaints oversight)",
+  CRM_AGENT: "CRM team member (complaints only)",
+  SALARY_REGISTER_ADMIN: "Salary Register Administrator",
 };
 
 /** The Delight Officer / Smile Associate channel originates Altphones only. */

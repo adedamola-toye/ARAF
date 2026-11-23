@@ -45,6 +45,8 @@ export async function startStaffRequestAction(): Promise<void> {
   } catch (e) {
     // Not authorised for Staff Financing (already audited): back to the hub, which shows the restriction prompt.
     if (e instanceof DomainError && e.code === "FORBIDDEN") redirect("/staff-request");
+    // Not eligible right now (salary register): the home screen explains why.
+    if (e instanceof DomainError && e.code === "GATE") redirect("/staff-request?ineligible=1");
     throw e;
   }
   redirect(`/staff-request/${id}?new=1`);
@@ -157,6 +159,9 @@ export const staffSettingsAction = async (_p: ActionState, fd: FormData) =>
         tenorOptions: s(fd, "tenorOptions"),
         requiredDocuments: fd.getAll("requiredDocuments").map(String),
         unitHeadId: s(fd, "unitHeadId") || null,
+        eligibilityMode: s(fd, "eligibilityMode") === "SALARY_REGISTER" ? "SALARY_REGISTER" : "MANUAL",
+        eligibilityPercent: s(fd, "eligibilityPercent"),
+        salaryRecordMaxAgeDays: s(fd, "salaryRecordMaxAgeDays"),
         reason: s(fd, "reason"),
       }),
     "New settings version saved. It applies to drafts and resubmissions from now on.",

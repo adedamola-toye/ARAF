@@ -16,6 +16,14 @@ const EXPLAIN: Record<SwitchKey, { on: string[]; off: string[] }> = {
     ],
     off: ["No extra photograph step and no skip reason. Existing KYC, BVN and SeedFi controls are unchanged.", "Photographs and skip reasons already recorded are kept."],
   },
+  BOUQUET_APPROVALS: {
+    on: [
+      "Divisional Heads can concur with a bouquet of facilities that every preceding officer has approved, after sampling and inspecting, with exclusions and a mandatory acknowledgement.",
+      "Only products named in Bouquet settings take part; facilities with material exceptions always stay for individual review.",
+      "Turn on only after the bank's risk governance has approved bouquet concurrence.",
+    ],
+    off: ["Every facility needs its own Divisional Head decision (current behaviour).", "Bouquets and their audit history are kept; an open bouquet cannot be concurred while this is off."],
+  },
   REPAYMENT_TRACKER: {
     on: ["Leadership, credit and collections see Repayment monitoring (manual entries only while core banking is not connected)."],
     off: ["Only Super Admins see Repayment monitoring."],
@@ -24,7 +32,7 @@ const EXPLAIN: Record<SwitchKey, { on: string[]; off: string[] }> = {
 
 export default async function FeatureControls() {
   await requireSuperAdmin();
-  const keys: SwitchKey[] = ["VF_TL_PHOTO_REVIEW", "REPAYMENT_TRACKER"];
+  const keys: SwitchKey[] = ["BOUQUET_APPROVALS", "VF_TL_PHOTO_REVIEW", "REPAYMENT_TRACKER"];
   const rows = await Promise.all(keys.map(async (k) => ({ k, s: await switchState(db, k), h: await switchHistory(db, k) })));
   return (
     <>

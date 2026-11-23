@@ -17,7 +17,7 @@ export default async function SignIn({ searchParams }: { searchParams: Promise<R
       <p className="lede">
         For <strong>Relationship Managers</strong>, <strong>Delight Officers / Smile Associates</strong> and the review, credit and operations teams.
       </p>
-      <EmailForm as={sp.as ?? ""} next={safeNext(sp.next)} returning={!!sp.next && safeNext(sp.next) !== "/queue"} />
+      <EmailForm as={sp.as ?? ""} next={safeNext(sp.next)} returning={!!sp.next && safeNext(sp.next) !== "/overview"} />
     </AuthScene>
   );
 }

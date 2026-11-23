@@ -3,9 +3,10 @@ import { IncidentCard } from "@/components/Incident";
 import type { IncidentView } from "@/lib/incident-messages";
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, RotateCcw, Upload } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RotateCcw, Upload, X } from "lucide-react";
+import { chunkedUpload, formatBytes } from "@/lib/chunked-upload";
 
-type Phase = { kind: "idle" } | { kind: "uploading"; pct: number } | { kind: "done"; msg: string } | { kind: "error"; msg: string; incident?: IncidentView };
+type Phase = { kind: "idle" } | { kind: "uploading"; pct: number; detail?: string } | { kind: "done"; msg: string } | { kind: "error"; msg: string; incident?: IncidentView };
 
 /**
  * Upload control with real progress, error and retry states. It has no <form> of its own, so it can
@@ -30,6 +31,7 @@ export function UploadPanel({
   const id = useId();
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
   const [category, setCategory] = useState(categories[0]?.code ?? "");
   const [replace, setReplace] = useState("");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -55,42 +57,32 @@ export function UploadPanel({
       setPhase({ kind: "error", msg: "Enter the period the statement or payslip covers (from and to)." });
       return;
     }
-    const fd = new FormData();
-    fd.set("applicationId", applicationId);
-    fd.set("category", category);
-    if (needsPhoto) fd.set("photoCategory", photoCategory);
+    // Sent in parts through ARAF (each below the hosting request limit), resumable and cancellable;
+    // the server applies every document rule to the reassembled file.
+    const fields: Record<string, string> = {};
+    if (needsPhoto) fields.photoCategory = photoCategory;
     if (needsCoverage) {
-      fd.set("coverageFrom", coverageFrom);
-      fd.set("coverageTo", coverageTo);
+      fields.coverageFrom = coverageFrom;
+      fields.coverageTo = coverageTo;
     }
-    if (replace) fd.set("replacesDocumentId", replace);
-    fd.set("file", f);
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/documents/upload");
-    xhr.upload.onprogress = (e) => e.lengthComputable && setPhase({ kind: "uploading", pct: Math.round((e.loaded / e.total) * 100) });
-    xhr.onerror = () => setPhase({ kind: "error", msg: "Network error. Your file was not saved. Retry when you are connected." });
-    xhr.onload = () => {
-      let body: { ok?: boolean; error?: string; version?: number; scanStatus?: string; expired?: boolean; incident?: IncidentView } = {};
-      try {
-        body = JSON.parse(xhr.responseText);
-      } catch {
-        /* non-JSON */
-      }
-      if (xhr.status === 401 && body.expired) {
+    if (replace) fields.replacesDocumentId = replace;
+    const ctl = new AbortController();
+    abortRef.current = ctl;
+    setPhase({ kind: "uploading", pct: 0, detail: `${formatBytes(f.size)}` });
+    void chunkedUpload({ file: f, target: "APPLICATION", targetId: applicationId, category, fields, signal: ctl.signal, onProgress: (pct, detail) => setPhase({ kind: "uploading", pct, detail }) }).then((r) => {
+      abortRef.current = null;
+      if (!r.ok && r.expired) {
         window.location.replace(`/session-expired?reason=IDLE_TIMEOUT&next=${encodeURIComponent(location.pathname + location.search)}`);
         return;
       }
-      if (xhr.status >= 200 && xhr.status < 300 && body.ok) {
-        setPhase({ kind: "done", msg: body.scanStatus === "CLEAN" ? `Uploaded ${f.name} (version ${body.version}).` : `Uploaded ${f.name}. It stays in quarantine until the scan completes.` });
+      if (r.ok) {
+        setPhase({ kind: "done", msg: r.result.scanStatus === "CLEAN" ? `Uploaded ${f.name}${r.result.version ? ` (version ${r.result.version})` : ""}.` : `Uploaded ${f.name}. It stays in quarantine until the scan completes.` });
         if (fileRef.current) fileRef.current.value = "";
         setFileName("");
         router.refresh();
-      } else {
-        setPhase({ kind: "error", msg: body.error ?? `Upload failed (${xhr.status}).`, incident: body.incident });
-      }
-    };
-    setPhase({ kind: "uploading", pct: 0 });
-    xhr.send(fd);
+      } else if (r.cancelled) setPhase({ kind: "idle" });
+      else setPhase({ kind: "error", msg: r.error, incident: r.incident });
+    });
   };
   const busy = phase.kind === "uploading";
   return (
@@ -159,7 +151,7 @@ export function UploadPanel({
       <div className="field">
         <label htmlFor={`${id}-f`}>File (PDF, PNG, JPG, DOCX or XLSX)</label>
         <input id={`${id}-f`} ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.docx,.xlsx" disabled={busy} onChange={(e) => setFileName(e.target.files?.[0]?.name ?? "")} />
-        <span className="hint">Single-file categories keep earlier versions as superseded.</span>
+        <span className="hint">Large statements are sent in parts and resume if the connection drops. Single-file categories keep earlier versions as superseded.</span>
       </div>
       {phase.kind === "uploading" && (
         <div role="status" aria-live="polite">
@@ -167,7 +159,7 @@ export function UploadPanel({
             <span style={{ width: `${phase.pct}%` }} />
           </div>
           <span className="small muted">
-            Uploading {fileName} · {phase.pct}%{phase.pct === 100 ? " · scanning…" : ""}
+            Uploading {fileName} · {phase.pct}%{phase.detail ? ` · ${phase.detail}` : ""}
           </span>
         </div>
       )}
@@ -189,6 +181,11 @@ export function UploadPanel({
           {phase.kind === "error" ? <RotateCcw className="icon" aria-hidden="true" /> : <Upload className="icon" aria-hidden="true" />}
           {busy ? "Uploading…" : phase.kind === "error" ? "Retry upload" : "Upload"}
         </button>
+        {busy && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => abortRef.current?.abort()}>
+            <X className="icon" aria-hidden="true" /> Cancel
+          </button>
+        )}
       </div>
     </div>
   );
