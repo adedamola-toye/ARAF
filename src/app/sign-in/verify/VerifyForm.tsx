@@ -17,16 +17,21 @@ export function VerifyForm({ next, as, expiresAt, ttlMs }: { next: string; as: s
   const [state, action, pending] = useActionState(verifyOtpAction, {});
   const [resend, resendAction, resending] = useActionState(resendOtpAction, {});
   const [deadline, setDeadline] = useState(expiresAt);
-  const [now, setNow] = useState(() => Date.now());
+  // Start from null so the server and the first client render agree (the live clock starts after mount).
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
-    if (resend.ok) setDeadline(Date.now() + ttlMs);
+    if (resend.ok) {
+      setDeadline(Date.now() + ttlMs);
+      setNow(Date.now());
+    }
   }, [resend, ttlMs]);
   useEffect(() => {
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
-  const left = Math.max(0, Math.floor((deadline - now) / 1000));
-  const expired = left === 0;
+  const left = now === null ? Math.ceil(ttlMs / 1000) : Math.max(0, Math.floor((deadline - now) / 1000));
+  const expired = now !== null && left === 0;
   const msg = pending
     ? "Verifying…"
     : state.error ?? resend.error ?? resend.message ?? (expired ? "The code has expired. Request a new one." : `Code expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}.`);

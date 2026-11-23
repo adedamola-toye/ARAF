@@ -147,7 +147,11 @@ export function DraftForm(props: {
   const [bvn, setBvn] = useState("");
   const [tin, setTin] = useState("");
   const [intent, setIntent] = useState("save");
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  // Generated after mount: a key created during render would differ between the server HTML and the client.
+  const [key, setKey] = useState("");
+  useEffect(() => {
+    setKey(crypto.randomUUID());
+  }, []);
   const banner = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {

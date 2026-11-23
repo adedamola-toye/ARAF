@@ -105,7 +105,11 @@ export function ActionForm({
   }, {});
   const router = useRouter();
   const ref = useRef<HTMLFormElement>(null);
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  // Generated after mount: a key created during render would differ between the server HTML and the client.
+  const [key, setKey] = useState("");
+  useEffect(() => {
+    setKey(crypto.randomUUID());
+  }, []);
   useEffect(() => {
     if (state.ok) {
       setKey(crypto.randomUUID());

@@ -1,6 +1,6 @@
 "use client";
 import { VerifyButton, type VerifyProps } from "@/components/VerifyDialog";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Calculator, CheckCircle2, Eye, FilePlus2, Pencil, ShieldCheck } from "lucide-react";
 import { ActionForm, FormMessages, ReasonAction, SubmitButton, type FormState } from "@/components/forms";
 import { assessmentAction, generateOfferAction, reminderAction, revealAction, taskActionAction } from "../actions";
@@ -239,7 +239,8 @@ export interface CalcField {
   optional?: boolean;
 }
 export function AssessmentForm({ applicationId, fields, calculatorLabel }: { applicationId: string; fields: CalcField[]; calculatorLabel: string }) {
-  const [started] = useState(() => new Date().toISOString());
+  const [started, setStarted] = useState("");
+  useEffect(() => setStarted(new Date().toISOString()), []);
   return (
     <ActionForm action={assessmentAction}>
       <input type="hidden" name="applicationId" value={applicationId} />

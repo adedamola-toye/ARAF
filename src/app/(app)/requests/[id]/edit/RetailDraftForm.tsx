@@ -126,7 +126,11 @@ export function RetailDraftForm(props: RetailFormProps) {
     if (v === "submit") setAttempted(true);
     setIntentRaw(v);
   };
-  const [key, setKey] = useState(() => crypto.randomUUID());
+  // Generated after mount: a key created during render would differ between the server HTML and the client.
+  const [key, setKey] = useState("");
+  useEffect(() => {
+    setKey(crypto.randomUUID());
+  }, []);
   const [savedAt, setSavedAt] = useState(props.savedAt);
   const formRef = useRef<HTMLFormElement>(null);
   const T = props.applicantType;
