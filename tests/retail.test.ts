@@ -22,7 +22,7 @@ import { configGaps, INITIAL_PRODUCT_CONFIGS, proposeProductConfig, decideProduc
 import { computeAffordability, rulesSnapshot } from "@/server/domain/affordability";
 import { createRetailDraft, saveRetailDraft, retailReadiness, requestException, decideException, withdrawApplication, recordFinalAssessment } from "@/server/domain/retail";
 import { submitApplication } from "@/server/domain/workflow";
-import { uploadDocument } from "@/server/domain/documents";
+import { removeDocument, uploadDocument } from "@/server/domain/documents";
 import { caseAccess } from "@/server/domain/access";
 import { recordPaymentEvent, recordRepayment, closeFacility, facilityPosition, recordServicingAction } from "@/server/domain/retail-ops";
 import { walletDay, walletMonth } from "@/server/domain/wallet";
@@ -224,6 +224,16 @@ describe("business review routing", () => {
     const saved = (await db.query("SELECT inputs FROM retail_assessments WHERE application_id = $1 AND kind = 'FINAL' ORDER BY created_at DESC LIMIT 1", [id])).rows[0].inputs;
     expect(saved.statementFrom).toBeTruthy();
     expect(saved.statementTo).toBeTruthy();
+  });
+
+  it("an initiator can remove a document uploaded in error while the request is a draft; others cannot", async () => {
+    await vf();
+    const id = await vfCase({ submit: false });
+    const docs = (await db.query("SELECT id FROM documents WHERE application_id = $1 AND superseded_at IS NULL AND NOT generated ORDER BY uploaded_at", [id])).rows;
+    expect(docs.length).toBeGreaterThan(1);
+    await removeDocument(await ctxFor("rm.bola@altbank.ng"), docs[0].id);
+    expect((await db.query("SELECT superseded_at FROM documents WHERE id = $1", [docs[0].id])).rows[0].superseded_at).not.toBeNull();
+    await expect(removeDocument(await ctxFor("tl.lagos@altbank.ng"), docs[1].id)).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   it("Head of Unit is configurable: NOT_REQUIRED goes straight to credit; a person holding both HRS and HoU is never used twice", async () => {

@@ -11,6 +11,7 @@ import { formatLagos } from "@/server/time";
 import { STAGE_LABELS, type Stage } from "@/server/domain/stages";
 import { PageHeader } from "@/components/PageHeader";
 import { UploadPanel } from "@/components/UploadPanel";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { RetailDraftForm } from "./RetailDraftForm";
 import { BeneficiaryProposalForm, ExceptionRequestForm, ProposalForm } from "./RetailSideForms";
 
@@ -50,6 +51,9 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
     <section className="card" aria-labelledby="h-up">
       <h2 id="h-up">Upload documents</h2>
       <UploadPanel applicationId={app.id} categories={orderedCats.map((x) => ({ code: x, label: `${CATEGORY_LABEL[x]}${required.has(x) ? " (required)" : ""}` }))} withMeta />
+      <p className="small muted" style={{ marginBottom: 0 }}>
+        Uploaded a wrong file or the wrong period? Remove it here before submitting.
+      </p>
       {docs.length > 0 && (
         <ul className="doc-list small">
           {docs.map((d) => (
@@ -59,6 +63,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
               {d.meta?.coverageFrom ? ` · ${d.meta.coverageFrom} to ${d.meta.coverageTo}` : ""}
               {d.scan_status === "QUARANTINED" && <span className="badge badge-warn">Quarantined</span>}
               {d.review_status === "REJECTED" && <span className="badge badge-red">Rejected: {d.review_reason}</span>}
+              <DeleteDocumentButton documentId={d.id} />
             </li>
           ))}
         </ul>

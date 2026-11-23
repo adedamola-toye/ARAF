@@ -2,6 +2,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { UploadPanel } from "@/components/UploadPanel";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { useRouter } from "next/navigation";
 import { saveDraftAction } from "../../actions";
 import { FormMessages } from "@/components/forms";
@@ -776,6 +777,7 @@ export function DraftForm(props: {
                     Quarantined
                   </span>
                 )}
+                <DeleteDocumentButton documentId={d.id} />
                 {d.quarantined && d.scanDetail && (
                   <div className="small muted">{d.scanDetail}</div>
                 )}

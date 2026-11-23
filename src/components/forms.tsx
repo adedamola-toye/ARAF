@@ -27,10 +27,33 @@ export function useActionPending() {
   return ctx || pending;
 }
 
-export function SubmitButton({ children, className = "btn btn-primary", name, value, disabled }: { children: ReactNode; className?: string; name?: string; value?: string; disabled?: boolean }) {
+export function SubmitButton({
+  children,
+  className = "btn btn-primary",
+  name,
+  value,
+  disabled,
+  confirm,
+}: {
+  children: ReactNode;
+  className?: string;
+  name?: string;
+  value?: string;
+  disabled?: boolean;
+  /** Ask for confirmation before submitting (destructive actions such as closing a ticket). */
+  confirm?: string;
+}) {
   const pending = useActionPending();
   return (
-    <button type="submit" className={className} name={name} value={value} disabled={pending || disabled} aria-disabled={pending || disabled}>
+    <button
+      type="submit"
+      className={className}
+      name={name}
+      value={value}
+      disabled={pending || disabled}
+      aria-disabled={pending || disabled}
+      onClick={confirm ? (e) => { if (!window.confirm(confirm)) e.preventDefault(); } : undefined}
+    >
       {pending ? "Working…" : children}
     </button>
   );

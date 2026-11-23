@@ -1,10 +1,11 @@
 "use server";
 import { parseVerification } from "@/lib/approval-checklists";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "../../_lib/auth";
 import { toActionError, type ActionState } from "../../_lib/action";
 import { createDraft, saveDraft, submitApplication, performTaskAction, sendReminder, type BookingInput } from "@/server/domain/workflow";
-import { uploadDocument } from "@/server/domain/documents";
+import { removeDocument, uploadDocument } from "@/server/domain/documents";
 import { parseCalculatorForm, recordAssessment } from "@/server/domain/assessment";
 import { generateOffer } from "@/server/domain/offer";
 import { revealIdentifiers } from "@/server/domain/views";
@@ -95,6 +96,20 @@ export async function uploadDocumentAction(_p: ActionState, fd: FormData): Promi
     return { ok: true, message: r.scanStatus === "CLEAN" ? `Uploaded (version ${r.version}).` : "Uploaded. The file is in quarantine until the scan completes.", nonce: Date.now() };
   } catch (e) {
     return toActionError(e);
+  }
+}
+
+/** Remove an uploaded document while the request is still a draft or under correction. */
+export async function deleteDocumentAction(documentId: string): Promise<{ ok: boolean; error?: string }> {
+  const { ctx } = await requireUser();
+  if (!/^[0-9a-f-]{36}$/i.test(documentId)) return { ok: false, error: "Document not found." };
+  try {
+    await removeDocument(ctx, documentId);
+    revalidatePath("/requests", "layout");
+    return { ok: true };
+  } catch (e) {
+    const state = await toActionError(e);
+    return { ok: false, error: state.error ?? "Could not remove the document." };
   }
 }
 

@@ -326,14 +326,14 @@ export function TicketActions(p: ActionProps) {
     );
     if (p.status !== "CLOSED")
       blocks.push(
-        <Fold key="cxclose" label="Close ticket" open>
+        <Fold key="cxclose" label="Close ticket">
           <Op op="cxclose" id={p.id}>
             <div className="field">
               <label htmlFor="cc-why">Reason for closing (required)</label>
               <textarea id="cc-why" name="reason" rows={2} required minLength={10} />
             </div>
             <div>
-              <SubmitButton>Close ticket</SubmitButton>
+              <SubmitButton confirm="Close this ticket? The complainant and the assigned officer will be notified, and the complainant can ask for it to be reopened.">Close ticket</SubmitButton>
             </div>
           </Op>
         </Fold>,

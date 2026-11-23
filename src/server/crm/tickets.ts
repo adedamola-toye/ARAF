@@ -663,6 +663,8 @@ export async function cxCloseTicket(ctx: Ctx, id: string, reason: string) {
     await event(tx, t.id, ctx.now, p.staffId, "CLOSED", "PUBLIC", `Closed by the ${by}.`, {});
     await event(tx, t.id, ctx.now, p.staffId, "CLOSE_REASON", "INTERNAL", why);
     await crmAudit(tx, ctx, "CRM_TICKET_CLOSED", t, { reason: why, details: { how: "OVERSIGHT", by } });
+    const people = [await staffById(tx, t.creator_id), await staffById(tx, t.assignee_id)].filter((r): r is Recipient => !!r);
+    await tell(tx, ctx.now, people, { kind: "CRM_CLOSED", title: `${t.ref} was closed`, body: `Closed by the ${by}. Reason: ${why}. You can ask for it to be reopened if the issue persists.`, ticketId: t.id, dedupe: `crm-cxclosed:${t.id}:${ctx.now.getTime()}`, email: true });
   });
 }
 

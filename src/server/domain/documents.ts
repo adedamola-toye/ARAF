@@ -5,7 +5,7 @@ import type { Ctx } from "../context";
 import { audit, auditOutsideTx } from "../audit";
 import { config } from "../config";
 import { sha256Hex, hmac, safeEqualHex } from "../crypto";
-import { DomainError, forbidden, invalid, notFound } from "../errors";
+import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { objectStore } from "../storage";
 import { documentScanner, sniffAllowedType, ALLOWED_EXTENSIONS, type ScanResult } from "../storage/scanner";
 import { caseAccess } from "./access";
@@ -509,6 +509,41 @@ export async function readDocumentForActor(ctx: Ctx, docId: string, mode: "view"
     details: { category: doc.category, capacities: access.capacities },
   });
   return { doc, data };
+}
+
+/**
+ * Remove a document the initiator (or the assigned RM on a Delight Officer case) uploaded in error while the
+ * request is still a draft or under correction. The row is kept for the audit trail (marked superseded) and the
+ * stored file is deleted. Documents that already count towards a submitted case cannot be removed this way.
+ */
+export async function removeDocument(ctx: Ctx, docId: string, reason?: string | null): Promise<{ removed: boolean; filename: string }> {
+  const actor = ctx.actor;
+  if (!actor) throw forbidden();
+  const result = await withTx(async (tx) => {
+    const doc = (await tx.query<DocumentRow>("SELECT * FROM documents WHERE id = $1 FOR UPDATE", [docId])).rows[0];
+    if (!doc) throw notFound();
+    const app = (await tx.query("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [doc.application_id])).rows[0];
+    if (!app) throw notFound();
+    if (!["DRAFT", "INITIATOR_CORRECTION"].includes(app.stage)) throw forbidden("Documents can only be removed while the request is a draft or under correction.");
+    if (doc.generated) throw forbidden("Generated documents cannot be removed.");
+    if (doc.superseded_at) throw conflict("This document has already been removed or replaced.");
+    const { allowed, role } = await uploadRights(tx, actor.staffId, app, doc.category);
+    if (!allowed.includes(doc.category)) throw forbidden("You can only remove a document you are allowed to upload at this stage.");
+    await tx.query("UPDATE documents SET superseded_at = $2, superseded_by = NULL WHERE id = $1", [doc.id, ctx.now]);
+    await audit(tx, ctx, {
+      action: "DOCUMENT_REMOVED",
+      actorRole: role,
+      applicationId: app.id,
+      stage: app.stage,
+      documentId: doc.id,
+      documentVersion: doc.version_no,
+      reason: reason?.trim() || null,
+      details: { category: doc.category, filename: doc.filename },
+    });
+    return { removed: true, filename: doc.filename, storageKey: doc.storage_key };
+  });
+  await objectStore().delete(result.storageKey).catch((e) => console.error("[documents] could not delete stored file", result.storageKey, e));
+  return { removed: true, filename: result.filename };
 }
 
 /**

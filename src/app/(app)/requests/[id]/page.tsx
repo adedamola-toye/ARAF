@@ -31,6 +31,7 @@ function monthlyEquivalent(c: { instalments: unknown[]; assessment: { inputs: un
   return c.instalments.length > 0 && c.instalments.length !== tenor;
 }
 import { UploadPanel } from "@/components/UploadPanel";
+import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { ClosingDocuments } from "./ClosingDocuments";
 import { RecordsCard } from "./RecordsCard";
 import { BouquetInspectCard, CadPanel } from "./Phase3Panels";
@@ -572,6 +573,7 @@ function Documents({ c, link, tabHref, previewId, myTask, isInitiator }: { c: Ca
                       <Link className="btn btn-sm" href={tabHref("documents", { doc: d.id })} aria-label={`Preview ${d.filename} version ${d.version_no}`}><Eye {...ic} />Preview</Link>
                       <a className="btn btn-sm" href={link(d.id, "download")} aria-label={`Download ${d.filename} version ${d.version_no}`}><Download {...ic} />Download</a>
                       {canReview && !d.superseded_at && !d.generated && <DocReview documentId={d.id} />}
+                      {(uploadStage === "DRAFT" || uploadStage === "INITIATOR_CORRECTION") && !d.superseded_at && !d.generated && <DeleteDocumentButton documentId={d.id} />}
                     </div>
                   ) : (
                     <span className="small muted">Unavailable</span>
