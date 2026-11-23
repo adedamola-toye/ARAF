@@ -55,6 +55,8 @@ export interface ActionProps {
   canWork: boolean;
   /** CX Head or Super Admin: may reroute, comment, request action and close. */
   isOversight: boolean;
+  /** Super Admin closes from oversight; no reassignment/rerouting controls. */
+  isAdmin: boolean;
   isMember: boolean;
   officers: { id: string; name: string; role: string }[];
   teams: { id: string; name: string }[];
@@ -93,7 +95,7 @@ export function TicketActions(p: ActionProps) {
       </Fold>,
     );
 
-  if (p.canManage && open)
+  if (p.canManage && !p.isAdmin && open)
     blocks.push(
       <div key="assign" className="card stack">
         <h2 style={{ fontSize: 15 }}>{p.currentAssignee ? "Reassign" : "Assign to an officer"}</h2>
@@ -176,28 +178,30 @@ export function TicketActions(p: ActionProps) {
             </Op>
           </Fold>
         )}
-        <Fold label="Transfer to another team">
-          <Op op="transfer" id={p.id} lockVersion={p.lockVersion}>
-            <div className="field">
-              <label htmlFor="tr-team">Receiving team</label>
-              <select id="tr-team" name="teamId" required defaultValue="">
-                <option value="">Choose…</option>
-                {p.teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="tr-why">Reason (required)</label>
-              <textarea id="tr-why" name="reason" rows={2} required minLength={10} />
-            </div>
-            <div>
-              <SubmitButton>{p.isOversight && !p.isMember ? "Override routing" : "Transfer"}</SubmitButton>
-            </div>
-          </Op>
-        </Fold>
+        {!p.isAdmin && (
+          <Fold label="Transfer to another team">
+            <Op op="transfer" id={p.id} lockVersion={p.lockVersion}>
+              <div className="field">
+                <label htmlFor="tr-team">Receiving team</label>
+                <select id="tr-team" name="teamId" required defaultValue="">
+                  <option value="">Choose…</option>
+                  {p.teams.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor="tr-why">Reason (required)</label>
+                <textarea id="tr-why" name="reason" rows={2} required minLength={10} />
+              </div>
+              <div>
+                <SubmitButton>{p.isOversight && !p.isMember ? "Override routing" : "Transfer"}</SubmitButton>
+              </div>
+            </Op>
+          </Fold>
+        )}
         <Fold label="Escalate" danger>
           <Op op="escalate" id={p.id}>
             <div className="field">
@@ -286,7 +290,7 @@ export function TicketActions(p: ActionProps) {
     );
     if (p.status !== "CLOSED")
       blocks.push(
-        <Fold key="cxclose" label="Close ticket">
+        <Fold key="cxclose" label="Close ticket" open>
           <Op op="cxclose" id={p.id}>
             <div className="field">
               <label htmlFor="cc-why">Reason for closing (required)</label>

@@ -335,6 +335,7 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             canHandOn={handOn}
             canWork={work}
             isOversight={isOversight(p)}
+            isAdmin={p.isAdmin}
             isMember={p.officerTeams.includes(t.team_id)}
             officers={officers}
             teams={teams}
