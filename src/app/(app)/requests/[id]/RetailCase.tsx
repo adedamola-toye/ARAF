@@ -438,9 +438,18 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
         </ul>,
       );
       if (finalBlocked.length) body.push(<Blocked key="fb">Final calculation is blocked until configured: {finalBlocked.map((g) => g.label).join("; ")}.</Blocked>);
-      const inputs = b.final?.inputs as AffordabilityInput | undefined;
+      const finalInputs = b.final?.inputs as AffordabilityInput | undefined;
+      const prelimInputs = b.prelim?.inputs as AffordabilityInput | undefined;
+      const inputs = finalInputs ?? prelimInputs;
+      // Fall back to the uploaded statements/payslips so the reviewer does not have to retype the period.
+      const coverage = c.documents.filter((d) => !d.superseded_at && d.meta?.coverageFrom && d.meta?.coverageTo);
+      const docFrom = coverage.map((d) => d.meta!.coverageFrom!).sort()[0] ?? "";
+      const docTo = coverage.map((d) => d.meta!.coverageTo!).sort().at(-1) ?? "";
+      const failing = ((b.final?.outputs as AffordabilityOutput | undefined)?.checks ?? []).filter((c) => !c.pass);
+      const onlyDsrFail = failing.length > 0 && failing.every((c) => c.rule.startsWith("DSR within"));
+      const approveReady = !!current && (b.final?.result === "PASS" || (b.final?.result === "FAIL" && onlyDsrFail && !!dsrEx));
       body.push(
-        <details key="fa" open={!current}>
+        <details key="fa" open={!approveReady}>
           <summary className="small" style={{ fontWeight: 700, cursor: "pointer" }}>Final assessment ({rules?.dsr.denominator ? DSR_DENOMINATOR_LABELS[rules.dsr.denominator] : "denominator not configured"})</summary>
           <div style={{ marginTop: 8 }}>
             <FinalAssessmentForm
@@ -452,8 +461,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
                 recognitionPercent: rules?.dsr.inflowRecognitionPercent,
                 principal: k2s(inputs?.principalKobo ?? b.data.requestedAmountKobo),
                 tenor: String(inputs?.tenorMonths ?? b.data.tenorMonths ?? ""),
-                statementFrom: inputs?.statementFrom ?? "",
-                statementTo: inputs?.statementTo ?? "",
+                statementFrom: finalInputs?.statementFrom || prelimInputs?.statementFrom || docFrom,
+                statementTo: finalInputs?.statementTo || prelimInputs?.statementTo || docTo,
                 obligations: (inputs?.existingObligations ?? b.data.existingObligations).map((o) => ({ lender: o.lender, monthly: k2s(o.monthlyRepaymentKobo) })),
                 denominatorLabel: rules?.dsr.denominator ? DSR_DENOMINATOR_LABELS[rules.dsr.denominator].toLowerCase() : "income basis",
                 capApplies: !!rules?.principalTurnoverCap.applies,
@@ -464,7 +473,8 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       );
       body.push(<UploadPanel key="up" compact applicationId={app.id} title="Upload credit report or evidence" categories={["CREDIT_REPORT", "EXCEPTION_EVIDENCE", "SUPPORTING"].map((x) => ({ code: x, label: CATEGORY_LABEL[x] }))} />);
       if (stage === "FIRST_CREDIT_REVIEW") {
-        body.push(<TaskButton key="ap" hidden={hidden} action="APPROVE" label="Approve credit appraisal" doneHref={doneHref} disabled={!current} verify={verifyFor("APPROVE", app.approval_policy === "RETAIL_CX_V1" ? "Approve CX credit review" : "Approve credit appraisal")} />);
+        if (current && !approveReady) body.push(<p key="fa-wait" className="small muted">Save a passing final assessment above before approving.</p>);
+        body.push(<TaskButton key="ap" hidden={hidden} action="APPROVE" label="Approve credit appraisal" doneHref={doneHref} disabled={!approveReady} verify={verifyFor("APPROVE", app.approval_policy === "RETAIL_CX_V1" ? "Approve CX credit review" : "Approve credit appraisal")} />);
         secondary.push(["RETURN", "Return to initiator for correction", false], ["REJECT", "Decline", true]);
       } else {
         body.push(<TaskButton key="rs" hidden={hidden} action="RESUBMIT" label={`Resubmit to ${stageLabel((openCorrection?.from_stage as Stage) ?? "SECOND_CREDIT_REVIEW", app.approval_policy)}`} doneHref={doneHref} />);

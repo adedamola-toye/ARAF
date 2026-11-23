@@ -20,7 +20,7 @@ import { passRetailCreditChecks,
 } from "@/server/demo/retail-scenario";
 import { configGaps, INITIAL_PRODUCT_CONFIGS, proposeProductConfig, decideProductConfig, effectiveConfig, gapsBlocking, productConfigSchema } from "@/server/domain/products";
 import { computeAffordability, rulesSnapshot } from "@/server/domain/affordability";
-import { createRetailDraft, saveRetailDraft, retailReadiness, requestException, decideException, withdrawApplication } from "@/server/domain/retail";
+import { createRetailDraft, saveRetailDraft, retailReadiness, requestException, decideException, withdrawApplication, recordFinalAssessment } from "@/server/domain/retail";
 import { submitApplication } from "@/server/domain/workflow";
 import { uploadDocument } from "@/server/domain/documents";
 import { caseAccess } from "@/server/domain/access";
@@ -198,6 +198,32 @@ describe("business review routing", () => {
     await adminAssignTask(admin, t.id, outside, "Covering the Lagos queue from Abuja");
     expect((await openTaskOf(id)).email).toBe("tl.abuja@altbank.ng");
     expect((await app(id)).team_lead_id).toBe(outside);
+  });
+
+  it("the final assessment takes the statement period from the uploaded statements instead of blocking approval", async () => {
+    await vf();
+    const id = await vfCase();
+    await driveBusinessReview(id);
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("FIRST_CREDIT_REVIEW");
+    const a = await app(id);
+    const v = (await db.query("SELECT data FROM application_versions WHERE id = $1", [a.current_version_id])).rows[0].data;
+    const r = await recordFinalAssessment(await ctxFor(t.email!), id, {
+      incomeBasisKobo: v.incomeBasisKobo,
+      annualInflowKobo: v.annualInflowKobo ?? null,
+      incomeBasisNote: "Verified from statements",
+      statementFrom: null,
+      statementTo: null,
+      principalKobo: Number(a.requested_amount_kobo),
+      tenorMonths: v.tenorMonths,
+      existingObligations: v.existingObligations,
+      charges: [],
+      turnoverForCapKobo: null,
+    });
+    expect(r.result).toBe("PASS");
+    const saved = (await db.query("SELECT inputs FROM retail_assessments WHERE application_id = $1 AND kind = 'FINAL' ORDER BY created_at DESC LIMIT 1", [id])).rows[0].inputs;
+    expect(saved.statementFrom).toBeTruthy();
+    expect(saved.statementTo).toBeTruthy();
   });
 
   it("Head of Unit is configurable: NOT_REQUIRED goes straight to credit; a person holding both HRS and HoU is never used twice", async () => {

@@ -1014,14 +1014,19 @@ export async function recordFinalAssessment(ctx: Ctx, appId: string, f: FinalAss
       }
     }
     const docs = await currentCleanDocuments(tx, app.id);
+    // The statement/payslip uploads already carry their coverage dates. Fill the period from them when the
+    // reviewer left it blank, so a complete assessment is not rejected for a field the evidence already answers.
+    const coverage = docs.filter((d) => d.meta?.coverageFrom && d.meta?.coverageTo);
+    const derivedFrom = coverage.map((d) => d.meta!.coverageFrom!).sort()[0] ?? null;
+    const derivedTo = coverage.map((d) => d.meta!.coverageTo!).sort().at(-1) ?? null;
     const input: AffordabilityInput = {
       kind: "FINAL",
       applicantType: app.applicant_type,
       incomeBasisKobo: f.incomeBasisKobo,
       annualInflowKobo: f.annualInflowKobo ?? null,
       incomeBasisNote: f.incomeBasisNote,
-      statementFrom: f.statementFrom,
-      statementTo: f.statementTo,
+      statementFrom: f.statementFrom ?? derivedFrom,
+      statementTo: f.statementTo ?? derivedTo,
       evidenceDocumentIds: docs.filter((d) => ["BANK_STATEMENT", "PAYSLIP", "EMPLOYMENT_CONFIRMATION", "AFS", "BUSINESS_OPERATIONS_EVIDENCE"].includes(d.category)).map((d) => d.id),
       existingObligations: f.existingObligations.map((o) => ({ lender: o.lender, facilityType: "", monthlyRepaymentKobo: o.monthlyRepaymentKobo, outstandingKobo: null })),
       principalKobo: f.principalKobo,

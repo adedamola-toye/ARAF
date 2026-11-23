@@ -98,11 +98,11 @@ export function FinalAssessmentForm({
         </div>
         <div className="field">
           <label htmlFor="fa-from">Statement period from</label>
-          <input id="fa-from" name="statementFrom" type="date" defaultValue={defaults.statementFrom} />
+          <input id="fa-from" name="statementFrom" type="date" defaultValue={defaults.statementFrom} required />
         </div>
         <div className="field">
           <label htmlFor="fa-to">Statement period to</label>
-          <input id="fa-to" name="statementTo" type="date" defaultValue={defaults.statementTo} />
+          <input id="fa-to" name="statementTo" type="date" defaultValue={defaults.statementTo} required />
         </div>
         <div className="field">
           <label htmlFor="fa-principal">Principal</label>
