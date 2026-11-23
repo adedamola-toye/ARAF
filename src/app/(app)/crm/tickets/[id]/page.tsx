@@ -42,7 +42,7 @@ const EVENT_LABEL: Record<string, string> = {
   LINKED: "Linked",
   PARENT_SET: "Parent ticket set",
 };
-const END_REASON: Record<string, string> = { ASSIGNED: "Assigned", REASSIGNED: "Reassigned", TRANSFERRED: "Transferred", CX_HEAD_OVERRIDE: "CX Head override", RESOLVED: "Resolved" };
+const END_REASON: Record<string, string> = { ASSIGNED: "Assigned", REASSIGNED: "Reassigned", TRANSFERRED: "Transferred", CX_HEAD_OVERRIDE: "Oversight override", RESOLVED: "Resolved", CLOSED: "Closed by oversight" };
 
 export default async function TicketPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ created?: string }> }) {
   const { session } = await requireUser();
@@ -334,13 +334,12 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             canManage={manage}
             canHandOn={handOn}
             canWork={work}
-            isCxHead={p.isCxHead}
+            isOversight={isOversight(p)}
             isMember={p.officerTeams.includes(t.team_id)}
             officers={officers}
             teams={teams}
             currentAssignee={t.assignee_id}
           />
-          {isOversight(p) && !p.isCxHead && <p className="small muted">Super Admin: view only. Ticket actions belong to the team and the CX Head.</p>}
         </aside>
       </div>
     </>

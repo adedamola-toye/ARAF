@@ -414,7 +414,7 @@ export async function assignTicket(ctx: Ctx, id: string, officerId: string, reas
     const t = await lockTicket(tx, id, lockVersion);
     // Team Lead / CX Head assign and reassign; the assigned officer may hand the ticket to a colleague in the same team.
     const handOn = !canManage(p, t) && t.assignee_id === p.staffId;
-    if (!canManage(p, t) && !handOn) throw forbidden("Only the Team Lead of this ticket's team, the CX Head or the assigned officer can reassign it.");
+    if (!canManage(p, t) && !handOn) throw forbidden("Only the Team Lead of this ticket's team, the CX Head, a Super Admin or the assigned officer can reassign it.");
     if (CLOSED_OR_RESOLVED.includes(t.status)) throw conflict(`This ticket is ${STATUS_LABELS[t.status].toLowerCase()}.`);
     if (!uuidRe.test(officerId) || !(await activeMember(tx, t.team_id, officerId))) throw invalid("Choose an active member of this team.", { officerId: "Not a member of this team." });
     if (officerId === t.creator_id) throw invalid("A complaint cannot be assigned to the person who raised it.", { officerId: "Choose someone else." });
@@ -509,13 +509,13 @@ export async function transferTicket(ctx: Ctx, id: string, teamId: string, reaso
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
     const t = await lockTicket(tx, id, lockVersion);
-    if (!canWork(p, t)) throw forbidden("Only the assigned officer, the team's lead or the CX Head can transfer this ticket.");
+    if (!canWork(p, t)) throw forbidden("Only the assigned officer, the team's lead, the CX Head or a Super Admin can reroute this ticket.");
     if (CLOSED_OR_RESOLVED.includes(t.status)) throw conflict(`This ticket is ${STATUS_LABELS[t.status].toLowerCase()}.`);
     if (!uuidRe.test(teamId)) throw invalid("Choose a team.", { teamId: "Choose a team." });
     const team = (await tx.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE id = $1 AND active", [teamId])).rows[0];
     if (!team) throw invalid("Choose an active team.", { teamId: "Not available." });
     if (team.id === t.team_id) throw invalid("The ticket is already with this team. Reassign it to an officer instead.", { teamId: "Same team." });
-    const override = p.isCxHead && !canWork({ ...p, isCxHead: false }, t);
+    const override = isOversight(p) && !canWork({ ...p, isCxHead: false, isAdmin: false }, t);
     await endSegment(tx, t.id, ctx.now, override ? "CX_HEAD_OVERRIDE" : "TRANSFERRED");
     await openSegment(tx, { ticketId: t.id, teamId: team.id, officerId: null, now: ctx.now, by: p.staffId, reason: why });
     await touch(tx, t.id, ctx.now, "team_id = $3, assignee_id = NULL, status = $4, reassign_count = reassign_count + 1", [team.id, t.status === "PENDING_INFO" ? "PENDING_INFO" : "UNASSIGNED"]);
@@ -553,13 +553,13 @@ export async function requestAction(ctx: Ctx, id: string, message: string) {
   const text = reasonOk(message, "message");
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
-    if (!p.isCxHead) throw forbidden("Only the CX Head can request action from a team.");
+    if (!isOversight(p)) throw forbidden("Only the CX Head or a Super Admin can request action from a team.");
     const t = await lockTicket(tx, id);
     await event(tx, t.id, ctx.now, p.staffId, "ACTION_REQUESTED", "INTERNAL", text);
     await touch(tx, t.id, ctx.now, "");
     await crmAudit(tx, ctx, "CRM_ACTION_REQUESTED", t, { reason: text });
     const to = [...(await teamLeads(tx, t.team_id)), ...((await staffById(tx, t.assignee_id)) ? [(await staffById(tx, t.assignee_id))!] : [])];
-    await tell(tx, ctx.now, to, { kind: "CRM_ACTION_REQUESTED", title: `CX Head requests action on ${t.ref}`, body: text, ticketId: t.id, dedupe: `crm-act:${t.id}:${ctx.now.getTime()}`, email: true });
+    await tell(tx, ctx.now, to, { kind: "CRM_ACTION_REQUESTED", title: `Oversight requests action on ${t.ref}`, body: text, ticketId: t.id, dedupe: `crm-act:${t.id}:${ctx.now.getTime()}`, email: true });
   });
 }
 
@@ -607,7 +607,7 @@ export async function reopenTicket(ctx: Ctx, id: string, reason: string) {
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
     const t = await lockTicket(tx, id);
-    if (t.creator_id !== p.staffId && !p.isCxHead) throw forbidden("Only the person who raised the complaint or the CX Head can reopen it.");
+    if (t.creator_id !== p.staffId && !isOversight(p)) throw forbidden("Only the person who raised the complaint, the CX Head or a Super Admin can reopen it.");
     if (!["RESOLVED", "CLOSED"].includes(t.status)) throw conflict("Only a resolved or closed ticket can be reopened.");
     const officerBack = t.assignee_id && (await activeMember(tx, t.team_id, t.assignee_id)) ? t.assignee_id : null;
     await openSegment(tx, { ticketId: t.id, teamId: t.team_id, officerId: officerBack, now: ctx.now, by: p.staffId, reason: `Reopened: ${why}` });
@@ -619,18 +619,20 @@ export async function reopenTicket(ctx: Ctx, id: string, reason: string) {
   });
 }
 
-/** CX Head closes a resolved ticket (e.g. the complainant has left the bank). Reason mandatory. */
+/** CX Head or Super Admin closes a ticket at any stage (e.g. duplicate, withdrawn, or the complainant has left the bank). Reason mandatory. */
 export async function cxCloseTicket(ctx: Ctx, id: string, reason: string) {
   const why = reasonOk(reason);
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
-    if (!p.isCxHead) throw forbidden();
+    if (!isOversight(p)) throw forbidden("Only the CX Head or a Super Admin can close a ticket.");
     const t = await lockTicket(tx, id);
-    if (t.status !== "RESOLVED") throw conflict("Only a resolved ticket can be closed.");
+    if (t.status === "CLOSED") throw conflict("This ticket is already closed.");
+    const by = p.isCxHead ? "CX Head" : "Super Admin";
+    await endSegment(tx, t.id, ctx.now, "CLOSED");
     await touch(tx, t.id, ctx.now, "status = 'CLOSED', closed_at = $2, closed_by = $3, closed_how = 'CX_HEAD'", [p.staffId]);
-    await event(tx, t.id, ctx.now, p.staffId, "CLOSED", "PUBLIC", "Closed by the CX Head.", {});
+    await event(tx, t.id, ctx.now, p.staffId, "CLOSED", "PUBLIC", `Closed by the ${by}.`, {});
     await event(tx, t.id, ctx.now, p.staffId, "CLOSE_REASON", "INTERNAL", why);
-    await crmAudit(tx, ctx, "CRM_TICKET_CLOSED", t, { reason: why, details: { how: "CX_HEAD" } });
+    await crmAudit(tx, ctx, "CRM_TICKET_CLOSED", t, { reason: why, details: { how: "OVERSIGHT", by } });
   });
 }
 
@@ -639,7 +641,7 @@ export async function linkTickets(ctx: Ctx, id: string, otherRef: string, asPare
   return withTx(async (tx) => {
     const p = await principalFor(tx, ctx);
     const t = await lockTicket(tx, id);
-    if (!canManage(p, t) && !isOversight(p)) throw forbidden("Only the team's lead or the CX Head can link tickets.");
+    if (!canManage(p, t) && !isOversight(p)) throw forbidden("Only the team's lead, the CX Head or a Super Admin can link tickets.");
     const other = (await tx.query<TicketRow>("SELECT * FROM crm_tickets WHERE upper(ref) = upper($1)", [String(otherRef ?? "").trim()])).rows[0];
     if (!other || !(await ticketView(tx, p, other))) throw invalid("No ticket with that reference that you can see.", { otherRef: "Not found." });
     if (other.id === t.id) throw invalid("A ticket cannot be linked to itself.", { otherRef: "Same ticket." });

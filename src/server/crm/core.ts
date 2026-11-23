@@ -156,9 +156,9 @@ export async function ticketView(q: Db, p: CrmPrincipal, t: TicketAccessRow): Pr
   return null;
 }
 
-/** May manage the ticket's queue (assign, transfer): lead of its current team, or the CX Head. */
-export const canManage = (p: CrmPrincipal, t: TicketAccessRow) => p.isCxHead || p.leadTeams.includes(t.team_id);
-/** May work the ticket: its assignee, a lead of its current team, or the CX Head. */
+/** May manage the ticket's queue (assign, reroute/transfer): lead of its current team, the CX Head, or a Super Admin. */
+export const canManage = (p: CrmPrincipal, t: TicketAccessRow) => isOversight(p) || p.leadTeams.includes(t.team_id);
+/** May work the ticket: its assignee, a lead of its current team, the CX Head, or a Super Admin. */
 export const canWork = (p: CrmPrincipal, t: TicketAccessRow) => t.assignee_id === p.staffId || canManage(p, t);
 
 /** Active staff holding a role (for CX Head / Super Admin alerts). */

@@ -25,6 +25,27 @@ function bool(name: string, fallback: boolean): boolean {
 
 export type AppEnv = "development" | "test" | "production";
 
+const LOCAL_APP_URL = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?\/?$/i;
+
+/**
+ * Public base URL used in emails, links and callbacks. APP_URL wins when it is a real URL; when it is absent or
+ * left at localhost on a hosted deployment, the platform's own URL is used so links never point at localhost.
+ */
+function appUrlValue(): string {
+  const explicit = str("APP_URL", "").trim().replace(/\/+$/, "");
+  if (explicit && !LOCAL_APP_URL.test(explicit)) return explicit;
+  const host =
+    process.env.VERCEL_ENV === "production"
+      ? (process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.VERCEL_BRANCH_URL ?? process.env.VERCEL_URL)
+      : (process.env.VERCEL_BRANCH_URL ?? process.env.VERCEL_URL ?? process.env.VERCEL_PROJECT_PRODUCTION_URL);
+  if (host) return `https://${host.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  const render = process.env.RENDER_EXTERNAL_URL?.trim().replace(/\/+$/, "");
+  if (render) return render;
+  const publicUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "");
+  if (publicUrl) return publicUrl;
+  return explicit || "http://localhost:3000";
+}
+
 /** Fail fast with an actionable message when DATABASE_URL cannot work on the hosting platform. */
 function databaseUrlValue(): string {
   const raw = str("DATABASE_URL");
@@ -64,7 +85,7 @@ export const config = {
     return this.appEnv === "production";
   },
   get appUrl() {
-    return str("APP_URL", "http://localhost:3000").replace(/\/$/, "");
+    return appUrlValue();
   },
   get databaseUrl() {
     return databaseUrlValue();
