@@ -124,7 +124,7 @@ export async function eligibleStaff(
   tx: Tx,
   roles: readonly Role[],
   exclude: readonly (string | null)[],
-  scope: { team?: string | null; only?: (string | null)[] | null } = {},
+  scope: { team?: string | null; only?: (string | null)[] | null; region?: string | null } = {},
 ): Promise<EligibleStaff[]> {
   const ex = exclude.filter((x): x is string => !!x);
   const only = scope.only ? scope.only.filter((x): x is string => !!x) : null;
@@ -135,8 +135,9 @@ export async function eligibleStaff(
         AND NOT (ra.staff_id = ANY($2::uuid[]))
         AND ($3::text IS NULL OR ra.team = $3)
         AND ($4::uuid[] IS NULL OR ra.staff_id = ANY($4::uuid[]))
+        AND ($5::text IS NULL OR ra.region = $5)
       ORDER BY ra.role, s.full_name`,
-    [roles, ex, scope.team ?? null, only],
+    [roles, ex, scope.team ?? null, only, scope.region ?? null],
   );
   return r.rows;
 }
@@ -172,6 +173,8 @@ export interface AssignmentSpec {
   exclude: (string | null)[];
   team?: string | null;
   only?: (string | null)[] | null;
+  /** State/region scope (e.g. the Team Lead of the request's state). */
+  region?: string | null;
   /** Why the pool may be empty (shown on the assignment exception). */
   scopeNote?: string;
 }
@@ -184,9 +187,15 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       const loc = app.outlet_location_id ? (await tx.query<{ oss_staff_id: string | null; active: boolean }>("SELECT oss_staff_id, active FROM locations WHERE id = $1", [app.outlet_location_id])).rows[0] : null;
       return { roles: ["OUTLET_SERVICE_SUPERVISOR"], exclude: base, only: [loc?.oss_staff_id ?? null], scopeNote: loc?.oss_staff_id ? "Outlet Service Supervisor mapped to the originating outlet" : "No Outlet Service Supervisor is mapped to the originating outlet" };
     }
-    case "TEAM_LEAD_REVIEW":
-      if (!app.team) return { roles: ["TEAM_LEAD"], exclude: base, only: [], scopeNote: "The request has no team, so no Team Lead is in scope" };
-      return { roles: ["TEAM_LEAD"], exclude: [...base, app.oss_reviewer_id], team: app.team, scopeNote: `Team Lead for team ${app.team}` };
+    case "TEAM_LEAD_REVIEW": {
+      // Route by the request's state: team codes differ between records (RETAIL KANO / RETAIL-KANO / KANO),
+      // so matching on the team alone leaves same-state requests unassigned. Fall back to the team only when
+      // the request has no state recorded.
+      const exclude = [...base, app.oss_reviewer_id];
+      if (app.region) return { roles: ["TEAM_LEAD"], exclude, region: app.region, scopeNote: `Team Lead in ${app.region}` };
+      if (!app.team) return { roles: ["TEAM_LEAD"], exclude, only: [], scopeNote: "The request has no state or team, so no Team Lead is in scope" };
+      return { roles: ["TEAM_LEAD"], exclude, team: app.team, scopeNote: `Team Lead for team ${app.team}` };
+    }
     case "HRS_REVIEW":
       return { roles: ["HEAD_OF_RETAIL_SALES"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id], scopeNote: "Head of Retail Sales (organisation)" };
     case "HEAD_OF_UNIT_APPROVAL":
@@ -326,7 +335,7 @@ export async function chooseAssignee(
       ? { staffId: me.staff_id, role: me.role, method: "INITIATOR", pool }
       : { staffId: null, role: app.initiator_role, method: "NO_ELIGIBLE", pool };
   }
-  const pool = spec.roles.length && !(spec.only && spec.only.filter(Boolean).length === 0) ? await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only }) : [];
+  const pool = spec.roles.length && !(spec.only && spec.only.filter(Boolean).length === 0) ? await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region }) : [];
   if (opts.preferred) {
     const p = pool.find((x) => x.staff_id === opts.preferred);
     if (p) return { staffId: p.staff_id, role: p.role, method: opts.random ? "RETAINED" : "ROUTED", pool };

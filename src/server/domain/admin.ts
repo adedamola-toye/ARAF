@@ -190,7 +190,7 @@ export async function eligibleForTask(taskId: string) {
     const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1", [t.application_id])).rows[0];
     const spec = await assignmentSpec(tx, app, t.stage as Stage);
     if (spec.only && spec.only.filter(Boolean).length === 0) return [];
-    return eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only });
+    return eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
   });
 }
 
@@ -205,7 +205,7 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
     const task = (await tx.query("SELECT * FROM tasks WHERE id = $1 FOR UPDATE", [taskId])).rows[0];
     if (task.status !== "OPEN") throw conflict("This task is no longer open.");
     const spec = await assignmentSpec(tx, app, task.stage as Stage);
-    const pool = await eligibleStaff(tx, spec.roles, spec.exclude);
+    const pool = await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
     const pick = pool.find((p) => p.staff_id === staffId);
     if (!pick) throw invalid("The selected officer is not eligible for this stage (role, status or separation of duties).");
     await tx.query("UPDATE tasks SET assignee_id = $2, assignee_role = $3, assigned_at = $4 WHERE id = $1", [taskId, staffId, pick.role, ctx.now]);

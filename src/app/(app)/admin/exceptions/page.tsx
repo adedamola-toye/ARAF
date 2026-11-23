@@ -38,6 +38,7 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
             <span className="badge badge-red">Waiting {formatDuration(Date.now() - new Date(t.entered_at).getTime())}</span>
           </div>
           <p className="small">{STAGE_LABELS[t.stage as Stage]} · requires {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role} · since {formatLagos(t.entered_at)}{t.assignment_note ? ` · ${t.assignment_note}` : ""}</p>
+          {eligible.length === 0 && <p className="small muted" role="status">No active, eligible officer is in scope for this stage. Check the role, state and team of the required officer.</p>}
           <AssignForm taskId={t.id} eligible={eligible.map((e) => ({ value: e.staff_id, label: `${e.full_name} (${ROLE_LABELS[e.role]})` }))} />
         </div>
       ))}
@@ -51,8 +52,15 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
         {lookup && (
           <div className="stack" style={{ marginTop: 12 }}>
             <p className="small" style={{ margin: 0 }}>
-              <Link href={`/admin/audit?ref=${lookup.ref}`}>{lookup.ref}</Link> · {STAGE_LABELS[lookup.stage as Stage]} · currently {lookup.assignee_name ?? "unassigned"}
+              <Link href={`/requests/${lookup.application_id}`}>{lookup.ref}</Link> · {STAGE_LABELS[lookup.stage as Stage]} · currently {lookup.assignee_name ?? "unassigned"}
+              {" · "}
+              <Link className="muted" href={`/admin/audit?ref=${lookup.ref}`}>audit trail</Link>
             </p>
+            <h3 style={{ fontSize: 15, margin: 0 }}>Reroute to an eligible officer</h3>
+            <p className="small muted" style={{ margin: 0 }}>Only officers eligible for this stage in the request&apos;s state or team are offered. Enter the reason and reassign.</p>
+            {lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).length === 0 && (
+              <p className="small muted" role="status">No other eligible officer is in scope for this stage. Check the required role, state and team.</p>
+            )}
             <AssignForm taskId={lookup.id} eligible={lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).map((e) => ({ value: e.staff_id, label: `${e.full_name} (${ROLE_LABELS[e.role]})` }))} />
           </div>
         )}
