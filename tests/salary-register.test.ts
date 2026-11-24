@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor, makePdf } from "@/server/demo/scenario";
@@ -9,6 +9,11 @@ import { proposeStaffSettings } from "@/server/staff/settings";
 import { applyImport, eligibilityFor, holdRecord, importView, previewImport, recordRepayment, saveRecord } from "@/server/staff/register";
 import { grantRole } from "@/server/domain/admin";
 import { lagosDate } from "@/server/time";
+import { setStaffAdvanceRetiredForTests } from "@/server/staff/permission";
+
+// Staff Salary Advance is retired; these tests cover the retained workflow code as it ran before retirement.
+beforeEach(() => setStaffAdvanceRetiredForTests(false));
+afterEach(() => setStaffAdvanceRetiredForTests(true));
 
 beforeEach(resetDb);
 

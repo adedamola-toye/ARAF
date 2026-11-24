@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor, makePdf } from "@/server/demo/scenario";
@@ -12,6 +12,11 @@ import { viewableRequest } from "@/server/staff/core";
 import { grantRole } from "@/server/domain/admin";
 import { setupAltphones, ALT } from "@/server/demo/altphones-scenario";
 import { startSale } from "@/server/altphones/origination";
+import { setStaffAdvanceRetiredForTests } from "@/server/staff/permission";
+
+// Staff Salary Advance is retired; these tests cover the retained workflow code as it ran before retirement.
+beforeEach(() => setStaffAdvanceRetiredForTests(false));
+afterEach(() => setStaffAdvanceRetiredForTests(true));
 
 const SA = "sa.tobi@altbank.ng";
 const APPLICANT = "staff.okoro@altbank.ng";

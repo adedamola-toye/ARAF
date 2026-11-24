@@ -31,6 +31,11 @@ import { advanceDocumentation, processStaffDocumentation, readArchive, confirmHa
 import { setDocumentLibraryForTests } from "@/server/staff/sharepoint";
 import { viewableRequest } from "@/server/staff/core";
 import { grantRole, revokeRole } from "@/server/domain/admin";
+import { setStaffAdvanceRetiredForTests } from "@/server/staff/permission";
+
+// Staff Salary Advance is retired; these tests cover the retained workflow code as it ran before retirement.
+beforeEach(() => setStaffAdvanceRetiredForTests(false));
+afterEach(() => setStaffAdvanceRetiredForTests(true));
 
 const lv = async (id: string) => (await reqRow(id)).lock_version;
 const HOUR = 3600_000;
