@@ -1,3 +1,5 @@
+import { staffAdvanceRetired } from "@/server/staff/permission";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { Download } from "lucide-react";
 import { requireRole } from "../../../_lib/auth";
@@ -24,6 +26,8 @@ const STATE_LABEL: Record<string, [string, string]> = {
 /** Confidential: Salary Register Administrators and Super Admins only. Salaries are masked until revealed. */
 export default async function SalaryRegister({ searchParams }: { searchParams: Promise<{ q?: string; edit?: string }> }) {
   await requireRole(["SALARY_REGISTER_ADMIN", "SUPER_ADMIN"]);
+  // Staff Salary Advance is retired: confidential salaries are no longer shown; repayments remain.
+  if (staffAdvanceRetired()) redirect("/admin/salary-register/repayments");
   const sp = await searchParams;
   const now = new Date();
   const settings = await currentSettings(db);

@@ -56,8 +56,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const canReport = roles.includes("SUPER_ADMIN") || roles.includes("REPORTING_ADMIN");
   const exceptions = isAdmin ? Number((await db.query("SELECT count(*) AS n FROM tasks WHERE status = 'OPEN' AND assignee_id IS NULL")).rows[0].n) : 0;
   // Staff Financing appears only for profiles the backend policy authorises (e.g. never for Smile Associates).
-  const staffOk = (await staffFinancingAccess(db, session.staffId)).allowed;
-  const staffViews = staffOk ? viewsFor(new Set(roles)) : [];
+  const staffAccess = await staffFinancingAccess(db, session.staffId);
+  const staffOk = staffAccess.allowed;
+  // Retired: only records and payments already in motion remain (see staff/permission.ts).
+  const staffRetired = !staffAccess.allowed && staffAccess.reason === "RETIRED";
+  const staffViews = staffOk || staffRetired ? viewsFor(new Set(roles)) : [];
   const staffQueueCount = staffViews.length ? await staffActionCount(db, session.staffId, new Set(roles)) : 0;
   const myOfferCount = staffOk ? Number((await db.query("SELECT count(*) AS n FROM staff_requests WHERE applicant_id = $1 AND status = 'AWAITING_SIGNED_OFFER' AND signed_offer_received_at IS NULL", [session.staffId])).rows[0].n) : 0;
   // Once a Lagos day, Relationship Managers and Team Leads see their performance summary first.
@@ -350,6 +353,21 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {(roles.includes("SALARY_REGISTER_ADMIN") || isAdmin) && (
               <NavLink href="/admin/salary-register" icon={<BookUser {...ic} />}>
                 Salary register
+              </NavLink>
+            )}
+          </div>
+        )}
+        {staffRetired && (staffQueueCount > 0 || roles.includes("SALARY_REGISTER_ADMIN") || isAdmin) && (
+          <div className="nav-section">
+            <span className="nav-title">Salary advance (retired)</span>
+            {staffQueueCount > 0 && (
+              <NavLink href="/staff-financing" count={staffQueueCount} icon={<ListChecks {...ic} />}>
+                Disbursements to finish
+              </NavLink>
+            )}
+            {(roles.includes("SALARY_REGISTER_ADMIN") || isAdmin) && (
+              <NavLink href="/admin/salary-register/repayments" icon={<BookUser {...ic} />}>
+                Repayments and records
               </NavLink>
             )}
           </div>

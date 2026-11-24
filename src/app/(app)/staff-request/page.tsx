@@ -14,6 +14,7 @@ import { Countdown } from "./StaffForms";
 import { startStaffRequestAction } from "./actions";
 import { RegisterHome } from "./RegisterHome";
 import { usesRegister } from "@/server/staff/register";
+import { staffAdvanceRetired, STAFF_SALARY_ADVANCE_RETIRED_MESSAGE } from "@/server/staff/permission";
 
 export const metadata = { title: "Staff Salary Advance" };
 
@@ -23,6 +24,7 @@ export default async function StaffRequestHub({ searchParams }: { searchParams: 
   if (home) return <AccessRestricted product="Staff Salary Advance" dashboardHref={home} />;
   const { session } = a;
   const rows = await myRequestRows(db, session.staffId);
+  if (staffAdvanceRetired()) return <RetiredHome rows={rows} />;
   const settings = await currentSettings(db);
   if (usesRegister(settings)) return <RegisterHome staffId={session.staffId} fullName={session.fullName} settings={settings} ineligibleNotice={!!(await searchParams).ineligible} />;
   const offers = rows.filter((r) => r.status === "AWAITING_SIGNED_OFFER" && !r.signed_offer_received_at);
@@ -145,6 +147,45 @@ export default async function StaffRequestHub({ searchParams }: { searchParams: 
       <p className="small muted" style={{ marginTop: "var(--space-4)" }}>
         Final outcomes: {rows.filter((r) => ["COMPLETED", "DECLINED", "OFFER_EXPIRED"].includes(r.status)).map((r) => `${r.ref} ${STAFF_STATUS_LABELS[r.status as StaffStatus].toLowerCase()}`).join(" · ") || "none yet"}.
       </p>
+    </>
+  );
+}
+
+/** Staff Salary Advance is retired: a notice and the person's own past requests, read-only. */
+function RetiredHome({ rows }: { rows: Awaited<ReturnType<typeof myRequestRows>> }) {
+  return (
+    <>
+      <PageHeader eyebrow="Staff Salary Advance" title="Salary advance has been retired" intro={STAFF_SALARY_ADVANCE_RETIRED_MESSAGE} />
+      {rows.length ? (
+        <div className="table-wrap">
+          <table className="data responsive">
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Last updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td data-label="Reference">
+                    <Link href={`/staff-request/${r.id}`}>{r.ref}</Link>
+                  </td>
+                  <td data-label="Status">
+                    <StaffStatusBadge status={r.status} />
+                  </td>
+                  <td data-label="Amount">{r.gross_kobo != null ? formatNairaKobo(Number(r.gross_kobo)) : "—"}</td>
+                  <td data-label="Last updated">{formatLagos(r.updated_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">You have no salary advance records.</p>
+      )}
     </>
   );
 }

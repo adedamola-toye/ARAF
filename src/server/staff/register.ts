@@ -24,6 +24,7 @@ import { isValidDateString, lagosDate } from "../time";
 import { holdsRole } from "../domain/access";
 import { availableKobo, eligibilityLimitKobo, formatNairaKobo } from "@/lib/staff-financing";
 import { currentSettings, type StaffSettings } from "./core";
+import { staffAdvanceRetired, STAFF_SALARY_ADVANCE_RETIRED_MESSAGE } from "./permission";
 
 export const EMPLOYMENT_STATUSES = ["ACTIVE", "PROBATION", "ON_LEAVE", "SUSPENDED", "EXITED"] as const;
 export type EmploymentStatus = (typeof EMPLOYMENT_STATUSES)[number];
@@ -65,6 +66,11 @@ export interface RegisterRow {
 
 export async function canAdministerRegister(q: Db, staffId: string) {
   return (await holdsRole(q, staffId, "SALARY_REGISTER_ADMIN")) || (await holdsRole(q, staffId, "SUPER_ADMIN"));
+}
+
+/** The register only fed Staff Salary Advance eligibility, which is retired: it is kept read-only. */
+function registerRetired(): never {
+  throw gate(STAFF_SALARY_ADVANCE_RETIRED_MESSAGE + " The salary register is kept read-only.");
 }
 
 async function requireRegisterAdmin(tx: Tx, ctx: Ctx) {
@@ -248,6 +254,7 @@ async function writeRecord(tx: Tx, ctx: Ctx, staff: { id: string; full_name: str
 }
 
 export async function saveRecord(ctx: Ctx, i: RecordInput, reason: string) {
+  if (staffAdvanceRetired()) registerRetired();
   const why = (reason ?? "").trim();
   return withTx(async (tx) => {
     const { role } = await requireRegisterAdmin(tx, ctx);
@@ -262,6 +269,7 @@ export async function saveRecord(ctx: Ctx, i: RecordInput, reason: string) {
 }
 
 export async function holdRecord(ctx: Ctx, staffId: string, hold: boolean, reason: string) {
+  if (staffAdvanceRetired()) registerRetired();
   const why = (reason ?? "").trim();
   if (why.length < 5) throw invalid("Give the reason.", { reason: "Reason required." });
   return withTx(async (tx) => {
@@ -294,6 +302,7 @@ interface PreviewRow {
 }
 
 export async function previewImport(ctx: Ctx, filename: string, data: Buffer) {
+  if (staffAdvanceRetired()) registerRetired();
   return withTx(async (tx) => {
     await requireRegisterAdmin(tx, ctx);
     let table: string[][];
@@ -378,6 +387,7 @@ export async function importView(q: Db, id: string) {
 
 /** Apply a previewed import. Rows with errors are never applied; the valid rows are applied together. */
 export async function applyImport(ctx: Ctx, id: string, decision: "APPLY" | "DISCARD") {
+  if (staffAdvanceRetired()) registerRetired();
   return withTx(async (tx) => {
     const { role } = await requireRegisterAdmin(tx, ctx);
     const imp = (await tx.query<{ id: string; status: string; preview: PreviewRow[] | null; filename: string }>("SELECT * FROM salary_register_imports WHERE id = $1 FOR UPDATE", [id])).rows[0];

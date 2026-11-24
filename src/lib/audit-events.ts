@@ -90,6 +90,7 @@ const LABELS: Record<string, [string, AuditCategory]> = {
   REPAYMENT_RECORDED: ["Repayment recorded", "Repayment"],
   REPAYMENT_REVERSED: ["Repayment reversed", "Repayment"],
   STAFF_ADVANCE_REPAYMENT_RECORDED: ["Salary advance repayment recorded", "Repayment"],
+  STAFF_REQUEST_WITHDRAWN_PRODUCT_RETIRED: ["Salary advance request withdrawn (product retired)", "Decision"],
   REPAYMENT_PROMPTS_ACTIVATED: ["Repayment reminders activated", "Repayment"],
   FULLY_REPAID: ["Fully repaid", "Repayment"],
   CLOSURE_PACK_QUEUED: ["Closure pack queued for Legal and Shariah", "Records"],

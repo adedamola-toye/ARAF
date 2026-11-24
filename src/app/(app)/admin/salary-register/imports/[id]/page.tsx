@@ -1,5 +1,6 @@
+import { staffAdvanceRetired } from "@/server/staff/permission";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireRole } from "../../../../../_lib/auth";
 import { db } from "@/server/db";
 import { importView } from "@/server/staff/register";
@@ -12,6 +13,8 @@ export const metadata = { title: "Salary register import" };
 
 export default async function ImportPreview({ params }: { params: Promise<{ id: string }> }) {
   await requireRole(["SALARY_REGISTER_ADMIN", "SUPER_ADMIN"]);
+  // Staff Salary Advance is retired: confidential salaries are no longer shown; repayments remain.
+  if (staffAdvanceRetired()) redirect("/admin/salary-register/repayments");
   const { id } = await params;
   const v = await importView(db, id);
   if (!v) notFound();

@@ -11,6 +11,7 @@ import { requireUser } from "../../../_lib/auth";
 import { staffFinancingGate } from "../../../_lib/staff-access";
 import { AccessRestricted } from "@/components/AccessRestricted";
 import { PageHeader } from "@/components/PageHeader";
+import { staffAdvanceRetired, STAFF_SALARY_ADVANCE_RETIRED_MESSAGE } from "@/server/staff/permission";
 import { ReasonAction } from "@/components/forms";
 import { db } from "@/server/db";
 import { DomainError } from "@/server/errors";
@@ -106,6 +107,12 @@ export default async function StaffRequestPage({ params, searchParams }: { param
           </>
         }
       />
+
+      {staffAdvanceRetired() && status !== "DISBURSEMENT_IN_PROGRESS" && (
+        <div className="alert alert-warn" role="status" style={{ marginBottom: "var(--space-4)" }}>
+          <span>{STAFF_SALARY_ADVANCE_RETIRED_MESSAGE}</span>
+        </div>
+      )}
 
       {sp.submitted && (
         <div className="alert alert-success" role="status" style={{ marginBottom: "var(--space-4)" }}>

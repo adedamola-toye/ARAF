@@ -55,6 +55,7 @@ export const STAFF_STATUSES = [
   "DISBURSEMENT_IN_PROGRESS",
   "COMPLETED",
   "DECLINED",
+  "WITHDRAWN",
 ] as const;
 export type StaffStatus = (typeof STAFF_STATUSES)[number];
 
@@ -72,6 +73,7 @@ export const STAFF_STATUS_LABELS: Record<StaffStatus, string> = {
   DISBURSEMENT_IN_PROGRESS: "Disbursement in progress",
   COMPLETED: "Completed",
   DECLINED: "Declined",
+  WITHDRAWN: "Withdrawn — product retired",
 };
 
 /** Queue that owns the next action at each status (for tracking screens). */
@@ -89,6 +91,7 @@ export const STAFF_STATUS_QUEUE: Record<StaffStatus, string> = {
   DISBURSEMENT_IN_PROGRESS: "Disbursement Officer",
   COMPLETED: "None (completed)",
   DECLINED: "None (closed)",
+  WITHDRAWN: "None (closed)",
 };
 
 export const STAFF_NEXT_ACTION: Record<StaffStatus, string> = {
@@ -105,6 +108,7 @@ export const STAFF_NEXT_ACTION: Record<StaffStatus, string> = {
   DISBURSEMENT_IN_PROGRESS: "Disbursement Officer is processing the payment.",
   COMPLETED: "No action. The facility has been disbursed.",
   DECLINED: "No further action.",
+  WITHDRAWN: "No further action. Staff Salary Advance has been retired.",
 };
 
 export type StaffStatusTone = "badge-blue" | "badge-green" | "badge-red" | "badge-warn" | "badge-yellow" | "";
@@ -122,6 +126,7 @@ export const STAFF_STATUS_TONE: Record<StaffStatus, StaffStatusTone> = {
   DISBURSEMENT_IN_PROGRESS: "badge-blue",
   COMPLETED: "badge-green",
   DECLINED: "badge-red",
+  WITHDRAWN: "",
 };
 
 export const DOCUMENTATION_STATUS_LABELS: Record<string, string> = {
