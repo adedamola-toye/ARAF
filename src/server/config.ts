@@ -153,6 +153,31 @@ export const config = {
       timeoutMs: int("SEEDFI_TIMEOUT_MS", 30000),
     };
   },
+  /**
+   * Periculum Insights (bank statement analysis), per insights-periculum.readme.io. Disabled unless
+   * PERICULUM_ENABLED=true. PERICULUM_MODE=fixture uses clearly labelled test data instead of the vendor
+   * (development and tests only; refused in production). Credentials are server-side only.
+   */
+  get periculum() {
+    return {
+      enabled: bool("PERICULUM_ENABLED", false),
+      mode: (str("PERICULUM_MODE", "live") === "fixture" ? "fixture" : "live") as "live" | "fixture",
+      environment: str("PERICULUM_ENVIRONMENT", "test"),
+      baseUrl: str("PERICULUM_BASE_URL", "https://api.insights-periculum.io").trim().replace(/\/$/, ""),
+      authUrl: str("PERICULUM_AUTH_URL", "https://insightsb2b.auth-periculum.app/realms/prod/protocol/openid-connect/token").trim(),
+      clientId: str("PERICULUM_CLIENT_ID", ""),
+      clientSecret: str("PERICULUM_CLIENT_SECRET", ""),
+      timeoutMs: int("PERICULUM_TIMEOUT_MS", 60000),
+      maxAttempts: int("PERICULUM_MAX_ATTEMPTS", 3),
+      pollIntervalMs: int("PERICULUM_POLL_INTERVAL_MS", 45000),
+      /** Processing older than this is treated as expired (FAILED, retryable). */
+      processingExpiryMs: int("PERICULUM_PROCESSING_EXPIRY_MS", 6 * 3600 * 1000),
+      maxConcurrent: int("PERICULUM_MAX_CONCURRENT", 3),
+      webhookSecret: str("PERICULUM_WEBHOOK_SECRET", ""),
+      /** Periculum's documented per-file limits. */
+      maxFileBytes: int("PERICULUM_MAX_FILE_BYTES", 20 * 1024 * 1024),
+    };
+  },
   /** Paystack (Altphones payments and Direct Debit). Disabled unless PAYSTACK_ENABLED=true and the secret key is set. */
   get paystack() {
     return {
