@@ -171,7 +171,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
       case "HEAD_OF_UNIT_APPROVAL":
         return ["APPROVE", "RETURN", "REJECT"];
       case "DISBURSEMENT_BOOKING":
-        return ["BOOK_FACILITY"];
+        return ["BOOK_FACILITY", "REJECT"];
       case "DISBURSEMENT_CHECK":
         return ["OKAY", "SEND_FOR_CORRECTION", "RETURN"];
       case "PAYMENT_RECONCILIATION":
@@ -208,7 +208,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
     case "DISBURSEMENT_CORRECTION":
       return ["RESUBMIT"];
     case "DISBURSEMENT_BOOKING":
-      return ["DISBURSED"];
+      return ["DISBURSED", "REJECT"];
     case "COMPLETION":
       return ["COMPLETE_PROCESS"];
     case "VENDOR_CONFIRMATION":

@@ -11,8 +11,8 @@ import { holdsRole } from "./domain/access";
 import type { Role } from "./domain/roles";
 import { addDaysToDateString, fromLagos, lagosDate } from "./time";
 
-/** Credit leadership and the retail CX Group Head (plus the Super Admin) may read the activity report. */
-export const CX_ACTIVITY_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "CX_GROUP_HEAD", "SUPER_ADMIN"];
+/** Credit leadership, the Merchant Officer Head and the retail CX Group Head (plus the Super Admin) may read the activity report. */
+export const CX_ACTIVITY_ROLES: readonly Role[] = ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "MERCHANT_OFFICER_HEAD", "CX_GROUP_HEAD", "SUPER_ADMIN"];
 
 /** Actions a CX credit reviewer can take on a request. */
 export const CX_ACTIONS = ["RECOMMEND", "APPROVE", "RETURN", "REJECT", "REQUEST_INITIATOR"] as const;
@@ -81,7 +81,7 @@ export async function cxActivityAccess(q: Db, staffId: string): Promise<boolean>
 }
 
 export async function requireCxActivityAccess(q: Db, staffId: string): Promise<void> {
-  if (!(await cxActivityAccess(q, staffId))) throw forbidden("Only credit leads, the CX Group Head or the Super Admin can see CX reviewer activity.");
+  if (!(await cxActivityAccess(q, staffId))) throw forbidden("Only credit leads, the Merchant Officer Head, the CX Group Head or the Super Admin can see CX reviewer activity.");
 }
 
 function dateBounds(filter: CxActivityFilter, now: Date) {

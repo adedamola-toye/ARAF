@@ -52,7 +52,7 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
       <h2 id="h-up">Upload documents</h2>
       <UploadPanel applicationId={app.id} categories={orderedCats.map((x) => ({ code: x, label: `${CATEGORY_LABEL[x]}${required.has(x) ? " (required)" : ""}` }))} withMeta />
       <p className="small muted" style={{ marginBottom: 0 }}>
-        Uploaded a wrong file or the wrong period? Remove it here before submitting.
+        Upload a replacement directly — earlier versions are kept as superseded, so you do not need to delete them. You can remove a file uploaded in error before the request is submitted.
       </p>
       {docs.length > 0 && (
         <ul className="doc-list small">

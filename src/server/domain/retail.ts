@@ -1000,6 +1000,7 @@ export async function retailDispatch(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
       return "Pre-disbursement checks complete. Sent to Disbursement Officer 2 for facility booking.";
     }
     case "DISBURSEMENT_BOOKING":
+      if (a === "REJECT") return null; // shared decline handling
       return bookFacility(tx, ctx, app, task, input);
     case "PAYMENT_RECONCILIATION":
       return reconcilePayment(tx, ctx, app, task, input);

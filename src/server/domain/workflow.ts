@@ -32,6 +32,7 @@ import { formatKobo } from "../money";
 import { addDaysToDateString, isValidDateString, lagosDate, formatLagos } from "../time";
 import { enqueueEmail } from "../notify/outbox";
 import { simpleEmail, caseLink } from "../notify/templates";
+import { notify, notifyRoleHolders } from "./notifications";
 import {
   BVN_RE,
   TIN_RE,
@@ -899,6 +900,8 @@ export async function createCorrection(tx: Tx, ctx: Ctx, app: AppRow, task: Task
   );
   app.active_correction_id = r.rows[0].id;
   await audit(tx, ctx, { action: "CORRECTION_REQUESTED", applicationId: app.id, stage: task.stage, reason, details: { correctionId: r.rows[0].id, toStage } });
+  // Every return for correction tells the initiator once, whichever officer it is routed to.
+  await notifyInitiatorCorrection(tx, ctx, app, task.stage, r.rows[0].id, reason);
   return r.rows[0].id;
 }
 
@@ -936,6 +939,32 @@ async function routeToCredit(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
   app.first_reviewer_id = chosen.staffId;
   await moveTo(tx, ctx, app, "FIRST_CREDIT_REVIEW", chosen);
   return `Routed to first credit review (Route ${route.route}).`;
+}
+
+/**
+ * Tell the initiator a request came back for correction. One notification and one email per correction
+ * (the dedupe key carries the correction id), so reminders never pile up for the same return.
+ */
+async function notifyInitiatorCorrection(tx: Tx, ctx: Ctx, app: AppRow, fromStage: Stage, correctionId: string, reason: string) {
+  await notify(tx, ctx.now, {
+    recipientId: app.initiator_id,
+    kind: "CORRECTION_REQUESTED",
+    title: `${app.ref}: correction requested`,
+    body: `${STAGE_LABELS[fromStage]} returned ${app.ref} for correction. Reason: ${reason}`,
+    applicationId: app.id,
+    link: `/requests/${app.id}`,
+    dedupeKey: `correction:${correctionId}`,
+  });
+  const email = await staffEmail(tx, app.initiator_id);
+  if (email)
+    await enqueueEmail(tx, ctx.now, {
+      kind: "CORRECTION_REQUESTED",
+      dedupeKey: `correction:${correctionId}`,
+      applicationId: app.id,
+      to: [email],
+      subject: `${PLATFORM_NAME} ${app.ref}: correction requested`,
+      text: simpleEmail([`${app.ref} was returned for correction at ${STAGE_LABELS[fromStage]}.`, `Reason: ${reason}`, "", `Correct and resubmit: ${caseLink(app.id)}`]),
+    });
 }
 
 export async function returnToInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, reason: string): Promise<string> {
@@ -1131,6 +1160,47 @@ async function book(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow, booking: Booki
   });
   const chosen = await chooseAssignee(tx, app, "COMPLETION", { preferred: app.pack_co3_id });
   await moveTo(tx, ctx, app, "COMPLETION", chosen);
+  // Disbursement Officer 1 checked the pack; tell them when Disbursement Officer 2 approves/books.
+  if (app.do1_id) {
+    await notify(tx, ctx.now, {
+      recipientId: app.do1_id,
+      kind: "DO2_BOOKED",
+      title: `${app.ref}: disbursement booked`,
+      body: `Disbursement Officer 2 approved and recorded the disbursement for ${app.ref} (${formatKobo(b.amountKobo)}).`,
+      applicationId: app.id,
+      link: `/requests/${app.id}`,
+      dedupeKey: `do2-booked:${app.id}`,
+    });
+    const do1Email = await staffEmail(tx, app.do1_id);
+    if (do1Email)
+      await enqueueEmail(tx, ctx.now, {
+        kind: "DO2_BOOKED",
+        dedupeKey: `do2-booked:${app.id}`,
+        applicationId: app.id,
+        to: [do1Email],
+        subject: `${PLATFORM_NAME} ${app.ref}: disbursement booked`,
+        text: simpleEmail([`Disbursement Officer 2 approved and recorded the disbursement for ${app.ref} (${formatKobo(b.amountKobo)}).`, "", `View the request: ${caseLink(app.id)}`]),
+      });
+  }
+  if ((app.product_code ?? "WAKEELBOOST") === "WAKEELBOOST") {
+    const pms = await notifyRoleHolders(tx, ctx.now, ["PRODUCT_MANAGER"], {
+      kind: "PRODUCT_MANAGER_BOOKED",
+      title: `${app.ref}: facility booked`,
+      body: `WakeelBoost facility was booked for ${app.customer_name ?? "the customer"} (${formatKobo(b.amountKobo)}).`,
+      applicationId: app.id,
+      link: `/requests/${app.id}`,
+      dedupeKey: `pm-booked:${app.id}`,
+    });
+    if (pms.length)
+      await enqueueEmail(tx, ctx.now, {
+        kind: "PRODUCT_MANAGER_BOOKED",
+        dedupeKey: `pm-booked:${app.id}`,
+        applicationId: app.id,
+        to: pms.map((p) => p.email),
+        subject: `${PLATFORM_NAME} ${app.ref}: WakeelBoost facility booked`,
+        text: simpleEmail([`A WakeelBoost facility was booked for ${app.customer_name ?? "the customer"} (${formatKobo(b.amountKobo)}).`, "", `View the request: ${caseLink(app.id)}`]),
+      });
+  }
   return "Disbursement recorded. Credit Officer 3 and the initiator have been notified.";
 }
 

@@ -73,7 +73,7 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
          EXISTS (SELECT 1 FROM policy_exceptions pe WHERE pe.application_id = $2 AND pe.approver_role IN (SELECT role FROM mine)) AS exception,
          EXISTS (SELECT 1 FROM facilities f WHERE f.application_id = $2 AND EXISTS (SELECT 1 FROM mine WHERE role = 'COLLECTIONS_OFFICER')) AS collections,
          EXISTS (SELECT 1 FROM a
-                  WHERE EXISTS (SELECT 1 FROM mine WHERE role IN ('CREDIT_LEAD_1','CREDIT_LEAD_2','CX_GROUP_HEAD'))
+                  WHERE EXISTS (SELECT 1 FROM mine WHERE role IN ('CREDIT_LEAD_1','CREDIT_LEAD_2','MERCHANT_OFFICER_HEAD','CX_GROUP_HEAD'))
                     AND EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = a.id AND d.actor_role = 'CX_CREDIT_REVIEWER')) AS cx_oversight`,
       [staffId, appId],
     )

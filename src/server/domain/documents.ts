@@ -524,11 +524,21 @@ export async function removeDocument(ctx: Ctx, docId: string, reason?: string | 
     if (!doc) throw notFound();
     const app = (await tx.query("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [doc.application_id])).rows[0];
     if (!app) throw notFound();
-    if (!["DRAFT", "INITIATOR_CORRECTION"].includes(app.stage)) throw forbidden("Documents can only be removed while the request is a draft or under correction.");
     if (doc.generated) throw forbidden("Generated documents cannot be removed.");
     if (doc.superseded_at) throw conflict("This document has already been removed or replaced.");
-    const { allowed, role } = await uploadRights(tx, actor.staffId, app, doc.category);
-    if (!allowed.includes(doc.category)) throw forbidden("You can only remove a document you are allowed to upload at this stage.");
+    let role: string | null = app.initiator_id === actor.staffId ? app.initiator_role : app.assigned_rm_id === actor.staffId ? "RM" : doc.uploaded_role;
+    if (app.stage === "DRAFT") {
+      // Before submission the initiator (or the assigned RM on a retail case) may remove any file they uploaded.
+      const ownsDraft = app.initiator_id === actor.staffId || (app.workflow === "RETAIL" && app.assigned_rm_id === actor.staffId);
+      if (!ownsDraft) throw forbidden("Only the initiator can remove documents on an unsubmitted request.");
+    } else if (app.stage === "INITIATOR_CORRECTION") {
+      // Rework: the initiator may remove a file they uploaded, or any category they may upload at this stage.
+      const { allowed, role: uploadRole } = await uploadRights(tx, actor.staffId, app, doc.category);
+      if (!allowed.includes(doc.category) && doc.uploaded_by !== actor.staffId) throw forbidden("You can only remove a document you are allowed to upload at this stage.");
+      role = uploadRole ?? role;
+    } else {
+      throw forbidden("Documents can only be removed while the request is a draft or under correction.");
+    }
     await tx.query("UPDATE documents SET superseded_at = $2, superseded_by = NULL WHERE id = $1", [doc.id, ctx.now]);
     await audit(tx, ctx, {
       action: "DOCUMENT_REMOVED",

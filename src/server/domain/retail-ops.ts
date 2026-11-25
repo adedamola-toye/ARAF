@@ -20,6 +20,7 @@ import { isValidDateString, lagosDate } from "../time";
 import { enqueueEmail } from "../notify/outbox";
 import { caseLink, simpleEmail } from "../notify/templates";
 import { PLATFORM_NAME } from "../brand";
+import { notify, notifyRoleHolders } from "./notifications";
 import { holdsRole } from "./access";
 import { chooseAssignee, type AppRow } from "./assignment";
 import { computeAffordability, type AffordabilityInput, type AssessmentRules } from "./affordability";
@@ -47,6 +48,9 @@ export async function beneficiaryRevalidation(q: Db, app: AppRow, now: Date): Pr
 }
 
 // ------------------------------------------------------------------ facility booking
+
+/** Retail products whose Product Manager is told when a facility is booked. */
+export const PRODUCT_MANAGER_BOOKING_PRODUCTS = ["ALT_POWER", "ALT_DRIVE", "VENDOR_FINANCING"] as const;
 
 export interface FacilityRow {
   id: string;
@@ -98,6 +102,48 @@ export async function bookFacility(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow,
   await audit(tx, ctx, { action: "FACILITY_BOOKED", applicationId: app.id, stage: task.stage, details: { facilityId: f.rows[0].id, bookingRef: ref, principalKobo: principal, totalPayableKobo: out.totalPayableKobo, instalments: out.schedule.length, assessmentId: approved.id } });
   const chosen = await chooseAssignee(tx, app, "PAYMENT_RECONCILIATION", { preferred: app.do1_id });
   await moveTo(tx, ctx, app, "PAYMENT_RECONCILIATION", chosen);
+  // Disbursement Officer 1 checks the pack, so tell them when Disbursement Officer 2 books/approves it.
+  const do1 = app.do1_id;
+  if (do1) {
+    await notify(tx, ctx.now, {
+      recipientId: do1,
+      kind: "DO2_BOOKED",
+      title: `${app.ref}: facility booked`,
+      body: `Disbursement Officer 2 approved and booked facility ${ref} (${formatKobo(principal)}). Payment confirmation and reconciliation is next.`,
+      applicationId: app.id,
+      link: `/requests/${app.id}`,
+      dedupeKey: `do2-booked:${app.id}`,
+    });
+    const email = await staffEmail(tx, do1);
+    if (email)
+      await enqueueEmail(tx, ctx.now, {
+        kind: "DO2_BOOKED",
+        dedupeKey: `do2-booked:${app.id}`,
+        applicationId: app.id,
+        to: [email],
+        subject: `${PLATFORM_NAME} ${app.ref}: facility booked`,
+        text: simpleEmail([`Disbursement Officer 2 approved and booked facility ${ref} (${formatKobo(principal)}) on ${lagosDate(ctx.now)}.`, "", `View the request: ${caseLink(app.id)}`]),
+      });
+  }
+  if (app.product_code && (PRODUCT_MANAGER_BOOKING_PRODUCTS as readonly string[]).includes(app.product_code)) {
+    const pms = await notifyRoleHolders(tx, ctx.now, ["PRODUCT_MANAGER"], {
+      kind: "PRODUCT_MANAGER_BOOKED",
+      title: `${app.ref}: facility booked`,
+      body: `${app.product_label ?? app.product_code} facility ${ref} was booked for ${app.customer_name ?? "the customer"} (${formatKobo(principal)}).`,
+      applicationId: app.id,
+      link: `/requests/${app.id}`,
+      dedupeKey: `pm-booked:${app.id}`,
+    });
+    if (pms.length)
+      await enqueueEmail(tx, ctx.now, {
+        kind: "PRODUCT_MANAGER_BOOKED",
+        dedupeKey: `pm-booked:${app.id}`,
+        applicationId: app.id,
+        to: pms.map((p) => p.email),
+        subject: `${PLATFORM_NAME} ${app.ref}: ${app.product_label ?? app.product_code} facility booked`,
+        text: simpleEmail([`A ${app.product_label ?? app.product_code} facility (${ref}) was booked for ${app.customer_name ?? "the customer"} (${formatKobo(principal)}).`, "", `View the request: ${caseLink(app.id)}`]),
+      });
+  }
   return `Facility ${ref} booked (${formatKobo(principal)}). Payment confirmation and reconciliation is with ${chosen.pool.find((p) => p.staff_id === chosen.staffId)?.full_name ?? "the assignment exception queue"}.`;
 }
 

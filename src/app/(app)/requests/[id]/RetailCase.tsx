@@ -566,6 +566,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
     case "DISBURSEMENT_BOOKING": {
       const principal = b.final ? k2s((b.final.inputs as AffordabilityInput).principalKobo) : "";
       body.push(<BookFacilityForm key="bk" hidden={hidden} principal={principal} defaultDue={addDaysToDateString(lagosDate(now), 30)} doneHref={doneHref} />);
+      secondary.push(["REJECT", "Decline", true]);
       break;
     }
     case "PAYMENT_RECONCILIATION": {
