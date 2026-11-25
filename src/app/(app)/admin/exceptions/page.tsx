@@ -22,9 +22,10 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
     : null;
   const rows = await Promise.all(unassigned.map(async (t) => ({ t, eligible: await rerouteOptionsForTask(t.id) })));
   const lookupEligible = lookup ? await rerouteOptionsForTask(lookup.id) : [];
-  const option = (e: { staff_id: string; full_name: string; role: Role }) => ({
+  const lookupOther = lookup ? lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id) : [];
+  const option = (e: { staff_id: string; full_name: string; role: Role }, currentId?: string | null) => ({
     value: e.staff_id,
-    label: `${e.full_name} (${ROLE_LABELS[e.role] ?? e.role})`,
+    label: `${e.full_name} (${ROLE_LABELS[e.role] ?? e.role})${currentId === e.staff_id ? " — currently assigned" : ""}`,
   });
   return (
     <>
@@ -42,8 +43,11 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
             <span className="badge badge-red">Waiting {formatDuration(Date.now() - new Date(t.entered_at).getTime())}</span>
           </div>
           <p className="small">{STAGE_LABELS[t.stage as Stage]} · requires {ROLE_LABELS[t.assignee_role as Role] ?? t.assignee_role} · since {formatLagos(t.entered_at)}{t.assignment_note ? ` · ${t.assignment_note}` : ""}</p>
-          {eligible.length === 0 && <p className="small muted" role="status">Nobody holds the required role in the request&apos;s state/team yet. Grant the role with the right state (and team) first.</p>}
-          <AssignForm taskId={t.id} eligible={eligible.map(option)} />
+          {eligible.length === 0 ? (
+            <p className="small muted" role="status">Nobody holds the required role in the request&apos;s state/team yet. Grant the role with the right state (and team) first.</p>
+          ) : (
+            <AssignForm taskId={t.id} eligible={eligible.map((e) => option(e))} />
+          )}
         </div>
       ))}
       <div className="card">
@@ -64,11 +68,17 @@ export default async function Exceptions({ searchParams }: { searchParams: Promi
               <Link className="muted" href={`/admin/audit?ref=${lookup.ref}`}>audit trail</Link>
             </p>
             <h3 style={{ fontSize: 15, margin: 0 }}>Reroute to an officer</h3>
-            <p className="small muted" style={{ margin: 0 }}>The officer must hold the role required by this stage and be in the request&apos;s state/team.</p>
-            {lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).length === 0 && (
-              <p className="small muted" role="status">No other eligible officer exists for this stage in the request&apos;s state/team. Grant the role with the right scope first.</p>
-            )}
-            <AssignForm taskId={lookup.id} eligible={lookupEligible.filter((e) => e.staff_id !== lookup.assignee_id).map(option)} />
+            <p className="small muted" style={{ margin: 0 }}>The officer must hold the role required by this stage and be in the request&apos;s state/team. The current assignee is shown separately, not offered again.</p>
+            <AssignForm
+              taskId={lookup.id}
+              actionLabel="Reroute"
+              emptyMessage={
+                lookup.assignee_id
+                  ? `The only eligible officer for this stage is the current assignee${lookup.assignee_name ? `, ${lookup.assignee_name}` : ""}. Grant the required role to another officer in the same state/team to reroute it.`
+                  : "No eligible officer exists for this stage in the request's state/team. Grant the role with the right scope first."
+              }
+              eligible={lookupOther.map((e) => option(e))}
+            />
           </div>
         )}
       </div>

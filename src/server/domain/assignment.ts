@@ -6,7 +6,7 @@ import { audit } from "../audit";
 import { securePick } from "../crypto";
 import { enqueueEmail } from "../notify/outbox";
 import { assignmentEmail, simpleEmail } from "../notify/templates";
-import { zoneForRegion, type Role } from "./roles";
+import { regionScopeValues, zoneForRegion, type Role } from "./roles";
 import { REQUIRED_ACTION, STAGE_LABELS, type Stage } from "./stages";
 import { creditBandOfApp } from "./approval-workflows";
 import { latestAssessment, type AssessmentRow } from "./assessment";
@@ -132,7 +132,7 @@ export const STAGE_REVIEWER_COLUMN: Partial<Record<Stage, string>> = {
   TEAM_LEAD_REVIEW: "team_lead_id",
   HRS_REVIEW: "hrs_id",
   HEAD_OF_UNIT_APPROVAL: "hou_id",
-  UNIT_HEAD_REVIEW: "hou_id",
+  // UNIT_HEAD_REVIEW is the credit Unit Head, not the business Head of Unit: never overwrite hou_id.
   CX_CREDIT_REVIEW: "cx_reviewer_id",
   FIRST_CREDIT_REVIEW: "first_reviewer_id",
   CREDIT_CORRECTION: "first_reviewer_id",
@@ -152,16 +152,18 @@ export async function eligibleStaff(
 ): Promise<EligibleStaff[]> {
   const ex = exclude.filter((x): x is string => !!x);
   const only = scope.only ? scope.only.filter((x): x is string => !!x) : null;
+  // A state and its legacy zone (SOUTH/NORTH) must match each other; see regionScopeValues.
+  const regions = scope.region ? regionScopeValues(scope.region) : null;
   const r = await tx.query<EligibleStaff>(
     `SELECT ra.staff_id, ra.role, s.full_name, s.email
        FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
       WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = ANY($1::text[])
         AND NOT (ra.staff_id = ANY($2::uuid[]))
-        AND ($3::text IS NULL OR ra.team = $3)
+        AND ($3::text IS NULL OR regexp_replace(upper(coalesce(ra.team, '')), '[^A-Z0-9]', '', 'g') = regexp_replace(upper($3), '[^A-Z0-9]', '', 'g'))
         AND ($4::uuid[] IS NULL OR ra.staff_id = ANY($4::uuid[]))
-        AND ($5::text IS NULL OR ra.region = $5)
+        AND ($5::text[] IS NULL OR ra.region = ANY($5::text[]))
       ORDER BY ra.role, s.full_name`,
-    [roles, ex, scope.team ?? null, only, scope.region ?? null],
+    [roles, ex, scope.team ?? null, only, regions],
   );
   return r.rows;
 }
@@ -212,10 +214,13 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       return { roles: ["OUTLET_SERVICE_SUPERVISOR"], exclude: base, only: [loc?.oss_staff_id ?? null], scopeNote: loc?.oss_staff_id ? "Outlet Service Supervisor mapped to the originating outlet" : "No Outlet Service Supervisor is mapped to the originating outlet" };
     }
     case "TEAM_LEAD_REVIEW": {
-      // Route by the request's state: team codes differ between records (RETAIL KANO / RETAIL-KANO / KANO),
-      // so matching on the team alone leaves same-state requests unassigned. Fall back to the team only when
-      // the request has no state recorded.
+      // The Team Lead who owns the initiator's team, inside the request's state. Team codes are compared with
+      // punctuation removed (RETAIL KANO / RETAIL-KANO), not by guessing that two different codes are the same
+      // team. If the request has no team, the state's Team Lead is the only safe scope, and the reverse is true
+      // when no state was recorded.
       const exclude = [...base, app.oss_reviewer_id];
+      if (app.region && app.team)
+        return { roles: ["TEAM_LEAD"], exclude, region: app.region, team: app.team, scopeNote: `Team Lead for team ${app.team} in ${app.region}` };
       if (app.region) return { roles: ["TEAM_LEAD"], exclude, region: app.region, scopeNote: `Team Lead in ${app.region}` };
       if (!app.team) return { roles: ["TEAM_LEAD"], exclude, only: [], scopeNote: "The request has no state or team, so no Team Lead is in scope" };
       return { roles: ["TEAM_LEAD"], exclude, team: app.team, scopeNote: `Team Lead for team ${app.team}` };
@@ -236,7 +241,7 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
     case "SECOND_CREDIT_REVIEW": {
       const route = await creditBandOfApp(tx, app);
       if (!route) throw new Error("Route not set");
-      return { roles: route.secondReviewRoles as Role[], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id] };
+      return { roles: route.secondReviewRoles as Role[], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.cx_reviewer_id ?? null, app.endorser_id] };
     }
     case "BUSINESS_ENDORSEMENT":
       return rbeSpec(app);
@@ -244,7 +249,7 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       return cxSpec(tx, app);
     case "UNIT_HEAD_REVIEW": {
       const ex = [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id, app.cx_reviewer_id ?? null, app.endorser_id];
-      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex.slice(0, 7) };
+      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex };
     }
     case "DIVISIONAL_HEAD_REVIEW":
       return { roles: ["DIVISIONAL_HEAD"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id, app.hrs_id, app.hou_id, app.first_reviewer_id, app.second_reviewer_id, ...(await priorApprovers(tx, app.id))] };
@@ -255,7 +260,7 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
     case "DISBURSEMENT_BOOKING":
       return { roles: ["DISBURSEMENT_OFFICER_2"], exclude: [...base, app.pack_co3_id, app.do1_id] };
     case "FULFILMENT":
-      return { roles: [app.initiator_role], exclude: [] };
+      return { roles: [app.initiator_role], exclude: [], only: [app.initiator_id], scopeNote: "The initiator (fulfilment is confirmed on the request they raised)" };
     default:
       return null;
   }
@@ -297,17 +302,18 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
     case "INITIATOR_CORRECTION":
     case "OFFER_PREPARATION":
     case "VENDOR_CONFIRMATION":
-      return { roles: [app.initiator_role], exclude: [] };
+      // These stages return the case to the person who raised it. Never offer another holder of the same role.
+      return { roles: [app.initiator_role], exclude: [], only: [app.initiator_id], scopeNote: "The initiator (the case must return to the officer who raised it)" };
     case "FIRST_CREDIT_REVIEW":
     case "CREDIT_CORRECTION":
       if (!route) throw new Error("Route not set");
       return { roles: route.firstReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.mo_head_id ?? null, app.cx_reviewer_id ?? null] };
     case "SECOND_CREDIT_REVIEW":
       if (!route) throw new Error("Route not set");
-      return { roles: route.secondReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id] };
+      return { roles: route.secondReviewRoles as Role[], exclude: [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.mo_head_id ?? null, app.cx_reviewer_id ?? null] };
     case "UNIT_HEAD_REVIEW": {
-      const ex = [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id, app.cx_reviewer_id ?? null];
-      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex.slice(0, 4) };
+      const ex = [app.initiator_id, app.endorser_id, app.first_reviewer_id, app.second_reviewer_id, app.cx_reviewer_id ?? null, app.mo_head_id ?? null];
+      return pinnedUnitHead(app, ex) ?? { roles: ["UNIT_HEAD"], exclude: ex };
     }
     case "DIVISIONAL_HEAD_REVIEW":
       return {
@@ -353,7 +359,7 @@ export async function chooseAssignee(
   const spec = await assignmentSpec(tx, app, stage);
   const fallbackRole = (spec.roles[0] ?? app.initiator_role) as Role;
   if (["INITIATOR_CORRECTION", "OFFER_PREPARATION", "VENDOR_CONFIRMATION", "FULFILMENT"].includes(stage)) {
-    const pool = await eligibleStaff(tx, spec.roles, []);
+    const pool = await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
     const me = pool.find((p) => p.staff_id === app.initiator_id);
     return me
       ? { staffId: me.staff_id, role: me.role, method: "INITIATOR", pool }

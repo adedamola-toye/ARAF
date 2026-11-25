@@ -194,13 +194,26 @@ export function expandRegions(regions: readonly string[]): string[] {
   return [...new Set(regions.flatMap((r) => (r === "NORTH" || r === "SOUTH" ? [r, ...statesForZone(r)] : [r])))];
 }
 
+/**
+ * Every region value that may match a request in `region`: a state also matches a role scoped to its zone
+ * (a legacy record can hold SOUTH/NORTH while the request holds LAGOS, or the reverse), and a zone matches
+ * all its states.
+ */
+export function regionScopeValues(region: string): string[] {
+  const r = region.trim().toUpperCase();
+  const out = new Set<string>(expandRegions([r]));
+  const zone = zoneForRegion(r);
+  if (zone) out.add(zone);
+  return [...out];
+}
+
 /** Accepts the state list plus legacy NORTH/SOUTH values already stored in older records. */
 export function isRegion(v: unknown): v is string {
   return typeof v === "string" && ((REGIONS as readonly string[]).includes(v) || v === "NORTH" || v === "SOUTH");
 }
 
 /** Roles that require a region scope on assignment. */
-export const REGION_REQUIRED_ROLES: readonly Role[] = ["ANM"];
+export const REGION_REQUIRED_ROLES: readonly Role[] = ["ANM", "TEAM_LEAD"];
 
 export function isRole(v: unknown): v is Role {
   return typeof v === "string" && (ROLES as readonly string[]).includes(v);

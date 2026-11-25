@@ -108,7 +108,7 @@ export default async function Reports({ searchParams }: { searchParams: Promise<
       <OfficerTable rows={r.officers} />
       <div className="grid-2" style={{ margin: "var(--space-4) 0" }}>
         <Breakdown title="Product-level complaints" rows={a.byProduct} total={a.totals.received} />
-        <Breakdown title="Resolution trend (complaints by day)" rows={a.byDay} />
+        <Breakdown title="Complaints raised by day" rows={a.byDay} />
         <Breakdown title="Repeat complaints" rows={r.repeat} />
         <Breakdown title="Top issues" rows={a.topIssues} />
       </div>

@@ -18,8 +18,10 @@ export default async function TeamQueue({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const teams = (await db.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE id = ANY($1::uuid[]) ORDER BY name", [p.leadTeams])).rows;
   const teamIds = sp.team && p.leadTeams.includes(sp.team) ? [sp.team] : p.leadTeams;
-  const view = ["unassigned", "queue", "assignments", "performance"].includes(sp.view ?? "") ? sp.view! : "unassigned";
-  const all = await listTickets(db, { kind: "TEAMS", teamIds }, { status: "OPEN" });
+  const view = ["unassigned", "queue", "resolved", "assignments", "performance"].includes(sp.view ?? "") ? sp.view! : "unassigned";
+  const tickets = await listTickets(db, { kind: "TEAMS", teamIds }, {}, new Date(), 500);
+  const all = tickets.filter((t) => OPEN_STATUSES.includes(t.status));
+  const resolved = tickets.filter((t) => t.status === "RESOLVED" || t.status === "CLOSED");
   const unassigned = all.filter((t) => t.status === "UNASSIGNED");
   const extra = sp.team ? `&team=${sp.team}` : "";
   const now = new Date();
@@ -51,12 +53,14 @@ export default async function TeamQueue({ searchParams }: { searchParams: Promis
         tabs={[
           ["unassigned", "Unassigned", unassigned.length],
           ["queue", "Team queue", all.length],
+          ["resolved", "Resolved and closed", resolved.length],
           ["assignments", "Assignment management"],
           ["performance", "Team performance"],
         ]}
       />
       {view === "unassigned" && <TicketTable rows={unassigned} show={["creator", "team", "owner", "sla"]} empty="No tickets waiting for assignment." />}
       {view === "queue" && <TicketTable rows={all} show={["team", "assignee", "owner", "sla"]} empty="No open tickets." />}
+      {view === "resolved" && <TicketTable rows={resolved} show={["creator", "team", "assignee", "updated"]} empty="No resolved or closed tickets in this team." />}
       {view === "assignments" && <Workload teamIds={teamIds} />}
       {view === "performance" && <TeamPerf teamIds={teamIds} period={period} now={now} />}
       <p className="small muted" style={{ marginTop: 12 }}>

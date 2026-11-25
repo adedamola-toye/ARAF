@@ -70,7 +70,8 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
           `SELECT s.id, s.full_name AS name, m.member_role AS role, t.id AS team_id, t.name AS team_name
              FROM crm_team_members m JOIN staff s ON s.id = m.staff_id AND s.status = 'ACTIVE'
              JOIN crm_teams t ON t.id = m.team_id AND t.active
-            WHERE m.active ORDER BY t.name, m.member_role DESC, s.full_name`,
+            WHERE m.active AND s.id <> $1 ORDER BY t.name, m.member_role DESC, s.full_name`,
+          [t.creator_id],
         )
       ).rows
     : [];
@@ -175,7 +176,7 @@ export default async function TicketPage({ params, searchParams }: { params: Pro
             <h2>Description</h2>
             <p style={{ whiteSpace: "pre-wrap", margin: 0 }}>{t.description}</p>
           </div>
-          {t.resolution_summary && (
+          {t.resolution_summary && ["RESOLVED", "CLOSED"].includes(t.status) && (
             <div className="card">
               <h2>Resolution</h2>
               <p style={{ whiteSpace: "pre-wrap" }}>{t.resolution_summary}</p>

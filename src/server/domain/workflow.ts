@@ -67,7 +67,10 @@ export interface ActionResult {
 
 // ------------------------------------------------------------------ helpers
 
+const uuidRe = /^[0-9a-f-]{36}$/i;
+
 export async function lockApp(tx: Tx, appId: string): Promise<AppRow> {
+  if (!uuidRe.test(appId)) throw notFound("Request not found.");
   const r = await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [appId]);
   if (!r.rows[0]) throw notFound("Request not found.");
   return r.rows[0];
@@ -556,6 +559,7 @@ export interface TaskActionInput {
 export async function performTaskAction(ctx: Ctx, input: TaskActionInput): Promise<ActionResult> {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
+  if (!uuidRe.test(input.taskId ?? "")) throw invalid("This task is no longer available. Reload the request and try again.");
   try {
     const result = await withTx(async (tx) => {
       const t0 = (await tx.query<TaskRow>("SELECT * FROM tasks WHERE id = $1", [input.taskId])).rows[0];

@@ -32,7 +32,7 @@ import { roleMayOriginate, ANNUAL_DENOMINATORS, configById, configGaps, effectiv
 import { bvnError, phoneError, EMAIL_RE, retailDataSchema, retailDisplayName, retailMaterialDigest, type RetailData } from "./retail-data";
 import { beneficiaryFor, beneficiaryProblems, type BeneficiarySnapshot } from "./vendors";
 import { listLocations, snapshotOf, type LocationRow } from "./locations";
-import { isRetailInitiatorRole, ROLE_LABELS, type Role } from "./roles";
+import { isRetailInitiatorRole, regionScopeValues, ROLE_LABELS, type Role } from "./roles";
 import { routeForAmount } from "./routing";
 import { creditBandForApp, definitionForApp, pinWorkflow } from "./approval-workflows";
 import { pinRouting } from "./rm-routing";
@@ -183,8 +183,14 @@ export async function saveRetailDraft(ctx: Ctx, appId: string, input: RetailDraf
       else if (app.stage === "DRAFT") {
         app.outlet_location_id = loc.id;
         app.location_snapshot = snapshotOf(loc, ctx.now) as unknown as Record<string, unknown>;
-        if (app.initiator_role === "DELIGHT_OFFICER" && loc.team) app.team = loc.team;
-        if (app.initiator_role === "DELIGHT_OFFICER") app.origination_location_id = loc.id;
+        if (app.initiator_role === "DELIGHT_OFFICER") {
+          // The outlet decides which team and state the Delight Officer's request belongs to; the Team Lead
+          // review must go to that outlet's state, not the officer's own state.
+          if (loc.team) app.team = loc.team;
+          if (loc.state) app.region = loc.state;
+          if (loc.business_unit) app.business_unit = loc.business_unit;
+          app.origination_location_id = loc.id;
+        }
       }
     }
     // Relationship Manager / Team Lead / Unit Head channel: originating location (reporting by location)
@@ -315,6 +321,7 @@ export interface Readiness {
 }
 
 export async function loadRetailState(q: Db, appId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(appId)) throw notFound();
   const app = (await q.query<AppRow & { lock_version: number }>("SELECT * FROM applications WHERE id = $1", [appId])).rows[0];
   if (!app) throw notFound();
   const w = await workingVersion(q as Tx, appId);
@@ -636,17 +643,17 @@ async function businessStages(tx: Tx, app: AppRow, now: Date): Promise<Stage[]> 
 
 /**
  * The Team Lead for the initiator's own team within their state. Team codes are written inconsistently
- * (RETAIL KANO / RETAIL-KANO / KANO), so compare them with every non-alphanumeric character removed.
+ * (RETAIL KANO / RETAIL-KANO), so compare them with every non-alphanumeric character removed.
  */
 async function teamLeadFor(tx: Tx, app: AppRow): Promise<string | null> {
   if (!app.region) return null;
   const teamKey = app.team ? app.team.toUpperCase().replace(/[^A-Z0-9]/g, "") : null;
   const r = await tx.query<{ staff_id: string }>(
     `SELECT ra.staff_id FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
-      WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = 'TEAM_LEAD' AND ra.region = $1
+      WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = 'TEAM_LEAD' AND ra.region = ANY($1::text[])
         AND ($2::text IS NULL OR regexp_replace(upper(coalesce(ra.team, '')), '[^A-Z0-9]', '', 'g') = $2)
       ORDER BY s.full_name LIMIT 1`,
-    [app.region, teamKey],
+    [regionScopeValues(app.region), teamKey],
   );
   return r.rows[0]?.staff_id ?? null;
 }

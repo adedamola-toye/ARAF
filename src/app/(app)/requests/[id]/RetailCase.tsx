@@ -14,7 +14,7 @@ import { AlertTriangle, CheckCircle2, Circle } from "lucide-react";
 import { db } from "@/server/db";
 import type { getCase } from "@/server/domain/views";
 import { CATEGORY_LABEL } from "@/server/domain/documents";
-import { STAGE_LABELS, stageLabel, type Stage } from "@/server/domain/stages";
+import { ACTION_LABELS, STAGE_LABELS, stageLabel, type Stage, type TaskAction } from "@/server/domain/stages";
 import { ROLE_LABELS, type Role } from "@/server/domain/roles";
 import { configById, configGaps, effectiveConfig, gapsBlocking, profileRules, structureRules, PROFILE_LABELS, STRUCTURE_LABELS, INSURANCE_LABELS, DSR_DENOMINATOR_LABELS, ANNUAL_DENOMINATORS, FULFILMENT_LABELS, roleLabel, type CustomerProfile, type StructureCode, type FulfilmentKind } from "@/server/domain/products";
 import { retailDataSchema } from "@/server/domain/retail-data";
@@ -137,6 +137,40 @@ function AssessmentSummary({ out, title, meta }: { out: AffordabilityOutput; tit
   );
 }
 
+/** The CX Credit Reviewer's recorded recommendation/decision comments, shown on the request for everyone with access. */
+export function CxReviewComments({ c }: { c: Case }) {
+  const comments = c.decisions.filter(
+    (d: { stage: string; action: string; reason: string | null; invalidated_at: Date | null }) => d.stage === "CX_CREDIT_REVIEW" && !!d.reason?.trim() && !d.invalidated_at,
+  );
+  if (!comments.length) return null;
+  return (
+    <div className="card">
+      <h2>CX credit review comments</h2>
+      <p className="small muted" style={{ marginTop: 0 }}>
+        Comments recorded by the CX Credit Reviewer when the request was reviewed.
+      </p>
+      <ul className="closing-list">
+        {comments.map((d: { id: string; action: string; reason: string; actor_name: string; created_at: Date }) => {
+          const positive = d.action === "RECOMMEND" || d.action === "APPROVE" || d.action === "ENDORSE";
+          const correction = ["RETURN", "REQUEST_INITIATOR", "SEND_FOR_CORRECTION"].includes(d.action);
+          return (
+            <li key={d.id}>
+              <span className="closing-body">
+                <span>
+                  <strong>{d.actor_name}</strong>{" "}
+                  <span className={`badge ${positive ? "badge-green" : correction ? "badge-warn" : "badge-red"}`}>{ACTION_LABELS[d.action as TaskAction] ?? d.action}</span>{" "}
+                  <span className="small muted">{formatLagos(d.created_at)}</span>
+                </span>
+                <p style={{ whiteSpace: "pre-wrap", margin: "6px 0 0" }}>{d.reason}</p>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 export async function RetailOverview({ c }: { c: Case }) {
   const b = await retailBits(c);
   const { app, data, ben, rules, st } = b;
@@ -167,6 +201,7 @@ export async function RetailOverview({ c }: { c: Case }) {
         <div className="metric"><div className="k">Preliminary DSR</div><div className="v">{out?.dsr ? `${out.dsr.percent}%` : "—"}</div><div className="small muted">threshold {rules?.dsr.maxPercent ?? "—"}%</div></div>
         <div className="metric"><div className="k">Insurance</div><div className="v v-text">{st?.insuranceBearer ? INSURANCE_LABELS[st.insuranceBearer] : "Not configured"}</div></div>
       </div>
+      <CxReviewComments c={c} />
       <div className="card">
         <div className="card-head">
           <h2>Customer</h2>

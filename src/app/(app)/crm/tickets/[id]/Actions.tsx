@@ -276,8 +276,9 @@ export function TicketActions(p: ActionProps) {
       </Fold>,
     );
 
-  if (p.isOversight && open && p.rerouteOptions.length) {
-    const teams = [...new Map(p.rerouteOptions.map((o) => [o.team_id, o.team_name])).entries()];
+  const rerouteChoices = p.rerouteOptions.filter((o) => o.id !== p.currentAssignee);
+  if (p.isOversight && open && rerouteChoices.length) {
+    const teams = [...new Map(rerouteChoices.map((o) => [o.team_id, o.team_name])).entries()];
     blocks.push(
       <Fold key="reroute" label="Reroute to any officer">
         <Op op="reroute" id={p.id} lockVersion={p.lockVersion}>
@@ -287,8 +288,8 @@ export function TicketActions(p: ActionProps) {
               <option value="">Choose…</option>
               {teams.map(([teamId, teamName]) => (
                 <optgroup key={teamId} label={teamName}>
-                  {p.rerouteOptions
-                    .filter((o) => o.team_id === teamId && o.id !== p.currentAssignee)
+                  {rerouteChoices
+                    .filter((o) => o.team_id === teamId)
                     .map((o) => (
                       <option key={`${teamId}-${o.id}`} value={`${teamId}|${o.id}`}>
                         {o.name} {o.role === "LEAD" ? "(Team Lead)" : ""}

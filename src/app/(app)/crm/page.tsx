@@ -13,8 +13,17 @@ export default async function CrmHome() {
   const p = await crmPrincipal(db, session.staffId);
   const counts = await crmNavCounts(db, p);
   const mine = await listTickets(db, { kind: "CREATOR", staffId: session.staffId }, {}, new Date(), 8);
-  const myOpen = mine.filter((t) => OPEN_STATUSES.includes(t.status)).length;
-  const awaitingMe = mine.filter((t) => t.status === "RESOLVED" || t.status === "PENDING_INFO").length;
+  // Count the user's whole book, not just the eight preview rows.
+  const myCounts = (
+    await db.query<{ open: number; action: number }>(
+      `SELECT count(*) FILTER (WHERE status = ANY($2))::int AS open,
+              count(*) FILTER (WHERE status IN ('RESOLVED','PENDING_INFO'))::int AS action
+         FROM crm_tickets WHERE creator_id = $1`,
+      [session.staffId, OPEN_STATUSES],
+    )
+  ).rows[0];
+  const myOpen = myCounts?.open ?? 0;
+  const awaitingMe = myCounts?.action ?? 0;
   return (
     <>
       <PageHeader

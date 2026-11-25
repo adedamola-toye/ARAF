@@ -183,7 +183,10 @@ async function unassignOpenTasks(tx: Tx, ctx: Ctx, staffId: string, role: string
 }
 
 /** Eligible assignees for an open task, using the same rules as automatic routing. */
+const uuidRe = /^[0-9a-f-]{36}$/i;
+
 export async function eligibleForTask(taskId: string) {
+  if (!uuidRe.test(taskId)) throw notFound();
   return withTx(async (tx) => {
     const t = (await tx.query("SELECT * FROM tasks WHERE id = $1", [taskId])).rows[0];
     if (!t) throw notFound();
@@ -212,11 +215,13 @@ export async function adminAssignTask(ctx: Ctx, taskId: string, staffId: string,
   return adminOp(ctx, "TASK_REASSIGNED", async (tx) => {
     if (!note || note.trim().length < 3) throw invalid("Enter a reason for the assignment.", { note: "Required." });
     if (staffId === ctx.actor!.staffId) throw forbidden("You cannot assign a task to yourself.");
+    if (!uuidRe.test(taskId) || !uuidRe.test(staffId)) throw notFound();
     const t = (await tx.query("SELECT * FROM tasks WHERE id = $1", [taskId])).rows[0];
     if (!t) throw notFound();
     const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [t.application_id])).rows[0];
     const task = (await tx.query("SELECT * FROM tasks WHERE id = $1 FOR UPDATE", [taskId])).rows[0];
     if (task.status !== "OPEN") throw conflict("This task is no longer open.");
+    if (task.assignee_id === staffId) throw conflict("This task is already assigned to that officer. Choose another eligible officer to reroute it.");
     const spec = await assignmentSpec(tx, app, task.stage as Stage);
     const pool = await eligibleStaff(tx, spec.roles, spec.exclude, { team: spec.team, only: spec.only, region: spec.region });
     const pick = pool.find((p) => p.staff_id === staffId);

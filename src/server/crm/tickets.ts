@@ -640,8 +640,10 @@ export async function reopenTicket(ctx: Ctx, id: string, reason: string) {
     if (t.creator_id !== p.staffId && !isOversight(p)) throw forbidden("Only the person who raised the complaint, the CX Head or a Super Admin can reopen it.");
     if (!["RESOLVED", "CLOSED"].includes(t.status)) throw conflict("Only a resolved or closed ticket can be reopened.");
     const officerBack = t.assignee_id && (await activeMember(tx, t.team_id, t.assignee_id)) ? t.assignee_id : null;
+    // A ticket closed while waiting for information must not stay paused after it is reopened.
+    if (t.paused_at) await resumeClock(tx, t, ctx.now, await crmSettings(tx));
     await openSegment(tx, { ticketId: t.id, teamId: t.team_id, officerId: officerBack, now: ctx.now, by: p.staffId, reason: `Reopened: ${why}` });
-    await touch(tx, t.id, ctx.now, "status = $3, assignee_id = $4, reopen_count = reopen_count + 1, resolved_at = NULL, closed_at = NULL, closed_by = NULL, closed_how = NULL", [officerBack ? "REOPENED" : "UNASSIGNED", officerBack]);
+    await touch(tx, t.id, ctx.now, "status = $3, assignee_id = $4, reopen_count = reopen_count + 1, resolved_at = NULL, resolved_by = NULL, resolution_summary = NULL, closed_at = NULL, closed_by = NULL, closed_how = NULL", [officerBack ? "REOPENED" : "UNASSIGNED", officerBack]);
     await event(tx, t.id, ctx.now, p.staffId, "REOPENED", "PUBLIC", why);
     await crmAudit(tx, ctx, "CRM_TICKET_REOPENED", t, { reason: why });
     const to = officerBack ? [(await staffById(tx, officerBack))!] : await queueManagers(tx, t.team_id);

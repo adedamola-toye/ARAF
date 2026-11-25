@@ -92,6 +92,7 @@ export function checkPhotoFile(data: Buffer) {
 async function lockReview(tx: Tx, ctx: Ctx, appId: string) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
+  if (!/^[0-9a-f-]{36}$/i.test(appId)) throw notFound();
   const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [appId])).rows[0];
   if (!app) throw notFound();
   const task = (await tx.query<{ id: string; stage: string; assignee_id: string | null }>("SELECT id, stage, assignee_id FROM tasks WHERE application_id = $1 AND status = 'OPEN'", [appId])).rows[0];

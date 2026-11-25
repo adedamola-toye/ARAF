@@ -10,6 +10,7 @@
  * CRM access never grants access to a financing request: linked requests still go through caseAccess.
  */
 import type { Db } from "../db";
+import { DomainError } from "../errors";
 import { holdsRole } from "../domain/access";
 import type { CrmCalendar } from "./calendar";
 
@@ -44,6 +45,7 @@ export interface CrmSettings extends CrmCalendar {
 
 export async function crmSettings(q: Db): Promise<CrmSettings> {
   const r = (await q.query("SELECT *, to_json(holidays) AS holidays FROM crm_settings WHERE id = 1")).rows[0];
+  if (!r) throw new DomainError("CONFIG", "CRM settings are missing. Apply the database migrations before using the CRM.");
   return { ...r, holidays: (r.holidays ?? []).map(String) };
 }
 

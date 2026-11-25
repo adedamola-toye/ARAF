@@ -14,7 +14,7 @@ export default async function CommandCentre({ searchParams }: { searchParams: Pr
   const now = new Date();
   const period = periodFrom(await searchParams, lagosDate(now), addDaysToDateString);
   const a = await crmAnalytics(db, period, now);
-  const teams = (await teamPerformance(db, period, now)).filter((t) => t.received || t.pending_now);
+  const teams = await teamPerformance(db, period, now);
   const q = `from=${period.from}&to=${period.to}`;
   const P = a.performance;
   return (

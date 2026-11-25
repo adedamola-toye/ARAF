@@ -17,6 +17,7 @@ import {
   preparePack,
   prepareFirstReview,
 } from "@/server/demo/scenario";
+import { eligibleForTask } from "@/server/domain/admin";
 import { audits, key, outbox, resetDb } from "./helpers";
 
 beforeEach(async () => {
@@ -129,6 +130,8 @@ describe("rejection and correction routing", () => {
     const t = await openTaskOf(id);
     expect(t.stage).toBe("INITIATOR_CORRECTION");
     expect(t.email).toBe("rm.ade@altbank.ng");
+    // The correction can only be rerouted to the initiator, never to another holder of the same role.
+    expect((await eligibleForTask(t.id)).map((e) => e.email)).toEqual(["rm.ade@altbank.ng"]);
     const rm = await ctxFor("rm.ade@altbank.ng");
     await saveDraft(rm, id, { data: { phone: "08039999999" } });
     await act(id, "RESUBMIT");

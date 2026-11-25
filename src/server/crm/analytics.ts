@@ -1,14 +1,16 @@
 /**
  * CX analytics, all derived from CRM records (nothing estimated or invented).
  *
- *  - Ticket metrics cover tickets created in the period (Lagos dates, inclusive); "now" figures (open,
- *    unassigned, escalated, overdue, backlog) are a snapshot at the time of the report.
+ *  - Volume metrics (received, breakdowns) cover tickets created in the period (Lagos dates, inclusive).
+ *    Resolution and closure metrics cover the tickets resolved or closed in the period, even when they were
+ *    raised earlier (a ticket the CX Head closed directly counts as resolved at its closure time). "now" figures
+ *    (open, unassigned, escalated, overdue, backlog) are a snapshot at the time of the report.
  *  - Handling time comes from the immutable assignment segments: a ticket that passed through three teams
  *    contributes each team's own time to that team. Overall elapsed time (creation → resolution) and
  *    SLA-adjusted time (business time under the ticket's policy, less paused time) are reported separately.
  */
 import type { Db } from "../db";
-import { lagosParts } from "../time";
+import { addDaysToDateString, fromLagos, lagosParts } from "../time";
 import { slaMs } from "./calendar";
 import { OPEN_STATUSES, crmSettings, type CrmSettings } from "./core";
 
@@ -18,6 +20,11 @@ export interface Period {
 }
 
 const BOUNDS = "t.created_at >= ($1::date)::timestamp AT TIME ZONE 'Africa/Lagos' AND t.created_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos')";
+/** Resolutions that happened in the period, whether the ticket was raised in the period or earlier. A ticket the
+ *  CX Head closed directly has no resolved_at; its closure time is its terminal time. */
+const RESOLVED_BOUNDS = `((t.resolved_at >= ($1::date)::timestamp AT TIME ZONE 'Africa/Lagos' AND t.resolved_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos'))
+  OR (t.resolved_at IS NULL AND t.closed_at >= ($1::date)::timestamp AT TIME ZONE 'Africa/Lagos' AND t.closed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos')))`;
+const CLOSED_BOUNDS = "t.closed_at >= ($1::date)::timestamp AT TIME ZONE 'Africa/Lagos' AND t.closed_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos')";
 const SEG_BOUNDS = "a.started_at < (($2::date + 1)::timestamp AT TIME ZONE 'Africa/Lagos') AND coalesce(a.ended_at, 'infinity') >= ($1::date)::timestamp AT TIME ZONE 'Africa/Lagos'";
 
 const avg = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
@@ -69,9 +76,13 @@ const overdue = (t: Pick<TRow, "status" | "resolution_due" | "paused_at">, now: 
 /** null = no resolution target; true = met; false = breached (resolved late, or open past due). Undecided open tickets are null. */
 function slaOutcome(t: TRow, now: Date): boolean | null {
   if (!t.resolution_due) return null;
-  if (t.resolved_at) return new Date(t.resolved_at) <= new Date(t.resolution_due);
+  const endedAt = t.resolved_at ?? t.closed_at;
+  if (endedAt) return new Date(endedAt) <= new Date(t.resolution_due);
   return overdue(t, now) ? false : null;
 }
+
+/** When the ticket reached its terminal outcome: the resolution, or a direct closure that has no resolution. */
+const terminalAt = (t: Pick<TRow, "resolved_at" | "closed_at">) => t.resolved_at ?? t.closed_at;
 
 function countBy<T>(rows: T[], key: (r: T) => string | null) {
   const m = new Map<string, number>();
@@ -115,27 +126,38 @@ export interface CrmAnalytics {
 
 export async function crmAnalytics(q: Db, period: Period, now = new Date(), cal?: CrmSettings): Promise<CrmAnalytics> {
   const s = cal ?? (await crmSettings(q));
-  const rows = (await q.query<TRow>(`${T_SELECT} WHERE ${BOUNDS}`, [period.from, period.to])).rows;
+  const [rows, resolved, closedRows] = await Promise.all([
+    q.query<TRow>(`${T_SELECT} WHERE ${BOUNDS}`, [period.from, period.to]),
+    q.query<TRow>(`${T_SELECT} WHERE ${RESOLVED_BOUNDS}`, [period.from, period.to]),
+    q.query<TRow>(`${T_SELECT} WHERE ${CLOSED_BOUNDS}`, [period.from, period.to]),
+  ]).then((r) => r.map((x) => x.rows));
   const all = (await q.query<TRow>(`${T_SELECT} WHERE t.status = ANY($1)`, [OPEN_STATUSES])).rows;
-  const resolved = rows.filter((t) => t.resolved_at);
-  const gross = resolved.map((t) => new Date(t.resolved_at!).getTime() - new Date(t.created_at).getTime());
-  const adjusted = resolved.map((t) => Math.max(0, slaMs(new Date(t.created_at), new Date(t.resolved_at!), t.sla_business_hours ?? true, s) - Number(t.sla_paused_ms)));
+  const resolvedAt = (t: TRow) => new Date(terminalAt(t)!);
+  const gross = resolved.map((t) => resolvedAt(t).getTime() - new Date(t.created_at).getTime());
+  const adjusted = resolved.map((t) => Math.max(0, slaMs(new Date(t.created_at), resolvedAt(t), t.sla_business_hours ?? true, s) - Number(t.sla_paused_ms)));
   const fr = rows.filter((t) => t.first_response_at).map((t) => new Date(t.first_response_at!).getTime() - new Date(t.created_at).getTime());
-  const outcomes = rows.map((t) => slaOutcome(t, now));
+  const outcomes = [...resolved.map((t) => slaOutcome(t, now)), ...rows.filter((t) => !terminalAt(t)).map((t) => slaOutcome(t, now))];
   const met = outcomes.filter((o) => o === true).length;
   const breached = outcomes.filter((o) => o === false).length;
-  const ids = rows.map((r) => r.id);
+  const ids = [...new Set([...rows, ...resolved].map((r) => r.id))];
   const segs = ids.length
     ? (await q.query<{ ticket_id: string; team_id: string; officer_id: string | null; started_at: Date; ended_at: Date | null }>("SELECT ticket_id, team_id, officer_id, started_at, ended_at FROM crm_assignments WHERE ticket_id = ANY($1::uuid[])", [ids])).rows
     : [];
   const perTeam = new Map<string, number>();
   const perOfficer = new Map<string, number>();
+  const bounds = periodBounds(period);
   for (const g of segs) {
-    const d = (g.ended_at ? new Date(g.ended_at) : now).getTime() - new Date(g.started_at).getTime();
+    // Clip to the report period so historical handling time is not charged to this period.
+    const rawStart = new Date(g.started_at);
+    const rawEnd = g.ended_at ? new Date(g.ended_at) : now;
+    const start = rawStart.getTime() < bounds.start.getTime() ? bounds.start : rawStart;
+    const end = rawEnd.getTime() > bounds.end.getTime() ? bounds.end : rawEnd;
+    if (end.getTime() <= start.getTime()) continue;
+    const d = end.getTime() - start.getTime();
     perTeam.set(`${g.ticket_id}|${g.team_id}`, (perTeam.get(`${g.ticket_id}|${g.team_id}`) ?? 0) + d);
     if (g.officer_id) perOfficer.set(`${g.ticket_id}|${g.officer_id}`, (perOfficer.get(`${g.ticket_id}|${g.officer_id}`) ?? 0) + d);
   }
-  const sat = rows.filter((t) => t.satisfaction).map((t) => t.satisfaction!);
+  const sat = closedRows.filter((t) => t.satisfaction).map((t) => t.satisfaction!);
   const dayKey = (d: Date) => {
     const p = lagosParts(d);
     return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
@@ -146,7 +168,7 @@ export async function crmAnalytics(q: Db, period: Period, now = new Date(), cal?
       received: rows.length,
       open_in_period: rows.filter((t) => isOpen(t.status)).length,
       resolved: resolved.length,
-      closed: rows.filter((t) => t.status === "CLOSED").length,
+      closed: closedRows.length,
       reopened: rows.filter((t) => t.reopen_count > 0).length,
       escalated: rows.filter((t) => t.escalated).length,
     },
@@ -233,17 +255,34 @@ export interface HolderPerformance {
   backlog: { under_1d: number; d1_3: number; d3_7: number; over_7d: number };
 }
 
-function summarise(segs: Seg[], now: Date, s: CrmSettings, open: { id: string; created_at: Date; resolution_due: Date | null; paused_at: Date | null }[]): HolderPerformance {
+/** Lagos wall-clock [start, end) for an inclusive report period. */
+function periodBounds(period: Period) {
+  const from = period.from.split("-").map(Number);
+  const after = addDaysToDateString(period.to, 1).split("-").map(Number);
+  return { start: fromLagos(from[0], from[1], from[2], 0), end: fromLagos(after[0], after[1], after[2], 0) };
+}
+
+function summarise(segs: Seg[], now: Date, s: CrmSettings, open: { id: string; created_at: Date; resolution_due: Date | null; paused_at: Date | null }[], period: Period): HolderPerformance {
+  const b = periodBounds(period);
+  const inPeriod = (d: Date | null | undefined) => !!d && d.getTime() >= b.start.getTime() && d.getTime() < b.end.getTime();
   const perTicket = new Map<string, number>();
   let business = 0;
   for (const g of segs) {
-    const end = g.ended_at ? new Date(g.ended_at) : now;
-    const d = end.getTime() - new Date(g.started_at).getTime();
-    perTicket.set(g.ticket_id, (perTicket.get(g.ticket_id) ?? 0) + d);
-    business += slaMs(new Date(g.started_at), end, g.sla_business_hours ?? true, s);
+    // Handling time is clipped to the report period, so a segment that began earlier or is still open is not
+    // charged for time outside the period.
+    const rawStart = new Date(g.started_at);
+    const rawEnd = g.ended_at ? new Date(g.ended_at) : now;
+    const start = rawStart.getTime() < b.start.getTime() ? b.start : rawStart;
+    const end = rawEnd.getTime() > b.end.getTime() ? b.end : rawEnd;
+    if (end.getTime() <= start.getTime()) continue;
+    perTicket.set(g.ticket_id, (perTicket.get(g.ticket_id) ?? 0) + (end.getTime() - start.getTime()));
+    business += slaMs(start, end, g.sla_business_hours ?? true, s);
   }
   const times = [...perTicket.values()];
-  const resolvedSegs = segs.filter((g) => g.end_reason === "RESOLVED");
+  // A ticket is resolved for the holder when the segment ended in a resolution or an oversight closure
+  // inside the report period.
+  const finishedSegs = segs.filter((g) => (g.end_reason === "RESOLVED" || g.end_reason === "CLOSED") && inPeriod(g.ended_at ? new Date(g.ended_at) : null));
+  const resolvedSegs = finishedSegs;
   const met = resolvedSegs.filter((g) => g.resolution_due && new Date(g.ended_at!) <= new Date(g.resolution_due)).length;
   const lateResolved = resolvedSegs.filter((g) => g.resolution_due && new Date(g.ended_at!) > new Date(g.resolution_due)).length;
   const lateOpen = open.filter((t) => t.resolution_due && !t.paused_at && new Date(t.resolution_due) < now).length;
@@ -252,7 +291,7 @@ function summarise(segs: Seg[], now: Date, s: CrmSettings, open: { id: string; c
     received: new Set(segs.map((g) => g.ticket_id)).size,
     assigned: new Set(segs.filter((g) => g.officer_id).map((g) => g.ticket_id)).size,
     resolved: new Set(resolvedSegs.map((g) => g.ticket_id)).size,
-    transferred_out: segs.filter((g) => g.end_reason === "TRANSFERRED" || g.end_reason === "CX_HEAD_OVERRIDE").length,
+    transferred_out: segs.filter((g) => (g.end_reason === "TRANSFERRED" || g.end_reason === "CX_HEAD_OVERRIDE") && inPeriod(g.ended_at ? new Date(g.ended_at) : null)).length,
     pending_now: open.length,
     handling_ms_total: times.reduce((a, b) => a + b, 0),
     handling_business_ms_total: business,
@@ -276,7 +315,7 @@ export async function teamPerformance(q: Db, period: Period, now = new Date()): 
   const segs = await segments(q, period);
   const teams = (await q.query<{ id: string; name: string }>("SELECT id, name FROM crm_teams WHERE active OR id IN (SELECT DISTINCT team_id FROM crm_assignments) ORDER BY name")).rows;
   const open = (await q.query<{ id: string; team_id: string; created_at: Date; resolution_due: Date | null; paused_at: Date | null }>("SELECT id, team_id, created_at, resolution_due, paused_at FROM crm_tickets WHERE status = ANY($1)", [OPEN_STATUSES])).rows;
-  return teams.map((t) => ({ team_id: t.id, team_name: t.name, ...summarise(segs.filter((g) => g.team_id === t.id), now, s, open.filter((o) => o.team_id === t.id)) }));
+  return teams.map((t) => ({ team_id: t.id, team_name: t.name, ...summarise(segs.filter((g) => g.team_id === t.id), now, s, open.filter((o) => o.team_id === t.id), period) }));
 }
 
 export async function officerPerformance(q: Db, period: Period, now = new Date(), teamIds?: string[]): Promise<(HolderPerformance & { officer_id: string; officer_name: string })[]> {
@@ -285,12 +324,29 @@ export async function officerPerformance(q: Db, period: Period, now = new Date()
   const open = (await q.query<{ id: string; assignee_id: string; team_id: string; created_at: Date; resolution_due: Date | null; paused_at: Date | null }>("SELECT id, assignee_id, team_id, created_at, resolution_due, paused_at FROM crm_tickets WHERE status = ANY($1) AND assignee_id IS NOT NULL", [OPEN_STATUSES])).rows;
   const officers = new Map<string, string>();
   for (const g of segs) officers.set(g.officer_id!, g.officer_name ?? "—");
+  // Every active member of the scope is listed, even with no tickets in the period, so a CX lead can see the
+  // whole team's performance rather than only the people who happened to be assigned something.
+  const members = (
+    await q.query<{ id: string; name: string }>(
+      `SELECT DISTINCT s.id, s.full_name AS name FROM crm_team_members m JOIN staff s ON s.id = m.staff_id AND s.status = 'ACTIVE'
+        WHERE m.active ${teamIds ? "AND m.team_id = ANY($1::uuid[])" : ""} ORDER BY s.full_name`,
+      teamIds ? [teamIds] : [],
+    )
+  ).rows;
+  for (const m of members) if (!officers.has(m.id)) officers.set(m.id, m.name);
   return [...officers.entries()]
     .map(([id, name]) => {
       const mine = segs.filter((g) => g.officer_id === id);
-      const out = summarise(mine, now, s, open.filter((o) => o.assignee_id === id && (!teamIds || teamIds.includes(o.team_id))));
-      // For an officer, "transferred out" includes hand-offs to a colleague.
-      out.transferred_out = mine.filter((g) => ["TRANSFERRED", "CX_HEAD_OVERRIDE", "REASSIGNED"].includes(g.end_reason ?? "")).length;
+      const out = summarise(mine, now, s, open.filter((o) => o.assignee_id === id && (!teamIds || teamIds.includes(o.team_id))), period);
+      // For an officer, "transferred out" includes hand-offs to a colleague, counted when the hand-off happened.
+      const b = periodBounds(period);
+      out.transferred_out = mine.filter(
+        (g) =>
+          ["TRANSFERRED", "CX_HEAD_OVERRIDE", "REASSIGNED"].includes(g.end_reason ?? "") &&
+          g.ended_at &&
+          new Date(g.ended_at).getTime() >= b.start.getTime() &&
+          new Date(g.ended_at).getTime() < b.end.getTime(),
+      ).length;
       return { officer_id: id, officer_name: name, ...out };
     })
     .sort((a, b) => a.officer_name.localeCompare(b.officer_name));
@@ -340,13 +396,14 @@ export function ticketTimings(
   let openAt: Date | null = null;
   for (const e of [...events].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime())) {
     if (e.kind === "INFO_REQUESTED" && !openAt) openAt = new Date(e.at);
-    else if (openAt && ["RESUMED", "INFO_PROVIDED", "RESOLVED", "TRANSFERRED"].includes(e.kind)) {
+    else if (openAt && ["RESUMED", "INFO_PROVIDED", "RESOLVED", "TRANSFERRED", "CLOSED"].includes(e.kind)) {
       pending += new Date(e.at).getTime() - openAt.getTime();
       openAt = null;
     }
   }
   if (openAt) pending += now.getTime() - openAt.getTime();
-  const end = t.resolved_at ? new Date(t.resolved_at) : null;
+  // A direct oversight closure has no resolved_at; its closure time is its terminal time.
+  const end = t.resolved_at ? new Date(t.resolved_at) : t.closed_at ? new Date(t.closed_at) : null;
   const bh = t.sla_business_hours ?? true;
   const due = t.resolution_due ? new Date(t.resolution_due) : null;
   const breachEnd = end ?? (isOpen(t.status) && !t.paused_at ? now : null);

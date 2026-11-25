@@ -99,8 +99,9 @@ export async function saveTeam(ctx: Ctx, p: { id?: string | null; name: string; 
         if (!p.active) {
           const s = (await tx.query("SELECT fallback_team_id FROM crm_settings WHERE id = 1")).rows[0];
           if (s.fallback_team_id === p.id) throw invalid("This team is the fallback queue. Choose another fallback team before deactivating it.");
-          const open = Number((await tx.query("SELECT count(*) AS n FROM crm_tickets WHERE team_id = $1 AND status NOT IN ('RESOLVED','CLOSED')", [p.id])).rows[0].n);
-          if (open) throw invalid(`This team still holds ${open} open ticket(s). Transfer them before deactivating it.`);
+          // Resolved tickets can still be reopened, so only fully closed tickets release a team.
+          const open = Number((await tx.query("SELECT count(*) AS n FROM crm_tickets WHERE team_id = $1 AND status <> 'CLOSED'", [p.id])).rows[0].n);
+          if (open) throw invalid(`This team still holds ${open} ticket(s) that are not closed (resolved tickets can be reopened). Transfer them before deactivating it.`);
         }
         await tx.query("UPDATE crm_teams SET name = $2, description = $3, active = $4, updated_at = $5 WHERE id = $1", [p.id, name, nz(p.description), p.active, ctx.now]);
         await cfgAudit(tx, ctx, "CRM_CONFIG_TEAM_CHANGED", why, { id: p.id, previous: { name: before.name, active: before.active }, next: { name, active: p.active } });
@@ -156,6 +157,8 @@ export async function saveRoutingRule(ctx: Ctx, p: { id?: string | null; product
     const stage = nz(p.stage);
     const pr = nz(p.priorityOverride);
     if (pr && !isPriority(pr)) throw invalid("Unknown priority.");
+    if (cat && !uuidRe.test(cat)) throw invalid("Unknown category.", { categoryId: "Unknown." });
+    if (sub && !uuidRe.test(sub)) throw invalid("Unknown issue.", { subcategoryId: "Unknown." });
     if (cat && !(await tx.query("SELECT 1 FROM crm_categories WHERE id = $1", [cat])).rowCount) throw invalid("Unknown category.");
     if (sub && !(await tx.query("SELECT 1 FROM crm_subcategories WHERE id = $1 AND ($2::uuid IS NULL OR category_id = $2)", [sub, cat])).rowCount) throw invalid("The issue does not belong to the chosen category.", { subcategoryId: "Check the issue." });
     if (stage && !/^[A-Z][A-Z0-9_]{1,60}$/.test(stage)) throw invalid("Unknown stage.");
@@ -193,7 +196,13 @@ export async function saveSlaPolicy(ctx: Ctx, p: { id?: string | null; name: str
     const product = await validProduct(tx, nz(p.productCode));
     const pr = nz(p.priority);
     if (pr && !isPriority(pr)) throw invalid("Unknown priority.");
-    const vals = [name, product, nz(p.categoryId), nz(p.subcategoryId), pr, nz(p.teamId), a, f, r, p.businessHours, p.active, ctx.now];
+    const cat = nz(p.categoryId);
+    const sub = nz(p.subcategoryId);
+    const team = nz(p.teamId);
+    if (cat && !uuidRe.test(cat)) throw invalid("Unknown category.", { categoryId: "Unknown." });
+    if (sub && !uuidRe.test(sub)) throw invalid("Unknown issue.", { subcategoryId: "Unknown." });
+    if (team && !uuidRe.test(team)) throw invalid("Unknown team.", { teamId: "Unknown." });
+    const vals = [name, product, cat, sub, pr, team, a, f, r, p.businessHours, p.active, ctx.now];
     if (p.id) {
       const before = (await tx.query("SELECT * FROM crm_sla_policies WHERE id = $1 FOR UPDATE", [p.id])).rows[0];
       if (!before) throw notFound();

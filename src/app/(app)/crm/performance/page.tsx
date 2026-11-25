@@ -18,7 +18,7 @@ export default async function Performance({ searchParams }: { searchParams: Prom
       <PageHeader
         eyebrow="CRM"
         title="Team and officer performance"
-        intro="Handling time is the time a ticket spent with each team or officer, from the hand-off history. A ticket that passed through three teams counts each team's own time; the final resolver is not charged for the others."
+        intro="Handling time is the time a ticket spent with each team or officer, from the hand-off history. A ticket that passed through three teams counts each team's own time. Resolved includes tickets finished by an officer and tickets closed directly by the CX Head or Super Admin. All active team members are listed, including those with no tickets yet."
       />
       <PeriodForm from={period.from} to={period.to} />
       <div className="table-wrap" style={{ marginBottom: "var(--space-5)" }}>

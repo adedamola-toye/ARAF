@@ -110,8 +110,18 @@ export function RemoveMemberButton({ group, email }: { group: string; email: str
   );
 }
 
-export function AssignForm({ taskId, eligible }: { taskId: string; eligible: Opt[] }) {
-  if (!eligible.length) return <p className="small err">No eligible officer exists. Provision or grant the required role first.</p>;
+export function AssignForm({
+  taskId,
+  eligible,
+  actionLabel = "Assign",
+  emptyMessage = "No eligible officer exists. Provision or grant the required role first.",
+}: {
+  taskId: string;
+  eligible: Opt[];
+  actionLabel?: string;
+  emptyMessage?: string;
+}) {
+  if (!eligible.length) return <p className="small err">{emptyMessage}</p>;
   return (
     <ActionForm action={A.assignTaskAction}>
       <input type="hidden" name="taskId" value={taskId} />
@@ -119,7 +129,7 @@ export function AssignForm({ taskId, eligible }: { taskId: string; eligible: Opt
         <div className="field"><label htmlFor={`s-${taskId}`}>Assign to (eligible only)</label><select id={`s-${taskId}`} name="staffId">{eligible.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}</select></div>
         <div className="field"><label htmlFor={`n-${taskId}`}>Reason</label><input id={`n-${taskId}`} name="note" required minLength={3} /></div>
       </div>
-      <div><SubmitButton className="btn btn-primary btn-sm">Assign</SubmitButton></div>
+      <div><SubmitButton className="btn btn-primary btn-sm">{actionLabel}</SubmitButton></div>
     </ActionForm>
   );
 }

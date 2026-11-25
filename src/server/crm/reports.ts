@@ -51,7 +51,9 @@ export async function buildCxReport(q: Db, freq: Frequency | "ON_DEMAND", now = 
   const period = range ?? lastPeriod(freq === "ON_DEMAND" ? "WEEKLY" : freq, now);
   const cal = await crmSettings(q);
   const analytics = await crmAnalytics(q, period, now, cal);
-  const teams = (await teamPerformance(q, period, now)).filter((t) => t.received || t.pending_now);
+  // Every active team and every active member appears, even with no tickets in the period, so the CX lead sees
+  // the whole team's performance rather than only the people who happened to be assigned something.
+  const teams = await teamPerformance(q, period, now);
   const officers = await officerPerformance(q, period, now);
   // Repeat complaints: the same issue raised by the same person, or about the same request, more than once in the period.
   const repeat = (

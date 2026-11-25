@@ -5,7 +5,7 @@ import { resetDb } from "./helpers";
 import { ctxFor, createSubmittedCase } from "@/server/demo/scenario";
 import type { Ctx } from "@/server/context";
 import { crmCatalogue, crmProducts, crmSettings, FALLBACK_TEAM_ID } from "@/server/crm/core";
-import { addUpdate, assignTicket, confirmResolution, createTicket, escalateTicket, listTickets, reopenTicket, requestInformation, resolveTicket, rerouteTicket, startWork, ticketDetail, transferTicket, DuplicateComplaint } from "@/server/crm/tickets";
+import { addUpdate, assignTicket, confirmResolution, createTicket, cxCloseTicket, escalateTicket, listTickets, reopenTicket, requestInformation, resolveTicket, rerouteTicket, startWork, ticketDetail, transferTicket, DuplicateComplaint } from "@/server/crm/tickets";
 import { saveCrmSettings, saveEscalationRule, saveRoutingRule, saveSlaPolicy, saveTeam, setTeamMember, saveSubcategory, saveCategory } from "@/server/crm/config";
 import { runCrmAutoClose, runCrmEscalations } from "@/server/crm/jobs";
 import { addBusinessMs, businessMsBetween } from "@/server/crm/calendar";
@@ -218,6 +218,18 @@ describe("SLA, escalation and analytics", () => {
     expect(m.performance.avg_sla_resolution_ms).toBe(6 * H); // business time minus the 1h pause
     expect(m.performance.first_response_avg_ms).toBe(25 * 60_000);
     expect(m.performance.sla_compliance_pct).toBe(100);
+  });
+
+  it("counts resolutions and closures by when they happened, including tickets raised earlier and oversight closures", async () => {
+    const t = await raise("rm.ade@altbank.ng", T0); // Monday 16 November, in the ops queue
+    await cxCloseTicket(await at("cx.head@altbank.ng", fromLagos(2026, 11, 20, 12, 0)), t.id, "Duplicate of a complaint already being handled.");
+    const later = fromLagos(2026, 11, 20, 18, 0);
+    const m = await crmAnalytics(db, { from: "2026-11-20", to: "2026-11-20" }, later);
+    expect(m.totals.received).toBe(0);
+    expect(m.totals.resolved).toBe(1);
+    expect(m.totals.closed).toBe(1);
+    const teams = await teamPerformance(db, { from: "2026-11-20", to: "2026-11-20" }, later);
+    expect(teams.find((x) => x.team_id === ops)!.resolved).toBe(1);
   });
 
   it("escalates once per rule, with SLA warnings and breach alerts to the Team Lead and CX Head", async () => {

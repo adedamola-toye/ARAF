@@ -11,3 +11,5 @@ next-env.d.ts
 coverage/
 test-results/
 .opencode
+scripts/_tmp_*
+*.stackdump

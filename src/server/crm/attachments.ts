@@ -21,6 +21,7 @@ export const CRM_MAX_FILES_PER_UPLOAD = 5;
 export async function addAttachment(ctx: Ctx, ticketId: string, f: { filename: string; data: Buffer; internal?: boolean; purpose?: "EVIDENCE" | "RESOLUTION" }) {
   const actor = ctx.actor;
   if (!actor) throw forbidden();
+  if (!/^[0-9a-f-]{36}$/i.test(ticketId)) throw notFound("Ticket not found.");
   const filename = sanitizeFilename(f.filename || "attachment");
   if (!f.data.length) throw invalid("The file is empty.");
   if (f.data.length > config.maxUploadBytes) throw invalid(`The file exceeds the ${Math.round(config.maxUploadBytes / 1048576)} MB limit.`);

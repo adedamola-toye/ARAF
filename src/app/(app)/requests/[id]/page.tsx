@@ -35,7 +35,7 @@ import { DeleteDocumentButton } from "@/components/DeleteDocumentButton";
 import { ClosingDocuments } from "./ClosingDocuments";
 import { RecordsCard } from "./RecordsCard";
 import { BouquetInspectCard, CadPanel } from "./Phase3Panels";
-import { RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
+import { CxReviewComments, RetailActionPanel, RetailAssessmentTab, RetailCaseTools, RetailOverview, RETAIL_MILESTONES, retailDocReviewable, DocReview } from "./RetailCase";
 import { AssessmentForm, BookingForm, CrmsOkay, FirstReviewApprove, GenerateOffer, ReasonButton, ReminderButton, RevealIdentifiers, TaskButton } from "./CaseClient";
 
 type Case = Awaited<ReturnType<typeof getCase>>;
@@ -332,6 +332,7 @@ function Overview({ c, data }: { c: Case; data: DraftData | null }) {
   const name = (id: string | null) => (id ? c.people[id] ?? "—" : "—");
   return (
     <div className="stack">
+      <CxReviewComments c={c} />
       {c.assessment && pricingOf(c.assessment.outputs) && (() => {
         const p = pricingOf(c.assessment.outputs)!.pricing;
         return (

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { routeForAmount, MIN_AMOUNT_KOBO, MAX_AMOUNT_KOBO } from "@/server/domain/routing";
 import { applyBasisPoints, formatKobo, parseNairaToKobo, parsePercentToBp } from "@/server/money";
 import { allowedActions } from "@/server/domain/stages";
+import { regionScopeValues } from "@/server/domain/roles";
 
 describe("credit routing boundaries (integer kobo)", () => {
   const cases: [string, number, number | null][] = [
@@ -60,5 +61,13 @@ describe("money", () => {
     expect(applyBasisPoints(3, 5000)).toBe(2); // 1.5 -> 2
     // 0.1 + 0.2 style float traps do not occur
     expect(applyBasisPoints(10, 3333)).toBe(3);
+  });
+});
+
+describe("region scopes", () => {
+  it("a state matches its legacy zone and a zone covers its states", () => {
+    expect(regionScopeValues("LAGOS")).toEqual(expect.arrayContaining(["LAGOS", "SOUTH"]));
+    expect(regionScopeValues("SOUTH")).toEqual(expect.arrayContaining(["SOUTH", "LAGOS", "OYO"]));
+    expect(regionScopeValues("KANO")).toEqual(expect.arrayContaining(["KANO", "NORTH"]));
   });
 });
