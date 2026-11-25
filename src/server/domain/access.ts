@@ -62,7 +62,7 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
   if (row.shariah) capacities.push("SHARIAH_RECIPIENT");
   // Retail scopes: assigned RM, team, outlet, retail leadership, exception authority, collections.
   const rr = (
-    await q.query<{ assigned_rm: boolean; team: boolean; outlet: boolean; leadership: boolean; exception: boolean; collections: boolean }>(
+    await q.query<{ assigned_rm: boolean; team: boolean; outlet: boolean; leadership: boolean; exception: boolean; collections: boolean; cx_oversight: boolean }>(
       `WITH a AS (SELECT * FROM applications WHERE id = $2 AND workflow = 'RETAIL'),
             mine AS (SELECT role, team FROM role_assignments WHERE staff_id = $1 AND active)
        SELECT
@@ -71,7 +71,10 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
          EXISTS (SELECT 1 FROM a JOIN locations l ON l.id = a.outlet_location_id WHERE l.oss_staff_id = $1 AND a.stage <> 'DRAFT' AND EXISTS (SELECT 1 FROM mine WHERE role = 'OUTLET_SERVICE_SUPERVISOR')) AS outlet,
          EXISTS (SELECT 1 FROM a WHERE a.stage <> 'DRAFT' AND EXISTS (SELECT 1 FROM mine WHERE role IN ('HEAD_OF_RETAIL_SALES','HEAD_OF_UNIT'))) AS leadership,
          EXISTS (SELECT 1 FROM policy_exceptions pe WHERE pe.application_id = $2 AND pe.approver_role IN (SELECT role FROM mine)) AS exception,
-         EXISTS (SELECT 1 FROM facilities f WHERE f.application_id = $2 AND EXISTS (SELECT 1 FROM mine WHERE role = 'COLLECTIONS_OFFICER')) AS collections`,
+         EXISTS (SELECT 1 FROM facilities f WHERE f.application_id = $2 AND EXISTS (SELECT 1 FROM mine WHERE role = 'COLLECTIONS_OFFICER')) AS collections,
+         EXISTS (SELECT 1 FROM a
+                  WHERE EXISTS (SELECT 1 FROM mine WHERE role IN ('CREDIT_LEAD_1','CREDIT_LEAD_2','CX_GROUP_HEAD'))
+                    AND EXISTS (SELECT 1 FROM decisions d WHERE d.application_id = a.id AND d.actor_role = 'CX_CREDIT_REVIEWER')) AS cx_oversight`,
       [staffId, appId],
     )
   ).rows[0];
@@ -79,6 +82,7 @@ export async function caseAccess(q: Db, staffId: string, appId: string): Promise
   if (rr?.team) capacities.push("TEAM_SUPERVISOR");
   if (rr?.outlet) capacities.push("OUTLET_SUPERVISOR");
   if (rr?.leadership) capacities.push("RETAIL_LEADERSHIP");
+  if (rr?.cx_oversight) capacities.push("CX_OVERSIGHT");
   if (rr?.exception) capacities.push("EXCEPTION_AUTHORITY");
   if (rr?.collections) capacities.push("COLLECTIONS");
   // A Unit Head notified that a Team Lead skipped the business photograph can open that request (read access).

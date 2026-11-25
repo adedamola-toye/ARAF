@@ -758,6 +758,9 @@ async function invalidateRetailApprovals(tx: Tx, ctx: Ctx, app: AppRow, why: str
 
 export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
   const corr = await activeCorrection(tx, app, "INITIATOR_CORRECTION");
+  // A correction raised by the first credit reviewer returns to that same reviewer when the case reaches
+  // credit again, even if the correction restarts an earlier stage. Never silently hand it to a different one.
+  const returningFirstReviewer = corr.from_stage === "FIRST_CREDIT_REVIEW" ? corr.from_assignee_id : null;
   const prevData = retailDataSchema.parse((await tx.query("SELECT data FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0]?.data ?? {});
   const { material, cfg, rules, data } = await finaliseRetailVersion(tx, ctx, app);
   await recordDecision(tx, ctx, app, task, "RESUBMIT", null);
@@ -771,15 +774,19 @@ export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
     await resolveAllCorrections(tx, ctx, app, "SUPERSEDED_BY_MATERIAL_CHANGE");
     const docs = await currentCleanDocuments(tx, app.id);
     await storeAssessment(tx, ctx, app, "PRELIMINARY", cfg, rules, preliminaryInput(app.applicant_type, data, docs), app.initiator_role);
-    app.route = null;
-    app.first_reviewer_id = null;
+    // Keep the current route so credit entry only resets the reviewer when the band actually changes.
+    app.first_reviewer_id = returningFirstReviewer;
     app.second_reviewer_id = null;
     await routeFromSubmission(tx, ctx, app, "Reassessment after material change");
     return `Material change detected${changes.length ? ` (${changes.join(", ")})` : ""}: business and credit approvals and any offer were invalidated; the request restarts at ${stageLabel(app.stage, app.approval_policy).toLowerCase()}.`;
   }
   await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");
   app.active_correction_id = corr.parent_id;
+  // Mark the returning reviewer as the request's first reviewer before choosing, so separation-of-duties
+  // does not exclude them from their own correction.
+  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
   const chosen = await chooseAssignee(tx, app, corr.from_stage, { preferred: corr.from_assignee_id, requirePreferred: true });
+  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && chosen.staffId) app.first_reviewer_id = chosen.staffId;
   await moveTo(tx, ctx, app, corr.from_stage, chosen, "Resubmitted after correction (non-material)");
   return `Resubmitted to ${STAGE_LABELS[corr.from_stage]}.`;
 }
@@ -812,7 +819,7 @@ async function enterCredit(tx: Tx, ctx: Ctx, app: AppRow): Promise<string> {
     app.first_reviewer_id = null;
     app.second_reviewer_id = null;
   }
-  const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id });
+  const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id, requirePreferred: !!app.first_reviewer_id });
   app.first_reviewer_id = chosen.staffId;
   await moveTo(tx, ctx, app, "FIRST_CREDIT_REVIEW", chosen);
   return `Business approval complete. Routed to credit appraisal (Route ${route.route}).`;

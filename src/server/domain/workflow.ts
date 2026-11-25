@@ -1035,6 +1035,9 @@ async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow)
     await invalidateCreditApprovals(tx, ctx, app, "Material underwriting fields changed on resubmission");
     await tx.query("UPDATE credit_assessments SET superseded_at=$2 WHERE application_id=$1 AND superseded_at IS NULL", [app.id, ctx.now]);
     await resolveAllCorrections(tx, ctx, app, "SUPERSEDED_BY_MATERIAL_CHANGE");
+    // The reviewer who returned the case keeps it when the route still allows them; a route change can make
+    // them ineligible and the reviewer pool is refreshed below.
+    if (corr.from_stage === "FIRST_CREDIT_REVIEW" && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
     const route = await creditBandForApp(tx, app, Number(app.requested_amount_kobo));
     if (route.route !== prevRoute) {
       await audit(tx, ctx, { action: "ROUTE_RECALCULATED", applicationId: app.id, stage: "FIRST_CREDIT_REVIEW", details: { from: prevRoute, to: route.route } });
@@ -1042,14 +1045,18 @@ async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow)
       app.first_reviewer_id = null;
       app.second_reviewer_id = null;
     }
-    const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id });
+    const chosen = await chooseAssignee(tx, app, "FIRST_CREDIT_REVIEW", { preferred: app.first_reviewer_id, requirePreferred: !!app.first_reviewer_id });
     app.first_reviewer_id = chosen.staffId;
     await moveTo(tx, ctx, app, "FIRST_CREDIT_REVIEW", chosen, "Fresh credit review: material change");
     return `Material change detected: fresh credit review required (Route ${route.route}).`;
   }
   await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");
   app.active_correction_id = corr.parent_id;
+  // Mark the returning reviewer as the request's first reviewer before choosing, so separation-of-duties
+  // does not exclude them from their own correction.
+  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
   const chosen = await chooseAssignee(tx, app, corr.from_stage, { preferred: corr.from_assignee_id, requirePreferred: true });
+  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && chosen.staffId) app.first_reviewer_id = chosen.staffId;
   await moveTo(tx, ctx, app, corr.from_stage, chosen, "Resubmitted after correction (non-material)");
   return `Resubmitted to ${STAGE_LABELS[corr.from_stage]}.`;
 }

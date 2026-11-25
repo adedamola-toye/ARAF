@@ -187,6 +187,7 @@ export function tourFor(role: string): TourStep[] {
     case "CREDIT_LEAD_2":
     case "HEAD_OF_RETAIL_SALES":
     case "HEAD_OF_UNIT":
+    case "CX_GROUP_HEAD":
       return CREDIT;
     case "DIVISIONAL_HEAD":
       return DH;

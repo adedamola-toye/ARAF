@@ -39,6 +39,8 @@ export const ROLES = [
   "ALTPHONES_PRODUCT_MANAGER",
   // Retail approval policy RETAIL_CX_V1
   "CX_CREDIT_REVIEWER",
+  // Retail CX oversight: sees the CX credit reviewers' activity; never approves or edits a request
+  "CX_GROUP_HEAD",
   // Read-only institution-wide reporting (never approves or edits)
   "EXECUTIVE_VIEW",
   // Confirms supplier / vehicle invoices with the issuer after final approval (one queue, all products)
@@ -102,6 +104,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
   CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
+  CX_GROUP_HEAD: "CX Group Head (retail CX oversight)",
   EXECUTIVE_VIEW: "Executive View (God's Eye, read-only)",
   INVOICE_CONFIRMATION_OFFICER: "Invoice Confirmation Officer",
   CX_HEAD: "CX Head (complaints oversight)",

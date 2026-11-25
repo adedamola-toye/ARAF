@@ -77,6 +77,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const isCad = roles.includes("DISBURSEMENT_OFFICER_1") || roles.includes("DISBURSEMENT_OFFICER_2");
   const icCount = icOfficer ? Number((await db.query("SELECT count(*) AS n FROM invoice_confirmations WHERE status = 'PENDING' AND officer_id = $1", [session.staffId])).rows[0].n) : 0;
   const creditExceptionsView = roles.some((r) => ["SUPER_ADMIN", "UNIT_HEAD", "TEAM_LEAD", "DIVISIONAL_HEAD", "EXECUTIVE_VIEW", "REPORTING_ADMIN"].includes(r));
+  const showCxActivity = roles.some((r) => ["CREDIT_LEAD_1", "CREDIT_LEAD_2", "CX_GROUP_HEAD", "SUPER_ADMIN"].includes(r));
   // The CRM menu must never take the app down (e.g. the web release goes live before the worker has applied migration 052).
   const crm = await crmPrincipal(db, session.staffId).catch(() => ({ staffId: session.staffId, active: true, isAdmin: false, isCxHead: false, leadTeams: [] as string[], officerTeams: [] as string[] }));
   const crmCounts = await crmNavCounts(db, crm).catch(() => ({ assigned: 0, unassigned: 0, escalated: 0 }));
@@ -185,7 +186,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        {!altWs && (showReports || creditExceptionsView || showPerformance || godsEye || retailScope || (roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin) || (canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN"))) && (
+        {!altWs && (showReports || showCxActivity || creditExceptionsView || showPerformance || godsEye || retailScope || (roles.includes("PRODUCT_CONFIG_APPROVER") && !isAdmin) || (canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN"))) && (
           <div className="nav-section">
             <span className="nav-title">Performance and governance</span>
             {showPerformance && (
@@ -211,6 +212,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             {creditExceptionsView && (
               <NavLink href="/reports/credit-exceptions" icon={<ShieldAlert {...ic} />}>
                 Credit score exceptions
+              </NavLink>
+            )}
+            {showCxActivity && (
+              <NavLink href="/reports/cx-reviewer-activity" icon={<Radar {...ic} />}>
+                CX reviewer activity
               </NavLink>
             )}
             {canReport && (ws === "SUPER_ADMIN" || ws === "REPORTING_ADMIN") && (

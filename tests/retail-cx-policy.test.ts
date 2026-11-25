@@ -4,7 +4,8 @@ import { randomUUID } from "node:crypto";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { act, ctxFor, openTaskOf } from "@/server/demo/scenario";
-import { applyConfig, createRetailCase, recordFinal, syntheticConfig } from "@/server/demo/retail-scenario";
+import { applyConfig, createRetailCase, recordFinal, syntheticConfig, vendorAccount } from "@/server/demo/retail-scenario";
+import { saveRetailDraft } from "@/server/domain/retail";
 import { stageLabel } from "@/server/domain/stages";
 
 const N = (n: number) => n * 100;
@@ -111,6 +112,35 @@ describe("RETAIL_CX_V1 approval chain", () => {
     await act(id2, "APPROVE", {});
     await act(id2, "REJECT", { reason: "Concentration risk in this sector." });
     expect((await app(id2)).status).toBe("REJECTED");
+  });
+
+  it("a CX reviewer's correction returns to the same CX reviewer when the initiator resubmits", async () => {
+    await cxConfig();
+    const cx = await addStaff("cx.one@altbank.ng", "Ada CX-Reviewer", "CX_CREDIT_REVIEWER");
+    const id = await vfCase("TL");
+    expect((await openTaskOf(id)).stage).toBe("FIRST_CREDIT_REVIEW");
+    await act(id, "RETURN", { reason: "Add the latest bank statement page." });
+    expect((await openTaskOf(id)).stage).toBe("INITIATOR_CORRECTION");
+    await act(id, "RESUBMIT");
+    const back = await openTaskOf(id);
+    expect(back.stage).toBe("FIRST_CREDIT_REVIEW");
+    expect(back.email).toBe("cx.one@altbank.ng");
+    expect((await app(id)).first_reviewer_id).toBe(cx);
+  });
+
+  it("a material correction keeps the CX reviewer for the fresh credit review", async () => {
+    await cxConfig();
+    const cx = await addStaff("cx.one@altbank.ng", "Ada CX-Reviewer", "CX_CREDIT_REVIEWER");
+    const id = await vfCase("TL");
+    await act(id, "RETURN", { reason: "Use the vendor's other verified account" });
+    const motors = await vendorAccount("Synthetic Motors Ltd");
+    await saveRetailDraft(await ctxFor("tl.lagos@altbank.ng"), id, { data: { vendorId: motors.vendor_id, vendorAccountId: motors.account_id } });
+    const res = await act(id, "RESUBMIT");
+    expect(res.message).toMatch(/Material change detected/);
+    const back = await openTaskOf(id);
+    expect(back.stage).toBe("FIRST_CREDIT_REVIEW");
+    expect(back.email).toBe("cx.one@altbank.ng");
+    expect((await app(id)).first_reviewer_id).toBe(cx);
   });
 
   it("products still on the standard chain keep it; Team Leads cannot submit them", async () => {
