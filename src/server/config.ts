@@ -174,6 +174,8 @@ export const config = {
       processingExpiryMs: int("PERICULUM_PROCESSING_EXPIRY_MS", 6 * 3600 * 1000),
       maxConcurrent: int("PERICULUM_MAX_CONCURRENT", 3),
       webhookSecret: str("PERICULUM_WEBHOOK_SECRET", ""),
+      /** Optional Blacklist Search (credit bureau data per BVN). Sends the BVN to Periculum: needs the bank's approval. */
+      blacklistEnabled: bool("PERICULUM_BLACKLIST_ENABLED", false),
       /** Periculum's documented per-file limits. */
       maxFileBytes: int("PERICULUM_MAX_FILE_BYTES", 20 * 1024 * 1024),
     };

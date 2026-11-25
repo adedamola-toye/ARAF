@@ -216,6 +216,31 @@ export async function fixtureFetch(url: string, init: RequestInit): Promise<Resp
       accountName: null,
     });
   }
+  if (method === "POST" && u.pathname === "/statements/blacklistsearch") {
+    const b = JSON.parse(String(init.body ?? "{}")) as { statementKey?: number; bvn?: string };
+    if (!b.statementKey || !state.byKey.has(Number(b.statementKey))) return json(400, { message: "Statement not found" });
+    if (!b.bvn) return json(400, { message: "BVN is required" });
+    // A BVN ending in 0 has no bureau record; otherwise some facilities, one delinquent (labelled test data).
+    const clean = b.bvn.endsWith("0");
+    return json(200, {
+      _fixture: FIXTURE_LABEL,
+      statementKey: Number(b.statementKey),
+      bvn: "******",
+      mfCreditHasCreditFacilities: clean ? "NO" : "YES",
+      mfCreditNumberOfDelinqCreditFacilities: clean ? "0" : "1",
+      mgcreditHasCreditFacilities: "NO",
+      mgCreditNumberOfDelinqCreditFacilities: "0",
+      creditHasCreditFacilities: clean ? "NO" : "YES",
+      creditNumberOfDelinqCreditFacilities: "0",
+      creditLastReportedDate: clean ? null : "31-OCT-2026",
+      firstName: "TEST",
+      lastName: "CUSTOMER",
+      dateOfBirth: "01-JAN-1990",
+      productName: "Nano Consumer Report",
+      reportDate: "25/Nov/2026",
+      providerSource: "Blacklist",
+    });
+  }
   const m = /^\/statements\/(\d+)(\/transactions)?$/.exec(u.pathname);
   if (method === "GET" && m) {
     const s = state.byKey.get(Number(m[1]));

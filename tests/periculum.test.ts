@@ -11,9 +11,10 @@ import { setPericulumFetchForTests, checkPericulumSignIn } from "@/server/integr
 import { fixtureFetch, resetFixtureVendor } from "@/server/integrations/periculum/fixtures";
 import { analysisStatements, currentAnalysis, handlePericulumWebhook, processStatementAnalysis, retryStatements, startStatementAnalysis, statementPayload } from "@/server/domain/statement-analysis";
 import { addDaysToDateString, lagosDate } from "@/server/time";
+import { bureauChecksFor, processBureauChecks } from "@/server/domain/bureau-check";
 
 const N = (n: number) => n * 100;
-const ENV = ["PERICULUM_ENABLED", "PERICULUM_MODE", "PERICULUM_WEBHOOK_SECRET", "PERICULUM_MAX_CONCURRENT", "PERICULUM_MAX_ATTEMPTS"];
+const ENV = ["PERICULUM_ENABLED", "PERICULUM_MODE", "PERICULUM_WEBHOOK_SECRET", "PERICULUM_MAX_CONCURRENT", "PERICULUM_MAX_ATTEMPTS", "PERICULUM_BLACKLIST_ENABLED"];
 const saved: Record<string, string | undefined> = {};
 
 /** A programmable fake network in front of the labelled fixture vendor. */
@@ -21,6 +22,7 @@ const net = {
   calls: [] as { method: string; path: string }[],
   putFault: [] as ("timeout-landed" | "timeout-lost" | "429" | "500-landed")[],
   getFault: [] as ("401" | "timeout")[],
+  blacklistFault: [] as "timeout"[],
 };
 async function fakeFetch(url: string, init: RequestInit): Promise<Response> {
   const u = new URL(url);
@@ -34,6 +36,10 @@ async function fakeFetch(url: string, init: RequestInit): Promise<Response> {
     await fixtureFetch(url, init); // the vendor accepts it…
     if (f === "500-landed") return new Response("", { status: 502 });
     throw abort(); // …but the reply never arrives
+  }
+  if (method === "POST" && u.pathname === "/statements/blacklistsearch" && net.blacklistFault.length) {
+    net.blacklistFault.shift();
+    throw abort();
   }
   if (method === "GET" && u.pathname.startsWith("/statements/") && net.getFault.length) {
     const f = net.getFault.shift()!;
@@ -51,6 +57,7 @@ beforeEach(async () => {
   net.calls = [];
   net.putFault = [];
   net.getFault = [];
+  net.blacklistFault = [];
   setPericulumFetchForTests(fakeFetch);
   await applyConfig("VENDOR_FINANCING", syntheticConfig("VENDOR_FINANCING"));
 });
@@ -66,8 +73,8 @@ const vendorCalls = (method: string, path = "/statements") => net.calls.filter((
 const apiCalls = async (operation?: string) => Number((await db.query(`SELECT count(*) AS n FROM fi_api_calls ${operation ? "WHERE operation = $1" : ""}`, operation ? [operation] : [])).rows[0].n);
 
 /** A Vendor Financing case at first credit review, with the given statements (directive texts) attached. */
-async function caseAtCreditReview(statements: string[]) {
-  const id = await createRetailCase({ channel: "RM", product: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", amountKobo: N(2_000_000), tenorMonths: 12, submit: false, skipDocs: ["BANK_STATEMENT"] });
+async function caseAtCreditReview(statements: string[], type: "ENTERPRISE" | "LIMITED" = "ENTERPRISE") {
+  const id = await createRetailCase({ channel: "RM", product: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", type, amountKobo: N(2_000_000), tenorMonths: 12, submit: false, skipDocs: ["BANK_STATEMENT"] });
   const ctx = await ctxFor(INITIATORS.RM);
   const today = lagosDate(new Date());
   for (const [i, s] of statements.entries())
@@ -92,7 +99,10 @@ async function runWorker(start = new Date(), ticks = 12) {
   for (let i = 0; i < ticks; i++) {
     t += config.periculum.pollIntervalMs + 1000;
     await processStatementAnalysis(new Date(t));
-    const busy = Number((await db.query("SELECT count(*) AS n FROM fi_statements WHERE status IN ('PENDING','SUBMITTING','SUBMISSION_UNCERTAIN','UPLOADED','PROCESSING')")).rows[0].n);
+    await processBureauChecks(new Date(t));
+    const busy =
+      Number((await db.query("SELECT count(*) AS n FROM fi_statements WHERE status IN ('PENDING','SUBMITTING','SUBMISSION_UNCERTAIN','UPLOADED','PROCESSING')")).rows[0].n) +
+      Number((await db.query("SELECT count(*) AS n FROM fi_bureau_checks WHERE status = 'PENDING'")).rows[0].n);
     if (!busy) break;
   }
   return new Date(t);
@@ -268,5 +278,53 @@ describe("webhook", () => {
     await handlePericulumWebhook(forged, now);
     expect((await db.query("SELECT hmac_valid FROM fi_webhook_events ORDER BY id DESC LIMIT 1")).rows[0].hmac_valid).toBe(false);
     expect(await handlePericulumWebhook("not json", now)).toMatchObject({ accepted: false });
+  });
+});
+
+describe("optional Blacklist Search (supplements SeedFi)", () => {
+  it("is off by default: no BVN is sent to Periculum", async () => {
+    const { id, analyst } = await caseAtCreditReview([SALARY("0123456789")]);
+    const r = await startStatementAnalysis(analyst, id);
+    await runWorker();
+    expect(await bureauChecksFor(db, r.id)).toEqual([]);
+    expect(vendorCalls("POST", "/statements/blacklistsearch")).toBe(0);
+  });
+
+  it("when enabled, searches the applicant's BVN once per analysis and keeps only a non-personal summary readable", async () => {
+    process.env.PERICULUM_BLACKLIST_ENABLED = "true";
+    const { id, analyst } = await caseAtCreditReview([SALARY("0123456789")]);
+    const r = await startStatementAnalysis(analyst, id);
+    await runWorker();
+    const [c] = await bureauChecksFor(db, r.id);
+    expect(c).toMatchObject({ subject: "APPLICANT", status: "COMPLETED", source: "FIXTURE", bvn_last4: "7890" });
+    expect(c.summary).toMatchObject({ microfinance: { hasFacilities: "NO", delinquent: 0 }, totalDelinquent: 0, providerSource: "Blacklist" });
+    expect(JSON.stringify(c.summary)).not.toMatch(/TEST|CUSTOMER|1990/); // no names or date of birth in the readable summary
+    const raw = (await db.query("SELECT payload_enc FROM fi_bureau_checks WHERE id = $1", [c.id])).rows[0].payload_enc;
+    expect(raw).not.toMatch(/CUSTOMER/); // encrypted at rest
+    expect(vendorCalls("POST", "/statements/blacklistsearch")).toBe(1);
+    await runWorker();
+    expect(vendorCalls("POST", "/statements/blacklistsearch")).toBe(1); // not repeated
+    expect((await db.query("SELECT count(*)::int AS n FROM audit_events WHERE application_id = $1 AND action = 'PERICULUM_BUREAU_CHECK_COMPLETED'", [id])).rows[0].n).toBe(1);
+  });
+
+  it("a search with an unknown outcome is not resent (it may already have been charged)", async () => {
+    process.env.PERICULUM_BLACKLIST_ENABLED = "true";
+    const { id, analyst } = await caseAtCreditReview([SALARY("0123456789")]);
+    const r = await startStatementAnalysis(analyst, id);
+    net.blacklistFault.push("timeout");
+    await runWorker();
+    const [c] = await bureauChecksFor(db, r.id);
+    expect(c).toMatchObject({ status: "FAILED", error_category: "OUTCOME_UNKNOWN" });
+    expect(vendorCalls("POST", "/statements/blacklistsearch")).toBe(1);
+  });
+
+  it("for a limited company, each director's BVN is searched", async () => {
+    process.env.PERICULUM_BLACKLIST_ENABLED = "true";
+    const { id, analyst } = await caseAtCreditReview([SALARY("0123456789")], "LIMITED");
+    const r = await startStatementAnalysis(analyst, id);
+    await runWorker();
+    const checks = await bureauChecksFor(db, r.id);
+    expect(checks.map((c) => [c.subject, c.status])).toEqual([["DIRECTOR_1", "COMPLETED"]]);
+    expect(checks[0].summary!.totalDelinquent).toBe(1); // test BVN not ending in 0: one delinquent facility
   });
 });

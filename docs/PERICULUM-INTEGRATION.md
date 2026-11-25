@@ -82,6 +82,21 @@ and is shown to the analyst.
   - The exact serialisation used for the hash is not specified. ARAF therefore verifies the HMAC, and also re-reads the
     statement with `GET /statements/{key}` before trusting any webhook. Polling remains the fallback.
 
+### Optional: Blacklist Search (added 25 Nov 2026 at the bank's request)
+- `POST /statements/blacklistsearch` with `{statementKey, bvn}` returns credit bureau data for that BVN:
+  - whether there are facilities, and how many are delinquent, for microfinance, mortgage and credit facilities;
+  - the last reported date and report metadata.
+- **Off by default** (`PERICULUM_BLACKLIST_ENABLED=false`). It sends the customer's BVN to Periculum, so turning it on
+  needs the bank's approval.
+- **When it runs:** once per analysis, after at least one statement has been analysed. It searches the applicant's BVN,
+  or each director's BVN for a limited company.
+- **What is kept:** the full response is stored encrypted. Only non-personal counts are readable; names, date of birth
+  and BVN are never shown.
+- **No double charges:** a search with an unknown outcome is not repeated.
+- **Role:** it supplements the SeedFi credit check and never replaces it or decides anything.
+- **Documentation errors:** the example request opens with a stray `{{`, and the response spells
+  `mgcreditHasCreditFacilities` both ways. ARAF accepts either spelling.
+
 ## 2. Fit with ARAF (what is reused)
 
 | Need | Existing ARAF component |

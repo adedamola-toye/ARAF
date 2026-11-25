@@ -24,6 +24,7 @@ import { objectStore } from "../storage";
 import { holdsRole } from "./access";
 import { lockApp } from "./workflow";
 import { notify } from "./notifications";
+import { scheduleBureauChecks } from "./bureau-check";
 import { getStatement, getTransactions, periculumReadiness, periculumSource, submitStatement, type VendorStatement } from "../integrations/periculum/client";
 
 export const CREDIT_ANALYSIS_STAGES = ["FIRST_CREDIT_REVIEW", "CREDIT_CORRECTION", "CX_CREDIT_REVIEW"] as const;
@@ -283,6 +284,8 @@ async function rollUp(tx: Tx, analysisId: string, now: Date): Promise<AnalysisSt
     const ctx = systemCtx(now);
     const counts = { processed: n(["PROCESSED", "REUSED"]), failed: n(["FAILED"]), requiresVerification: n(["REQUIRES_VERIFICATION"]), total: st.length };
     await audit(tx, ctx, { action: `STATEMENT_ANALYSIS_${next}`, actorRole: "SYSTEM", applicationId: a.application_id, details: { analysisId, version: a.version, source: a.source, ...counts } });
+    // Optional Blacklist Search (off unless enabled): scheduled once the analysis has an analysed statement.
+    if (counts.processed > 0) await scheduleBureauChecks(tx, analysisId, now);
     const ref = (await tx.query<{ ref: string }>("SELECT ref FROM applications WHERE id = $1", [a.application_id])).rows[0]?.ref ?? "";
     const words: Record<string, string> = {
       COMPLETED: `All ${counts.total} statement(s) were analysed.`,

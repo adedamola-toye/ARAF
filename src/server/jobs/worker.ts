@@ -22,6 +22,7 @@ import { runCrmReports } from "../crm/reports";
 import { rescanCrmAttachments } from "../crm/attachments";
 import { purgeExpiredUploads } from "../uploads";
 import { processStatementAnalysis } from "../domain/statement-analysis";
+import { processBureauChecks } from "../domain/bureau-check";
 
 /** Retry scans for files left in quarantine (e.g. scanner unavailable at upload time). */
 export async function rescanQuarantined(now = new Date()) {
@@ -76,5 +77,6 @@ export async function workerTick(now = new Date()) {
   results.uploadsExpired = await purgeExpiredUploads(now);
   // Periculum statement analysis: submissions within the concurrency limit, status checks, stored results.
   results.statementAnalysis = await processStatementAnalysis(now);
+  results.bureauChecks = await processBureauChecks(now);
   return results;
 }

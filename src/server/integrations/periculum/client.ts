@@ -243,3 +243,25 @@ export async function checkPericulumSignIn(): Promise<CallResult<{ expiresInSeco
   if (!r.ok) return r;
   return { ok: true, data: { expiresInSeconds: Math.round(((token?.expiresAt ?? Date.now()) - Date.now()) / 1000) }, status: r.status };
 }
+
+// ------------------------------------------------------------------ optional: Blacklist Search
+
+const blacklistSchema = z.object({ statementKey: z.number().int().nullable().optional() }).passthrough();
+export type VendorBlacklist = z.infer<typeof blacklistSchema>;
+
+/**
+ * POST /statements/blacklistsearch {statementKey, bvn} (documented). A search may be billable: a timeout or 5xx is
+ * AMBIGUOUS and is not resent automatically.
+ */
+export async function blacklistSearch(ids: Ids, p: { statementKey: number; bvn: string }): Promise<CallResult<VendorBlacklist>> {
+  const r = await api(
+    ids,
+    "BLACKLIST_SEARCH",
+    "/statements/blacklistsearch",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ statementKey: p.statementKey, bvn: p.bvn }) },
+    true,
+  );
+  if (!r.ok) return r;
+  const parsed = blacklistSchema.safeParse(r.data);
+  return parsed.success ? { ok: true, data: parsed.data, status: r.status } : invalidResponse(ids, "BLACKLIST_SEARCH");
+}
