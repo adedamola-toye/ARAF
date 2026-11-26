@@ -15,6 +15,11 @@ import { runStaffCreditCheck } from "@/server/staff/credit";
 import { PROFILE, STAFF, reqRow } from "@/server/demo/staff-scenario";
 import { uploadStaffDocument } from "@/server/staff/documents";
 import { makePdf } from "@/server/demo/scenario";
+import { setStaffAdvanceRetiredForTests } from "@/server/staff/permission";
+
+// Staff Salary Advance is retired; these tests cover the retained workflow code as it ran before retirement.
+beforeEach(() => setStaffAdvanceRetiredForTests(false));
+afterEach(() => setStaffAdvanceRetiredForTests(true));
 
 const N = (naira: number) => naira * 100;
 let bureau: TestBureau;

@@ -21,10 +21,42 @@ import { DomainError } from "../errors";
 /** Roles that may never use Staff Financing, whatever else the person holds. */
 export const STAFF_FINANCING_RESTRICTED_ROLES = ["SMILE_ASSOCIATE"] as const;
 
-export const STAFF_FINANCING_RESTRICTED_MESSAGE =
-  "Your current profile does not authorise you to access Staff Salary Advance. Please contact your administrator if you believe your access should be reviewed.";
+export const STAFF_FINANCING_RESTRICTED_MESSAGE = "Your current profile does not authorise you to access Staff Salary Advance. Please contact your administrator if you believe your access should be reviewed.";
 
-export type StaffFinancingDenial = "UNAUTHENTICATED" | "INACTIVE" | "RESTRICTED_ROLE" | "UNPROFILED";
+export type StaffFinancingDenial = "UNAUTHENTICATED" | "INACTIVE" | "RESTRICTED_ROLE" | "UNPROFILED" | "RETIRED";
+
+/**
+ * Staff Salary Advance is retired: no new requests, reviews, approvals, offers or register changes.
+ * Pending requests were closed as WITHDRAWN by migration 058. What remains open is limited to keeping
+ * records and finishing money already in motion: reading existing records and documents, completing a
+ * disbursement that was already started, recording repayments on advances already paid, and the
+ * archive / Legal and Shariah handover of completed facilities.
+ */
+let retired = true;
+export function staffAdvanceRetired(): boolean {
+  return retired;
+}
+/** Tests only: exercise the retained workflow code as it ran before retirement. */
+export function setStaffAdvanceRetiredForTests(v: boolean) {
+  if (process.env.NODE_ENV !== "test" && !process.env.VITEST) throw new Error("Test-only switch.");
+  retired = v;
+}
+export const STAFF_SALARY_ADVANCE_RETIRED_MESSAGE = "Staff Salary Advance has been retired. New requests, reviews and approvals are no longer available; existing records are kept for reference.";
+export const RETIRED_ALLOWED_ACTIONS: ReadonlySet<string> = new Set([
+  "VIEW_REQUEST",
+  "VIEW_MY_REQUESTS",
+  "VIEW_QUEUES",
+  "VIEWABLE_REQUEST",
+  "READ_STAFF_DOCUMENT",
+  "READ_ARCHIVE",
+  "SCAN_STAFF_DOCUMENT",
+  "COMPLETE_DISBURSEMENT",
+  "UPLOAD_STAFF_DOCUMENT", // limited to disbursement evidence while retired (staff/documents.ts)
+  "REASSIGN_DISBURSEMENT_OFFICER",
+  "RETRY_DOCUMENTATION_NOW",
+  "COMPLETE_HANDOVER_REVIEW",
+  "CONFIRM_HANDOVER_RECEIPT",
+]);
 export type StaffFinancingAccess = { allowed: true; roles: string[] } | { allowed: false; reason: StaffFinancingDenial; roles: string[] };
 
 export async function staffFinancingAccess(q: Db, staffId: string | null | undefined): Promise<StaffFinancingAccess> {
@@ -34,6 +66,7 @@ export async function staffFinancingAccess(q: Db, staffId: string | null | undef
   const roles = [...new Set((await q.query<{ role: string }>("SELECT role FROM role_assignments WHERE staff_id = $1 AND active", [staffId])).rows.map((r) => r.role))].sort();
   if (roles.some((r) => (STAFF_FINANCING_RESTRICTED_ROLES as readonly string[]).includes(r))) return { allowed: false, reason: "RESTRICTED_ROLE", roles };
   if (roles.length === 0) return { allowed: false, reason: "UNPROFILED", roles };
+  if (staffAdvanceRetired()) return { allowed: false, reason: "RETIRED", roles };
   return { allowed: true, roles };
 }
 
@@ -45,6 +78,8 @@ export async function requireStaffFinancing(ctx: Ctx, action: string, target?: s
   if (ctx.system && !ctx.actor) return; // background job (worker), not a person
   const access = await staffFinancingAccess(db, ctx.actor?.staffId);
   if (access.allowed) return;
+  // Retired: records and money already in motion only. Each step still checks its own role and status.
+  if (access.reason === "RETIRED" && RETIRED_ALLOWED_ACTIONS.has(action)) return;
   await auditOutsideTx(ctx, {
     action: "STAFF_FINANCING_ACCESS_DENIED",
     outcome: "DENIED",
@@ -52,7 +87,7 @@ export async function requireStaffFinancing(ctx: Ctx, action: string, target?: s
     staffRequestId: target && /^[0-9a-f-]{36}$/i.test(target) ? await existingRequest(target) : null,
     details: { attemptedAction: action, target: target ?? null, roles: access.roles, activeRole: ctx.actor?.activeRole ?? null },
   }).catch((e) => console.error("[staff-financing] could not audit a denied attempt", (e as Error).message));
-  throw new DomainError("FORBIDDEN", STAFF_FINANCING_RESTRICTED_MESSAGE);
+  throw new DomainError("FORBIDDEN", access.reason === "RETIRED" ? STAFF_SALARY_ADVANCE_RETIRED_MESSAGE : STAFF_FINANCING_RESTRICTED_MESSAGE);
 }
 
 async function existingRequest(id: string): Promise<string | null> {

@@ -23,8 +23,6 @@ export default async function ConfigurationCentre() {
   const templates = (await db.query<{ product_code: string; structure: string | null; production_approved: boolean }>("SELECT product_code, structure, production_approved FROM offer_templates WHERE status = 'ACTIVE' ORDER BY product_code")).rows;
   const sw = async (k: string) => !!(await db.query("SELECT enabled FROM feature_switches WHERE key = $1", [k])).rows[0]?.enabled;
   const bq = (await db.query<{ eligible_products: string[]; max_size: number; min_inspections: number }>("SELECT eligible_products, max_size, min_inspections FROM bouquet_settings WHERE id = 1")).rows[0];
-  const sa = (await db.query<{ version: number; deduction_rate_bps: number; eligibility_mode: string; eligibility_percent_bps: number; salary_record_max_age_days: number }>("SELECT * FROM staff_financing_settings ORDER BY version DESC LIMIT 1")).rows[0];
-  const registerN = await n("SELECT count(*) AS n FROM salary_register");
   const briefingOn = !!(await db.query("SELECT enabled FROM schedule_settings WHERE code = 'PERSONAL_BRIEFING'")).rows[0]?.enabled;
   const bouquetOn = await sw("BOUQUET_APPROVALS");
   const photoOn = await sw("VF_TL_PHOTO_REVIEW");
@@ -34,9 +32,8 @@ export default async function ConfigurationCentre() {
       [
         { href: "/admin/bouquet-settings", title: "Facility Bouquet", body: "Divisional Head concurrence over many approved facilities: eligible products, size, inspections, thresholds.", status: `${bouquetOn ? "On" : "Off"} · ${bq?.eligible_products.length ? bq.eligible_products.join(", ") : "no eligible product"} · max ${bq?.max_size ?? "—"} · inspect ${bq?.min_inspections ?? "—"}` },
         { href: "/admin/feature-controls", title: "Business photograph requirement", body: "Vendor Financing Team Lead photograph (upload, or skip with a reason carried to the Unit Head).", status: photoOn ? "Required" : "Off" },
-        { href: "/admin/staff-financing", title: "Salary advance", body: "Eligibility percentage, management fee, record validity, amounts, tenor and the Unit Head for the staff route.", status: sa ? `v${sa.version} · ${sa.eligibility_mode === "SALARY_REGISTER" ? `automatic ${sa.eligibility_percent_bps / 100}%` : "manual verification"} · fee ${sa.deduction_rate_bps / 100}% · record valid ${sa.salary_record_max_age_days} days` : undefined },
-        { href: "/admin/salary-register", title: "Salary register", body: "Verified salaries and salary accounts (CSV with preview), holds and confirmed repayments.", status: `${registerN} record(s)` },
-        { href: "/disbursements", title: "Disbursement controls", body: "CAD workspace: pre-disbursement checklist, holds, failed and uncertain postings. Offer acceptance: 24 hours for salary advance; no expiry configured for other products." },
+        { href: "/admin/staff-financing", title: "Salary advance (retired)", body: "Staff Salary Advance has been retired. Past requests stay available for reference, and repayments on advances already paid are still recorded.", status: "Retired" },
+        { href: "/disbursements", title: "Disbursement controls", body: "CAD workspace: pre-disbursement checklist, holds, failed and uncertain postings. Offer acceptance: no expiry configured." },
         { href: "/admin/profile-editors", title: "Team profile editors", body: "Team Leads allowed to correct the name and business unit of people in their own team (never roles or access)." },
         { href: "/admin/schedules", title: "Weekly Performance Briefing", body: "Sunday reports (Africa/Lagos), personal briefings, preview and test send.", status: `Personal briefings ${briefingOn ? "on" : "off"}` },
       ],

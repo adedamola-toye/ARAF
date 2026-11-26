@@ -11,11 +11,14 @@ import { documentLibrary } from "@/server/staff/sharepoint";
 import { config } from "@/server/config";
 import { APPLICANT_SUPPORTING_CATEGORIES, bpsLabel, formatNairaKobo, STAFF_DOC_CATEGORIES } from "@/lib/staff-financing";
 import { StaffSettingsForm, StaffTemplateForm } from "./AdminStaffForms";
+import { staffAdvanceRetired, STAFF_SALARY_ADVANCE_RETIRED_MESSAGE } from "@/server/staff/permission";
+import { StaffStatusBadge } from "../../staff-request/StatusBadge";
 
 export const metadata = { title: "Salary advance settings" };
 
 export default async function StaffFinancingAdmin() {
   await requireSuperAdmin();
+  if (staffAdvanceRetired()) return <RetiredRecords />;
   const versions = (await db.query("SELECT v.*, s.full_name AS created_by_name FROM staff_financing_settings v LEFT JOIN staff s ON s.id = v.created_by ORDER BY version DESC LIMIT 10")).rows;
   const cur = versions[0];
   const tpl = await activeStaffTemplate(db);
@@ -126,6 +129,58 @@ export default async function StaffFinancingAdmin() {
           </section>
         </div>
       </div>
+    </>
+  );
+}
+
+/** Retired product: every request kept for reference, read-only. */
+async function RetiredRecords() {
+  const rows = (
+    await db.query<{ id: string; ref: string; full_name: string; status: string; gross_kobo: string | null; updated_at: Date }>(
+      "SELECT id, ref, full_name, status, gross_kobo, updated_at FROM staff_requests WHERE status <> 'DRAFT' ORDER BY updated_at DESC",
+    )
+  ).rows;
+  return (
+    <>
+      <PageHeader
+        crumbs={[{ href: "/admin", label: "Administration" }, { label: "Salary advance" }]}
+        eyebrow="Administration"
+        title="Staff salary advance (retired)"
+        intro={`${STAFF_SALARY_ADVANCE_RETIRED_MESSAGE} Settings can no longer be changed. Repayments on advances already paid are recorded under Repayments.`}
+        actions={<Link className="btn" href="/admin/salary-register/repayments">Repayments</Link>}
+      />
+      {rows.length ? (
+        <div className="table-wrap">
+          <table className="data responsive">
+            <thead>
+              <tr>
+                <th>Reference</th>
+                <th>Staff member</th>
+                <th>Status</th>
+                <th>Amount</th>
+                <th>Last updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td data-label="Reference">
+                    <Link href={`/staff-request/${r.id}`}>{r.ref}</Link>
+                  </td>
+                  <td data-label="Staff member">{r.full_name}</td>
+                  <td data-label="Status">
+                    <StaffStatusBadge status={r.status} />
+                  </td>
+                  <td data-label="Amount">{formatNairaKobo(r.gross_kobo)}</td>
+                  <td data-label="Last updated">{formatLagos(r.updated_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="muted">No salary advance requests were submitted.</p>
+      )}
     </>
   );
 }

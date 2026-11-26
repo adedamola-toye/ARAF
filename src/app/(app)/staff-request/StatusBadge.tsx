@@ -5,6 +5,7 @@ const ICON: Partial<Record<StaffStatus, LucideIcon>> = {
   COMPLETED: CheckCircle2,
   APPROVED: CheckCircle2,
   DECLINED: XCircle,
+  WITHDRAWN: XCircle,
   OFFER_EXPIRED: XCircle,
   AWAITING_SIGNED_OFFER: FileSignature,
   RETURNED_FOR_CORRECTION: Clock,

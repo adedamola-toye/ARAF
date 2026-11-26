@@ -19,8 +19,8 @@ export default async function Repayments() {
       <PageHeader
         eyebrow="Salary register"
         title="Repayments"
-        crumbs={[{ href: "/admin/salary-register", label: "Salary register" }, { label: "Repayments" }]}
-        intro="Record a repayment only once it is confirmed (payroll deduction file or a posted transfer), with its reference. ARAF does not deduct salaries or create repayment mandates."
+        crumbs={[{ href: "/admin/staff-financing", label: "Salary advance (retired)" }, { label: "Repayments" }]}
+        intro="Staff Salary Advance has been retired; repayments on advances already paid are still recorded here. Record a repayment only once it is confirmed (payroll deduction file or a posted transfer), with its reference. ARAF does not deduct salaries or create repayment mandates."
       />
       {rows.length ? (
         <div className="stack">

@@ -3,7 +3,7 @@
  * type sniffing, quarantine and malware scan, versioned rows, and access checks on every read.
  */
 import { randomUUID } from "node:crypto";
-import { requireStaffFinancing } from "./permission";
+import { requireStaffFinancing, staffAdvanceRetired } from "./permission";
 import type { Db, Tx } from "../db";
 import { db, withTx } from "../db";
 import type { Ctx } from "../context";
@@ -54,6 +54,11 @@ async function nextSeq(tx: Tx, requestId: string) {
 
 /** Which categories the actor may upload now, and in which capacity. */
 export async function uploadableCategories(q: Db, req: StaffRequestRow, staffId: string, now: Date): Promise<{ role: string; categories: StaffDocCategory[] }> {
+  // Retired product: only the evidence needed to finish a disbursement already in progress.
+  if (staffAdvanceRetired()) {
+    const ok = req.status === "DISBURSEMENT_IN_PROGRESS" && req.disbursement_officer_id === staffId;
+    return { role: ok ? "DISBURSEMENT_OFFICER" : "NONE", categories: ok ? ["DISBURSEMENT_EVIDENCE"] : [] };
+  }
   if (req.applicant_id === staffId) {
     if (req.status === "DRAFT" || req.status === "RETURNED_FOR_CORRECTION") return { role: "APPLICANT", categories: APPLICANT_SUPPORTING_CATEGORIES };
     if (req.status === "AWAITING_SIGNED_OFFER" && !req.signed_offer_received_at && req.offer_deadline_at && new Date(req.offer_deadline_at) > now) {

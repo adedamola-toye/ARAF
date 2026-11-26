@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { db } from "@/server/db";
 import { resetDb } from "./helpers";
 import { ctxFor } from "@/server/demo/scenario";
 import { bulkGrantRole, bulkProvisionStaff } from "@/server/domain/admin";
 import { staffFinancingAccess } from "@/server/staff/permission";
+import { setStaffAdvanceRetiredForTests } from "@/server/staff/permission";
+
+// Staff Salary Advance is retired; these tests cover the retained workflow code as it ran before retirement.
+beforeEach(() => setStaffAdvanceRetiredForTests(false));
+afterEach(() => setStaffAdvanceRetiredForTests(true));
 
 const ADMIN = "superadmin@altbank.ng";
 const head = "Full name,Email,State,Business unit";
