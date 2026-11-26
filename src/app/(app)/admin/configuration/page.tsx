@@ -25,6 +25,7 @@ export default async function ConfigurationCentre() {
   const bq = (await db.query<{ eligible_products: string[]; max_size: number; min_inspections: number }>("SELECT eligible_products, max_size, min_inspections FROM bouquet_settings WHERE id = 1")).rows[0];
   const briefingOn = !!(await db.query("SELECT enabled FROM schedule_settings WHERE code = 'PERSONAL_BRIEFING'")).rows[0]?.enabled;
   const bouquetOn = await sw("BOUQUET_APPROVALS");
+  const periculumSaved = !!(await db.query("SELECT 1 FROM integration_credentials WHERE provider = 'PERICULUM'")).rowCount;
   const photoOn = await sw("VF_TL_PHOTO_REVIEW");
   const groups: [string, Tile[]][] = [
     [
@@ -33,6 +34,7 @@ export default async function ConfigurationCentre() {
         { href: "/admin/bouquet-settings", title: "Facility Bouquet", body: "Divisional Head concurrence over many approved facilities: eligible products, size, inspections, thresholds.", status: `${bouquetOn ? "On" : "Off"} · ${bq?.eligible_products.length ? bq.eligible_products.join(", ") : "no eligible product"} · max ${bq?.max_size ?? "—"} · inspect ${bq?.min_inspections ?? "—"}` },
         { href: "/admin/feature-controls", title: "Business photograph requirement", body: "Vendor Financing Team Lead photograph (upload, or skip with a reason carried to the Unit Head).", status: photoOn ? "Required" : "Off" },
         { href: "/admin/staff-financing", title: "Salary advance (retired)", body: "Staff Salary Advance has been retired. Past requests stay available for reference, and repayments on advances already paid are still recorded.", status: "Retired" },
+        { href: "/admin/periculum", title: "Periculum connection", body: "API credentials for Automatic Statement Analysis (secret stored encrypted, never shown) and a free sign-in test.", status: periculumSaved ? "Credentials saved" : "Not set" },
         { href: "/disbursements", title: "Disbursement controls", body: "CAD workspace: pre-disbursement checklist, holds, failed and uncertain postings. Offer acceptance: no expiry configured." },
         { href: "/admin/profile-editors", title: "Team profile editors", body: "Team Leads allowed to correct the name and business unit of people in their own team (never roles or access)." },
         { href: "/admin/schedules", title: "Weekly Performance Briefing", body: "Sunday reports (Africa/Lagos), personal briefings, preview and test send.", status: `Personal briefings ${briefingOn ? "on" : "off"}` },
