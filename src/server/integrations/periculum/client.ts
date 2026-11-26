@@ -1,7 +1,7 @@
 /**
  * Periculum Insights API client (server-side only), built strictly from insights-periculum.readme.io:
  *
- *   Token        POST {authUrl}  (OAuth 2.0 client credentials; client authenticates with HTTP Basic)
+ *   Token        POST {authUrl}  (OAuth 2.0 client credentials; client_id and client_secret in the form body, as documented)
  *   Submit PDF   PUT  /statements                          multipart: file, password, statementType
  *   Analytics    GET  /statements/{statementKey}           processingStatus + analytics
  *   Transactions GET  /statements/{statementKey}/transactions
@@ -88,15 +88,16 @@ async function accessToken(ctxIds: Ids, force = false): Promise<CallResult<strin
   const now = Date.now();
   if (!force && token && token.expiresAt - REFRESH_MARGIN_MS > now) return { ok: true, data: token.value, status: 200 };
   const c = config.periculum;
-  const basic = Buffer.from(`${c.clientId}:${c.clientSecret}`).toString("base64");
+  // Exactly as documented (Authentication Request): client_id, client_secret and grant_type in the form body.
+  // (Not HTTP Basic: secrets containing characters such as "+" or "%" can be decoded differently in a header.)
   const r = await send(
     ctxIds,
     "TOKEN",
     c.authUrl,
     {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Authorization: `Basic ${basic}` },
-      body: new URLSearchParams({ grant_type: "client_credentials" }).toString(),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: c.clientId, client_secret: c.clientSecret, grant_type: "client_credentials" }).toString(),
     },
     false,
   );
