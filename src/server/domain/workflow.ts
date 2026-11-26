@@ -44,7 +44,7 @@ import {
   type ApplicantType,
   type DraftData,
 } from "./application-data";
-import { type AppRow, chooseAssignee, openTask, type Chosen } from "./assignment";
+import { type AppRow, chooseAssignee, openTask, refreshInitiatorScope, type Chosen } from "./assignment";
 import { holdsRole } from "./access";
 import { approvedAssessment, latestAssessment } from "./assessment";
 import { activeCalculator, calculatorUsableForApproval, findCalculator } from "./apr/registry";
@@ -84,7 +84,7 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
        active_correction_id=$15, customer_id=$16, lock_version = lock_version + 1, updated_at=$17,
        oss_reviewer_id=$18, team_lead_id=$19, hrs_id=$20, hou_id=$21, team=$22, outlet_location_id=$23, assigned_rm_id=$24,
        customer_profile=$25, financing_structure=$26, product_config_id=$27, location_snapshot=$28, origination_location_id=$29,
-       mo_head_id=$30
+       mo_head_id=$30, region=$31, business_unit=$32
      WHERE id=$1`,
     [
       app.id, app.stage, app.status, app.route, app.current_version_id, app.requested_amount_kobo, app.customer_name,
@@ -94,6 +94,7 @@ export async function persistApp(tx: Tx, app: AppRow, now: Date) {
       app.assigned_rm_id ?? null, app.customer_profile ?? null, app.financing_structure ?? null, app.product_config_id ?? null,
       app.location_snapshot ? JSON.stringify(app.location_snapshot) : null, app.origination_location_id ?? null,
       app.mo_head_id ?? null,
+      app.region ?? null, app.business_unit ?? null,
     ],
   );
 }
@@ -495,6 +496,8 @@ export async function submitApplication(ctx: Ctx, appId: string, idempotencyKey:
       if (!(await holdsRole(tx, actor.staffId, app.initiator_role))) throw forbidden("Your initiator role is no longer active.");
       if (app.workflow === "RETAIL") return submitRetail(tx, ctx, app);
       await finaliseVersionForSubmission(tx, ctx, app);
+      // Follow the initiator's current state/team so a draft created before a role move is routed correctly.
+      await refreshInitiatorScope(tx, app);
       await pinRouting(tx, app);
       await recordRequestLedger(tx, app, ctx.now);
       (app as { submitted_at: Date | null }).submitted_at = ctx.now;
@@ -1029,6 +1032,8 @@ export async function invalidateCreditApprovals(tx: Tx, ctx: Ctx, app: AppRow, w
 
 async function resubmitByInitiator(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRow): Promise<string> {
   if (app.workflow === "RETAIL") return retailResubmit(tx, ctx, app, task);
+  // Follow the initiator's current state/team: a move during the correction must not re-route to the old state.
+  await refreshInitiatorScope(tx, app);
   const corr = await activeCorrection(tx, app, "INITIATOR_CORRECTION");
   const prevRoute = app.route;
   const { material } = await finaliseVersionForSubmission(tx, ctx, app);

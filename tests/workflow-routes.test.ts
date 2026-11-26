@@ -114,6 +114,18 @@ describe("business endorsement paths", () => {
     expect((await openTaskOf(n)).email).toBe("anm.lead.north@altbank.ng");
     expect((await openTaskOf(s)).email).toBe("anm.lead.south@altbank.ng");
   });
+  it("follows an ANM's current state when their role assignment moves, including an open endorsement", async () => {
+    const id = await createSubmittedCase({ initiator: "ANM_NORTH", amountKobo: NAIRA(1_000) });
+    expect((await openTaskOf(id)).email).toBe("anm.lead.north@altbank.ng");
+    const admin = await ctxFor("superadmin@altbank.ng");
+    const anm = await staffId("anm.north@altbank.ng");
+    await revokeRole(admin, { staffId: anm, role: "ANM" });
+    await grantRole(admin, { staffId: anm, role: "ANM", region: "LAGOS" });
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("BUSINESS_ENDORSEMENT");
+    expect(t.email).toBe("anm.lead.south@altbank.ng");
+    expect((await appRow(id)).region).toBe("LAGOS");
+  });
   it("credit routing cannot start before endorsement", async () => {
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: NAIRA(1_000) });
     const app = await appRow(id);

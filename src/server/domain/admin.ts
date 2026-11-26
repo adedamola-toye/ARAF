@@ -6,7 +6,7 @@ import { config } from "../config";
 import { DomainError, conflict, forbidden, invalid, notFound } from "../errors";
 import { revokeAllSessions } from "../auth/session";
 import { holdsRole } from "./access";
-import { type AppRow, type EligibleStaff, assignmentSpec, eligibleStaff, notifyAssignment, STAGE_REVIEWER_COLUMN } from "./assignment";
+import { type AppRow, type EligibleStaff, assignmentSpec, chooseAssignee, eligibleStaff, notifyAdminsUnassigned, notifyAssignment, refreshInitiatorScope, STAGE_REVIEWER_COLUMN } from "./assignment";
 import { notifyExceptionReviewer } from "./credit-exception";
 import { notify } from "./notifications";
 import { REGION_REQUIRED_ROLES, SINGLE_HOLDER_ROLES, isRegion, isRole, normaliseNigerianState, type Role } from "./roles";
@@ -144,6 +144,8 @@ async function grantRoleInTx(tx: Tx, ctx: Ctx, p: { staffId: string; role: strin
   }
   await tx.query("UPDATE staff SET region = $2, business_unit = $3, updated_at = $4 WHERE id = $1", [p.staffId, region, businessUnit, ctx.now]);
   await audit(tx, ctx, { action: "ROLE_GRANTED", actorRole: "SUPER_ADMIN", details: { staffId: p.staffId, role: p.role, region, team } });
+  // A role move must follow through to this person's in-flight requests that are awaiting a state-scoped review.
+  await rerouteOpenTasksForInitiator(tx, ctx, p.staffId, p.role);
 }
 
 export async function grantRole(ctx: Ctx, p: { staffId: string; role: string; region?: string | null; businessUnit?: string | null; team?: string | null }) {
@@ -180,6 +182,101 @@ async function unassignOpenTasks(tx: Tx, ctx: Ctx, staffId: string, role: string
     await audit(tx, ctx, { action: "TASK_UNASSIGNED", applicationId: t.application_id, stage: t.stage, assignmentFrom: staffId, details: { taskId: t.id, reason: role ? "ROLE_REVOKED" : "STAFF_SUSPENDED" } });
   }
   return tasks.length;
+}
+
+/** Stages whose reviewer follows the initiator's state/team: retail Team Lead review, legacy ANM endorsement. */
+const INITIATOR_SCOPED_STAGES = ["TEAM_LEAD_REVIEW", "BUSINESS_ENDORSEMENT"] as const;
+
+function isInitiatorScoped(app: Pick<AppRow, "workflow" | "initiator_role">, stage: string): boolean {
+  if (app.workflow === "RETAIL") return stage === "TEAM_LEAD_REVIEW";
+  return stage === "BUSINESS_ENDORSEMENT" && app.initiator_role === "ANM";
+}
+
+/**
+ * When a person's role assignment moves state/team, keep their open, state-scoped reviews with the reviewer for
+ * the new scope instead of leaving them with the reviewer from the state they have left. The request's stored
+ * scope is brought in step at the same time so later stages do not read stale values.
+ */
+async function rerouteOpenTasksForInitiator(tx: Tx, ctx: Ctx, staffId: string, role: string): Promise<void> {
+  const rows = (
+    await tx.query<{ app_id: string }>(
+      `SELECT DISTINCT a.id AS app_id
+         FROM applications a JOIN tasks t ON t.application_id = a.id AND t.status = 'OPEN'
+        WHERE a.initiator_id = $1 AND a.initiator_role = $2
+          AND a.status NOT IN ('COMPLETED','CLOSED','REJECTED','WITHDRAWN','EXPIRED')
+          AND t.stage = ANY($3::text[])`,
+      [staffId, role, INITIATOR_SCOPED_STAGES],
+    )
+  ).rows;
+  for (const { app_id } of rows) {
+    const app = (await tx.query<AppRow>("SELECT * FROM applications WHERE id = $1 FOR UPDATE", [app_id])).rows[0];
+    const task = (
+      await tx.query<{ id: string; stage: Stage; assignee_id: string | null; assignee_role: Role }>(
+        "SELECT id, stage, assignee_id, assignee_role FROM tasks WHERE application_id = $1 AND status = 'OPEN' FOR UPDATE",
+        [app.id],
+      )
+    ).rows[0];
+    if (!task || !isInitiatorScoped(app, task.stage)) continue;
+    const before = { region: app.region, team: app.team, businessUnit: app.business_unit };
+    await refreshInitiatorScope(tx, app);
+    const scopeChanged = before.region !== app.region || before.team !== app.team || before.businessUnit !== app.business_unit;
+    const chosen = await chooseAssignee(tx, app, task.stage, { preferred: task.assignee_id });
+    if (chosen.staffId === task.assignee_id) {
+      if (scopeChanged) {
+        await tx.query("UPDATE applications SET region = $2, team = $3, business_unit = $4, lock_version = lock_version + 1, updated_at = $5 WHERE id = $1", [
+          app.id, app.region, app.team, app.business_unit, ctx.now,
+        ]);
+        await audit(tx, ctx, {
+          action: "ROUTING_SCOPE_REFRESHED",
+          applicationId: app.id,
+          stage: task.stage,
+          reason: "Initiator's role assignment moved state/team.",
+          details: { before, after: { region: app.region, team: app.team, businessUnit: app.business_unit } },
+        });
+      }
+      continue;
+    }
+    await tx.query("UPDATE tasks SET assignee_id = $2, assignee_role = $3, assigned_at = $4 WHERE id = $1", [
+      task.id, chosen.staffId, chosen.role, chosen.staffId ? ctx.now : null,
+    ]);
+    await tx.query(
+      `INSERT INTO assignment_changes (task_id, from_staff_id, to_staff_id, method, eligible_pool, changed_by, changed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [task.id, task.assignee_id, chosen.staffId, chosen.staffId ? "REROUTED" : "UNASSIGNED_ON_SCOPE_CHANGE", JSON.stringify(chosen.pool.map((p) => ({ id: p.staff_id, role: p.role }))), ctx.actor?.staffId ?? null, ctx.now],
+    );
+    const col = STAGE_REVIEWER_COLUMN[task.stage];
+    if (col === "team_lead_id") app.team_lead_id = chosen.staffId;
+    else if (col === "endorser_id") app.endorser_id = chosen.staffId;
+    await tx.query(
+      "UPDATE applications SET region = $2, team = $3, business_unit = $4, team_lead_id = $5, endorser_id = $6, lock_version = lock_version + 1, updated_at = $7 WHERE id = $1",
+      [app.id, app.region, app.team, app.business_unit, app.team_lead_id, app.endorser_id, ctx.now],
+    );
+    await audit(tx, ctx, {
+      action: "TASK_REASSIGNED",
+      applicationId: app.id,
+      stage: task.stage,
+      reason: "Initiator's state/team moved; review rerouted to the reviewer for the current scope.",
+      assignmentFrom: task.assignee_id,
+      assignmentTo: chosen.staffId,
+      details: { taskId: task.id, method: "INITIATOR_SCOPE_CHANGE", scope: { region: app.region, team: app.team } },
+    });
+    if (chosen.staffId) {
+      await notifyAssignment(tx, ctx, app, task.id, task.stage, chosen.staffId, `:scope:${ctx.now.getTime()}`);
+      if (task.assignee_id) {
+        await notify(tx, ctx.now, {
+          recipientId: task.assignee_id,
+          kind: "TASK_REASSIGNED_AWAY",
+          title: `${app.ref} reassigned`,
+          body: `${app.ref} was moved to the reviewer for ${app.region ?? "the new scope"}${app.team ? ` / ${app.team}` : ""} after the initiator's role assignment changed.`,
+          applicationId: app.id,
+          link: `/requests/${app.id}`,
+          dedupeKey: `scope-reassigned-away:${task.id}:${ctx.now.getTime()}`,
+        });
+      }
+    } else {
+      await notifyAdminsUnassigned(tx, ctx, app, task.id, task.stage, chosen.role);
+    }
+  }
 }
 
 /** Eligible assignees for an open task, using the same rules as automatic routing. */

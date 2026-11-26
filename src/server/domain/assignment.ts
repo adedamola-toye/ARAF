@@ -187,6 +187,55 @@ function rbeSpec(app: AppRow): AssignmentSpec {
 async function cxSpec(tx: Tx, app: AppRow): Promise<AssignmentSpec> {
   return { roles: ["CX_CREDIT_REVIEWER"], exclude: [app.initiator_id, app.selected_rbe_id, app.endorser_id, ...(await priorApprovers(tx, app.id)).filter((x) => x !== app.cx_reviewer_id)], scopeNote: "CX Credit Reviewer (not involved earlier on this request)" };
 }
+export interface InitiatorScope {
+  region: string | null;
+  team: string | null;
+  businessUnit: string | null;
+}
+
+/**
+ * The state/team that owns a request's business review.
+ *
+ * A request keeps a scope snapshot from when it was created, but that snapshot goes stale when the
+ * initiator's role assignment is moved to another state/team (a correction to their record). Routing must
+ * follow the initiator's CURRENT active assignment (or the originating outlet for a Delight Officer), otherwise
+ * a resubmission can send the case back to a reviewer in the state the initiator has left.
+ *
+ * Falls back to the stored snapshot when no active assignment/outlet can be read, so an in-flight case is
+ * never stranded by a missing record.
+ */
+export async function currentInitiatorScope(tx: Tx, app: AppRow): Promise<InitiatorScope> {
+  const fallback: InitiatorScope = { region: app.region, team: app.team, businessUnit: app.business_unit };
+  if (app.initiator_role === "DELIGHT_OFFICER" && app.workflow === "RETAIL") {
+    if (!app.outlet_location_id) return fallback;
+    const loc = (
+      await tx.query<{ state: string | null; team: string | null; business_unit: string | null }>(
+        "SELECT state, team, business_unit FROM locations WHERE id = $1",
+        [app.outlet_location_id],
+      )
+    ).rows[0];
+    return loc ? { region: loc.state, team: loc.team, businessUnit: loc.business_unit } : fallback;
+  }
+  const ra = (
+    await tx.query<{ region: string | null; team: string | null; business_unit: string | null }>(
+      `SELECT ra.region, ra.team, ra.business_unit
+         FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
+        WHERE ra.staff_id = $1 AND ra.role = $2 AND ra.active AND s.status = 'ACTIVE'
+        ORDER BY ra.granted_at DESC LIMIT 1`,
+      [app.initiator_id, app.initiator_role],
+    )
+  ).rows[0];
+  return ra ? { region: ra.region, team: ra.team, businessUnit: ra.business_unit } : fallback;
+}
+
+/** Bring the request's stored scope in step with the initiator's current assignment/outlet. */
+export async function refreshInitiatorScope(tx: Tx, app: AppRow): Promise<void> {
+  const scope = await currentInitiatorScope(tx, app);
+  app.region = scope.region;
+  app.team = scope.team;
+  app.business_unit = scope.businessUnit;
+}
+
 /** Unit Head stage when the request's routing pinned a Unit Head (DBC regional Unit Head or E-commerce Unit Head). */
 function pinnedUnitHead(app: AppRow, exclude: (string | null)[]): AssignmentSpec | null {
   if (!app.routing_segment) return null;
@@ -214,16 +263,17 @@ async function retailSpec(tx: Tx, app: AppRow, stage: Stage): Promise<Assignment
       return { roles: ["OUTLET_SERVICE_SUPERVISOR"], exclude: base, only: [loc?.oss_staff_id ?? null], scopeNote: loc?.oss_staff_id ? "Outlet Service Supervisor mapped to the originating outlet" : "No Outlet Service Supervisor is mapped to the originating outlet" };
     }
     case "TEAM_LEAD_REVIEW": {
-      // The Team Lead who owns the initiator's team, inside the request's state. Team codes are compared with
-      // punctuation removed (RETAIL KANO / RETAIL-KANO), not by guessing that two different codes are the same
-      // team. If the request has no team, the state's Team Lead is the only safe scope, and the reverse is true
-      // when no state was recorded.
+      // The Team Lead who owns the initiator's CURRENT team, inside their CURRENT state. Team codes are compared
+      // with punctuation removed (RETAIL KANO / RETAIL-KANO), not by guessing that two different codes are the
+      // same team. If the request has no team, the state's Team Lead is the only safe scope, and the reverse is
+      // true when no state was recorded.
+      const scope = await currentInitiatorScope(tx, app);
       const exclude = [...base, app.oss_reviewer_id];
-      if (app.region && app.team)
-        return { roles: ["TEAM_LEAD"], exclude, region: app.region, team: app.team, scopeNote: `Team Lead for team ${app.team} in ${app.region}` };
-      if (app.region) return { roles: ["TEAM_LEAD"], exclude, region: app.region, scopeNote: `Team Lead in ${app.region}` };
-      if (!app.team) return { roles: ["TEAM_LEAD"], exclude, only: [], scopeNote: "The request has no state or team, so no Team Lead is in scope" };
-      return { roles: ["TEAM_LEAD"], exclude, team: app.team, scopeNote: `Team Lead for team ${app.team}` };
+      if (scope.region && scope.team)
+        return { roles: ["TEAM_LEAD"], exclude, region: scope.region, team: scope.team, scopeNote: `Team Lead for team ${scope.team} in ${scope.region}` };
+      if (scope.region) return { roles: ["TEAM_LEAD"], exclude, region: scope.region, scopeNote: `Team Lead in ${scope.region}` };
+      if (!scope.team) return { roles: ["TEAM_LEAD"], exclude, only: [], scopeNote: "The request has no state or team, so no Team Lead is in scope" };
+      return { roles: ["TEAM_LEAD"], exclude, team: scope.team, scopeNote: `Team Lead for team ${scope.team}` };
     }
     case "HRS_REVIEW":
       return { roles: ["HEAD_OF_RETAIL_SALES"], exclude: [...base, app.oss_reviewer_id, app.team_lead_id], scopeNote: "Head of Retail Sales (organisation)" };
@@ -283,7 +333,9 @@ export async function assignmentSpec(tx: Tx, app: AppRow, stage: Stage): Promise
           ? { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id], only: [lead], scopeNote: "The Merchant Officer's Lead (reporting line)" }
           : { roles: ["MERCHANT_OFFICER_LEAD"], exclude: [app.initiator_id] };
       }
-      const zone = zoneForRegion(app.region);
+      // ANM routing is zone-scoped: follow the initiator's current state, not the state captured at creation.
+      const scope = await currentInitiatorScope(tx, app);
+      const zone = zoneForRegion(scope.region);
       if (zone === "NORTH") return { roles: ["ANM_LEAD_NORTH"], exclude: [app.initiator_id] };
       if (zone === "SOUTH") return { roles: ["ANM_LEAD_SOUTH"], exclude: [app.initiator_id] };
       return { roles: [], exclude: [] }; // ANM without a configured state -> unstaffed
@@ -439,7 +491,7 @@ export async function notifyAssignment(tx: Tx, ctx: Ctx, app: AppRow, taskId: st
   });
 }
 
-async function notifyAdminsUnassigned(tx: Tx, ctx: Ctx, app: AppRow, taskId: string, stage: Stage, role: Role) {
+export async function notifyAdminsUnassigned(tx: Tx, ctx: Ctx, app: AppRow, taskId: string, stage: Stage, role: Role) {
   const admins = await tx.query<{ email: string }>(
     `SELECT s.email FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
       WHERE ra.active AND ra.role = 'SUPER_ADMIN' AND s.status = 'ACTIVE'`,

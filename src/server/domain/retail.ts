@@ -24,7 +24,7 @@ import { caseLink, simpleEmail } from "../notify/templates";
 import { PLATFORM_NAME, RETAIL_REF_PREFIX } from "../brand";
 import { TIN_RE, type ApplicantType } from "./application-data";
 import { holdsRole } from "./access";
-import { chooseAssignee, type AppRow } from "./assignment";
+import { chooseAssignee, currentInitiatorScope, refreshInitiatorScope, type AppRow } from "./assignment";
 import { MISSING_DOCUMENT_MESSAGES, currentCleanDocuments, listDocuments } from "./documents";
 import { checkPhotos, evaluateMatrix, type MatrixItem, type PhotoCheck } from "./doc-matrix";
 import { computeAffordability, rulesSnapshot, type AffordabilityInput, type AffordabilityOutput } from "./affordability";
@@ -646,14 +646,15 @@ async function businessStages(tx: Tx, app: AppRow, now: Date): Promise<Stage[]> 
  * (RETAIL KANO / RETAIL-KANO), so compare them with every non-alphanumeric character removed.
  */
 async function teamLeadFor(tx: Tx, app: AppRow): Promise<string | null> {
-  if (!app.region) return null;
-  const teamKey = app.team ? app.team.toUpperCase().replace(/[^A-Z0-9]/g, "") : null;
+  const scope = await currentInitiatorScope(tx, app);
+  if (!scope.region) return null;
+  const teamKey = scope.team ? scope.team.toUpperCase().replace(/[^A-Z0-9]/g, "") : null;
   const r = await tx.query<{ staff_id: string }>(
     `SELECT ra.staff_id FROM role_assignments ra JOIN staff s ON s.id = ra.staff_id
       WHERE ra.active AND s.status = 'ACTIVE' AND ra.role = 'TEAM_LEAD' AND ra.region = ANY($1::text[])
         AND ($2::text IS NULL OR regexp_replace(upper(coalesce(ra.team, '')), '[^A-Z0-9]', '', 'g') = $2)
       ORDER BY s.full_name LIMIT 1`,
-    [regionScopeValues(app.region), teamKey],
+    [regionScopeValues(scope.region), teamKey],
   );
   return r.rows[0]?.staff_id ?? null;
 }
@@ -727,6 +728,8 @@ export async function submitRetail(tx: Tx, ctx: Ctx, app: AppRow): Promise<Actio
   await recordRequestLedger(tx, app, ctx.now);
   if ((app.initiator_role === "TEAM_LEAD" || app.initiator_role === "UNIT_HEAD") && cfg.config.approvalPolicy !== "RETAIL_CX_V1")
     throw gate("Team Leads and Unit Heads can submit only products on the CX approval policy, which routes their requests to independent reviewers.");
+  // Use the initiator's current state/team so a draft created before a role move is routed correctly.
+  await refreshInitiatorScope(tx, app);
   // The approval policy and the approval workflow version are pinned at first submission and kept for the life of the request.
   // Non-DBC RMs follow the confirmed route (RBE → CX → Credit Officer by amount → E-commerce Unit Head → Divisional
   // Head), so credit is routed by amount (the standard credit bands) whatever the product's business policy.
@@ -761,6 +764,9 @@ export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
   // A correction raised by the first credit reviewer returns to that same reviewer when the case reaches
   // credit again, even if the correction restarts an earlier stage. Never silently hand it to a different one.
   const returningFirstReviewer = corr.from_stage === "FIRST_CREDIT_REVIEW" ? corr.from_assignee_id : null;
+  // Follow the initiator's current state/team: a move during the correction must not send the case back to
+  // the reviewer who held it in the previous state.
+  await refreshInitiatorScope(tx, app);
   const prevData = retailDataSchema.parse((await tx.query("SELECT data FROM application_versions WHERE id = $1", [app.current_version_id])).rows[0]?.data ?? {});
   const { material, cfg, rules, data } = await finaliseRetailVersion(tx, ctx, app);
   await recordDecision(tx, ctx, app, task, "RESUBMIT", null);
@@ -785,7 +791,11 @@ export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
   // Mark the returning reviewer as the request's first reviewer before choosing, so separation-of-duties
   // does not exclude them from their own correction.
   if (corr.from_stage === "FIRST_CREDIT_REVIEW" && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
-  const chosen = await chooseAssignee(tx, app, corr.from_stage, { preferred: corr.from_assignee_id, requirePreferred: true });
+  // Credit reviews return to the same reviewer strictly (four-eyes). Business reviews return to the same
+  // reviewer when they are still in scope, but fall back to the current scope's reviewer rather than leaving
+  // the case unassigned when the initiator's state/team has moved.
+  const creditReturn = corr.from_stage === "FIRST_CREDIT_REVIEW" || corr.from_stage === "SECOND_CREDIT_REVIEW";
+  const chosen = await chooseAssignee(tx, app, corr.from_stage, { preferred: corr.from_assignee_id, requirePreferred: creditReturn });
   if (corr.from_stage === "FIRST_CREDIT_REVIEW" && chosen.staffId) app.first_reviewer_id = chosen.staffId;
   await moveTo(tx, ctx, app, corr.from_stage, chosen, "Resubmitted after correction (non-material)");
   return `Resubmitted to ${STAGE_LABELS[corr.from_stage]}.`;

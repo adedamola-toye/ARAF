@@ -210,6 +210,67 @@ describe("business review routing", () => {
     await expect(adminAssignTask(admin, t.id, outside, "Covering the Lagos queue from Abuja")).rejects.toThrow(/not eligible/);
   });
 
+  it("routes a draft to the initiator's current state after their role assignment moves", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    const id = await vfCase({ submit: false });
+    const oyoLead = await staffId("do.ife@altbank.ng");
+    await grantRole(admin, { staffId: oyoLead, role: "TEAM_LEAD", region: "OYO", team: "RETAIL-OYO" });
+    await revokeRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM" });
+    await grantRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM", region: "OYO", team: "RETAIL-OYO" });
+    const rm = await ctxFor("rm.bola@altbank.ng");
+    await passRetailCreditChecks(rm, id);
+    await submitApplication(rm, id, key());
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.email).toBe("do.ife@altbank.ng");
+    const a = await app(id);
+    expect(a.region).toBe("OYO");
+    expect(a.team).toBe("RETAIL-OYO");
+  });
+
+  it("reroutes a material resubmission to the Team Lead in the initiator's current state", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    const id = await vfCase();
+    await driveBusinessReview(id);
+    const oyoLead = await staffId("do.ife@altbank.ng");
+    await grantRole(admin, { staffId: oyoLead, role: "TEAM_LEAD", region: "OYO", team: "RETAIL-OYO" });
+    await revokeRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM" });
+    await grantRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM", region: "OYO", team: "RETAIL-OYO" });
+    await act(id, "RETURN", { reason: "Use the vendor's other verified account" });
+    const rm = await ctxFor("rm.bola@altbank.ng");
+    const motors = await vendorAccount("Synthetic Motors Ltd");
+    await saveRetailDraft(rm, id, { data: { vendorId: motors.vendor_id, vendorAccountId: motors.account_id } });
+    const res = await act(id, "RESUBMIT");
+    expect(res.message).toMatch(/Material change detected/);
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.email).toBe("do.ife@altbank.ng");
+    const a = await app(id);
+    expect(a.region).toBe("OYO");
+    expect(a.team).toBe("RETAIL-OYO");
+    expect(a.team_lead_id).toBe(oyoLead);
+  });
+
+  it("reroutes an open Team Lead review immediately when the initiator's role moves state", async () => {
+    await vf();
+    const admin = await ctxFor("superadmin@altbank.ng");
+    const id = await vfCase();
+    expect((await openTaskOf(id)).email).toBe("tl.lagos@altbank.ng");
+    const oyoLead = await staffId("do.ife@altbank.ng");
+    await grantRole(admin, { staffId: oyoLead, role: "TEAM_LEAD", region: "OYO", team: "RETAIL-OYO" });
+    await revokeRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM" });
+    await grantRole(admin, { staffId: await staffId("rm.bola@altbank.ng"), role: "RM", region: "OYO", team: "RETAIL-OYO" });
+    const t = await openTaskOf(id);
+    expect(t.stage).toBe("TEAM_LEAD_REVIEW");
+    expect(t.email).toBe("do.ife@altbank.ng");
+    const a = await app(id);
+    expect(a.region).toBe("OYO");
+    expect(a.team).toBe("RETAIL-OYO");
+    expect(a.team_lead_id).toBe(oyoLead);
+  });
+
   it("the final assessment takes the statement period from the uploaded statements instead of blocking approval", async () => {
     await vf();
     const id = await vfCase();
