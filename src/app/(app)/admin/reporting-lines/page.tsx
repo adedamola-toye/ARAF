@@ -23,7 +23,7 @@ async function holders(roles: readonly string[]) {
 export default async function ReportingLines() {
   await requireSuperAdmin();
   const links = await orgLinks(db);
-  const current = (staffId: string, rel: Relation) => links.find((l) => l.staff_id === staffId && l.relation === rel)?.manager_id ?? null;
+  const currentLink = (staffId: string, rel: Relation) => links.find((l) => l.staff_id === staffId && l.relation === rel) ?? null;
   const sections: { rel: Relation; title: string; intro: string; people: { id: string; name: string; roles: string[] }[] }[] = [
     { rel: "MO_LEAD", title: "Merchant Officers → Merchant Officer Lead", intro: "A Merchant Officer's WakeelBoost request goes to their Lead first. Without a line, any Merchant Officer Lead may receive it.", people: await holders(["MERCHANT_OFFICER"]) },
     { rel: "MO_HEAD", title: "Merchant Officer Leads → Merchant Officer Head", intro: "After the Lead, the request goes to the Lead's Head, then to credit.", people: await holders(["MERCHANT_OFFICER_LEAD"]) },
@@ -56,7 +56,13 @@ export default async function ReportingLines() {
                         <td>{p.name}</td>
                         <td>{p.roles.map((r) => ROLE_LABELS[r as Role] ?? r).join(", ")}</td>
                         <td>
-                          <LinkForm staffId={p.id} relation={sec.rel} current={current(p.id, sec.rel)} managers={managers.filter((m) => m.id !== p.id)} />
+                          <LinkForm
+                            staffId={p.id}
+                            relation={sec.rel}
+                            current={currentLink(p.id, sec.rel)?.manager_id ?? null}
+                            currentName={currentLink(p.id, sec.rel)?.manager_name ?? null}
+                            managers={managers.filter((m) => m.id !== p.id)}
+                          />
                         </td>
                       </tr>
                     ))}

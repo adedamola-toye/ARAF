@@ -10,6 +10,7 @@ import type { Db } from "./db";
 import { activeRoles } from "./domain/access";
 import { supervision } from "./domain/org";
 import { STAGE_LABELS, type Stage } from "./domain/stages";
+import { zoneForRegion } from "./domain/roles";
 
 export const REPORT_ROLES = ["EXECUTIVE_VIEW", "SUPER_ADMIN", "REPORTING_ADMIN", "DIVISIONAL_HEAD", "UNIT_HEAD", "RBE", "MERCHANT_OFFICER_HEAD"] as const;
 
@@ -144,13 +145,18 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
        )
        SELECT a.id, a.ref, a.initiator_id, a.stage, a.status, a.product_code, coalesce(a.product_label, 'WakeelBoost') AS product, a.customer_profile, a.initiator_role,
               a.submitted_at, coalesce(a.requested_amount_kobo, 0) AS requested,
-              o.full_name AS officer, uh.full_name AS unit_head, dh.full_name AS division,
-              CASE WHEN a.initiator_role = 'MERCHANT_OFFICER' THEN en.full_name WHEN a.initiator_role = 'MERCHANT_OFFICER_LEAD' THEN o.full_name END AS mo_lead,
-              mh.full_name AS mo_head,
+              o.full_name AS officer,
+              coalesce(uh.full_name, tuh.full_name, rh.full_name) AS unit_head,
+              coalesce(dh.full_name, drh.full_name) AS division,
+              CASE WHEN a.initiator_role = 'MERCHANT_OFFICER' THEN coalesce(en.full_name, mols.full_name) WHEN a.initiator_role = 'MERCHANT_OFFICER_LEAD' THEN o.full_name END AS mo_lead,
+              coalesce(mh.full_name, mohs.full_name) AS mo_head,
               coalesce(lo.name, ou.name, a.region) AS location,
               o.business_unit AS staff_unit, o.region AS staff_region,
               coalesce(a.routing_segment, rc.segment) AS segment, rc.dbc_region, rc.business_unit AS rm_unit,
               CASE WHEN coalesce(a.routing_segment, rc.segment) = 'NON_DBC' THEN coalesce(CASE WHEN a.routing_segment = 'NON_DBC' THEN sr.full_name END, cr.full_name) END AS rbe,
+              -- Legacy ANM requests report to the single North or South ANM Lead (zone from the officer's state).
+              (SELECT s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'ANM_LEAD_NORTH' WHERE s.status = 'ACTIVE' LIMIT 1) AS anm_lead_north,
+              (SELECT s.full_name FROM staff s JOIN role_assignments ra ON ra.staff_id = s.id AND ra.active AND ra.role = 'ANM_LEAD_SOUTH' WHERE s.status = 'ACTIVE' LIMIT 1) AS anm_lead_south,
               rh.full_name AS routing_head, ds.disbursed_on, a.rejected_at,
               (SELECT max(d.created_at) FROM decisions d WHERE d.application_id = a.id AND d.invalidated_at IS NULL AND d.action IN ('APPROVE','PROCEED')
                   AND d.stage IN ('DIVISIONAL_HEAD_REVIEW','UNIT_HEAD_REVIEW')) AS approved_at,
@@ -164,8 +170,26 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
          JOIN staff o ON o.id = a.initiator_id
          LEFT JOIN org_links lu ON lu.staff_id = a.initiator_id AND lu.relation = 'UNIT_HEAD'
          LEFT JOIN staff uh ON uh.id = lu.manager_id
-         LEFT JOIN org_links ld ON ld.staff_id = lu.manager_id AND ld.relation = 'DIVISIONAL_HEAD'
+         -- Staff on a Team Lead's team inherit that Lead's Unit Head for reporting, even without their own line.
+         LEFT JOIN LATERAL (
+           SELECT ol.manager_id
+             FROM role_assignments mine
+             JOIN role_assignments tl ON tl.team = mine.team AND tl.active AND tl.role = 'TEAM_LEAD'
+             JOIN org_links ol ON ol.staff_id = tl.staff_id AND ol.relation = 'UNIT_HEAD'
+            WHERE mine.staff_id = a.initiator_id AND mine.active AND mine.team IS NOT NULL
+            ORDER BY tl.team
+            LIMIT 1
+         ) thu ON true
+         LEFT JOIN staff tuh ON tuh.id = thu.manager_id
+         LEFT JOIN org_links ld ON ld.staff_id = coalesce(lu.manager_id, thu.manager_id) AND ld.relation = 'DIVISIONAL_HEAD'
          LEFT JOIN staff dh ON dh.id = ld.manager_id
+         LEFT JOIN org_links ldr ON ldr.staff_id = a.routing_unit_head_id AND ldr.relation = 'DIVISIONAL_HEAD'
+         LEFT JOIN staff drh ON drh.id = ldr.manager_id
+         -- Merchant Officer reporting chain, so an early request still shows its Lead and Head.
+         LEFT JOIN org_links mol ON mol.staff_id = a.initiator_id AND mol.relation = 'MO_LEAD'
+         LEFT JOIN staff mols ON mols.id = mol.manager_id
+         LEFT JOIN org_links moh ON moh.staff_id = CASE WHEN a.initiator_role = 'MERCHANT_OFFICER_LEAD' THEN a.initiator_id ELSE mol.manager_id END AND moh.relation = 'MO_HEAD'
+         LEFT JOIN staff mohs ON mohs.id = moh.manager_id
          LEFT JOIN staff en ON en.id = a.endorser_id
          LEFT JOIN staff mh ON mh.id = a.mo_head_id
          LEFT JOIN locations lo ON lo.id = a.origination_location_id
@@ -187,7 +211,9 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
     const awaiting = r.stage === "FULFILMENT" || r.stage === "VENDOR_CONFIRMATION";
     const mo = ["MERCHANT_OFFICER", "MERCHANT_OFFICER_LEAD", "MERCHANT_OFFICER_HEAD"].includes(r.initiator_role);
     const segment = mo ? "Merchant Officer line" : r.segment === "DBC" ? "DBC" : r.segment === "NON_DBC" ? "Non-DBC" : r.initiator_role === "RM" ? "RM (unclassified)" : "Other channels";
-    const reportingHead = segment === "Non-DBC" ? r.rbe : segment === "DBC" ? r.routing_head : mo ? (r.mo_head ?? (r.initiator_role === "MERCHANT_OFFICER_HEAD" ? r.officer : null)) : r.unit_head;
+    const anmLead = r.initiator_role === "ANM" ? (zoneForRegion(r.staff_region) === "NORTH" ? r.anm_lead_north : r.anm_lead_south) : null;
+    const unitHead = anmLead ?? r.unit_head;
+    const reportingHead = segment === "Non-DBC" ? (r.rbe ?? unitHead) : segment === "DBC" ? (r.routing_head ?? unitHead) : mo ? (r.mo_head ?? (r.initiator_role === "MERCHANT_OFFICER_HEAD" ? r.officer : null)) : unitHead;
     return {
       id: r.id,
       ref: r.ref,
@@ -201,7 +227,7 @@ export async function financingFacts(q: Db, scope: Scope, f: FinFilters = {}): P
       declinedAt: r.rejected_at ?? null,
       disbursedAt: r.disbursed_on ? new Date(`${r.disbursed_on instanceof Date ? r.disbursed_on.toISOString().slice(0, 10) : r.disbursed_on}T12:00:00Z`) : null,
       division: r.division ?? "Not mapped",
-      unitHead: r.unit_head ?? "Not mapped",
+      unitHead: unitHead ?? "Not mapped",
       product: r.product,
       category: CATEGORY[r.customer_profile] ?? (r.product_code ? "—" : "Business"),
       officer: r.officer,
@@ -442,12 +468,23 @@ export async function altphonesFacts(q: Db, scope: Scope, f: { from?: string | n
     await q.query(
       `SELECT a.id, a.ref, a.status, a.reservation_status, a.originator_role, coalesce(a.submitted_at, a.created_at) AS d,
               coalesce(a.down_payment_kobo, 0) AS dp, coalesce(a.financed_kobo, 0) AS fin, a.model_name,
-              o.full_name AS officer, coalesce(l.name, a.origin_address, '—') AS location, uh.full_name AS unit_head
+              o.full_name AS officer, coalesce(l.name, a.origin_address, '—') AS location,
+              coalesce(uh.full_name, tuh.full_name) AS unit_head
          FROM altphones_applications a
          JOIN staff o ON o.id = a.originator_id
          LEFT JOIN locations l ON l.id = a.origin_location_id
          LEFT JOIN org_links lu ON lu.staff_id = a.originator_id AND lu.relation = 'UNIT_HEAD'
          LEFT JOIN staff uh ON uh.id = lu.manager_id
+         LEFT JOIN LATERAL (
+           SELECT ol.manager_id
+             FROM role_assignments mine
+             JOIN role_assignments tl ON tl.team = mine.team AND tl.active AND tl.role = 'TEAM_LEAD'
+             JOIN org_links ol ON ol.staff_id = tl.staff_id AND ol.relation = 'UNIT_HEAD'
+            WHERE mine.staff_id = a.originator_id AND mine.active AND mine.team IS NOT NULL
+            ORDER BY tl.team
+            LIMIT 1
+         ) thu ON true
+         LEFT JOIN staff tuh ON tuh.id = thu.manager_id
         WHERE NOT a.legacy AND a.status <> 'DRAFT'
           AND ($1::uuid[] IS NULL OR a.originator_id = ANY($1))
           AND ($2::date IS NULL OR coalesce(a.submitted_at, a.created_at) >= $2::date)
