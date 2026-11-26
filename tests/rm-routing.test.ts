@@ -107,14 +107,18 @@ describe("Non-DBC route: RM → RBE → CX → Credit Officer → E-commerce Uni
     }
   });
 
-  it("CX can return the request; the resubmission goes back to CX credit review", async () => {
+  it("CX can return the request; the resubmission goes back to the same CX reviewer", async () => {
     await nonDbc("rm.ade@altbank.ng");
+    await addStaff("cx.two@altbank.ng", "Bola CX-Reviewer", "CX_CREDIT_REVIEWER"); // another CX reviewer must never take it
     const id = await createSubmittedCase({ initiator: "RM", amountKobo: N(1_000_000) });
     await act(id, "ENDORSE", { reason: "RBE review complete." });
     await act(id, "RETURN", { reason: "Provide the latest bank statement." });
     expect((await openTaskOf(id)).stage).toBe("INITIATOR_CORRECTION");
     await act(id, "RESUBMIT");
-    expect((await openTaskOf(id)).stage).toBe("CX_CREDIT_REVIEW");
+    const back = await openTaskOf(id);
+    expect(back.stage).toBe("CX_CREDIT_REVIEW");
+    expect(back.email).toBe("cx.one@altbank.ng");
+    expect((await app(id)).cx_reviewer_id).toBe(await sid("cx.one@altbank.ng"));
   });
 
   it("without a configured E-commerce Unit Head the stage waits for the Super Admin; no other Unit Head is used", async () => {

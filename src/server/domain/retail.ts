@@ -797,7 +797,7 @@ export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
   const corr = await activeCorrection(tx, app, "INITIATOR_CORRECTION");
   // A correction raised by the first credit reviewer returns to that same reviewer when the case reaches
   // credit again, even if the correction restarts an earlier stage. Never silently hand it to a different one.
-  const returningFirstReviewer = corr.from_stage === "FIRST_CREDIT_REVIEW" ? corr.from_assignee_id : null;
+  const returningFirstReviewer = corr.from_stage === "FIRST_CREDIT_REVIEW" || corr.from_stage === "CREDIT_CORRECTION" ? corr.from_assignee_id : null;
   // Follow the initiator's current state/team: a move during the correction must not send the case back to
   // the reviewer who held it in the previous state.
   await refreshInitiatorScope(tx, app);
@@ -823,14 +823,17 @@ export async function retailResubmit(tx: Tx, ctx: Ctx, app: AppRow, task: TaskRo
   await resolveCorrection(tx, ctx, corr.id, "RESUBMITTED");
   app.active_correction_id = corr.parent_id;
   // Mark the returning reviewer as the request's first reviewer before choosing, so separation-of-duties
-  // does not exclude them from their own correction.
-  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
+  // does not exclude them from their own correction (a first-review or credit-correction return).
+  if ((corr.from_stage === "FIRST_CREDIT_REVIEW" || corr.from_stage === "CREDIT_CORRECTION") && corr.from_assignee_id) app.first_reviewer_id = corr.from_assignee_id;
+  // The CX reviewer who raised the correction must be exempt from separation-of-duties for their own case.
+  if (corr.from_stage === "CX_CREDIT_REVIEW" && corr.from_assignee_id) await setCxReviewer(tx, app, corr.from_assignee_id);
   // Credit reviews return to the same reviewer strictly (four-eyes). Business reviews return to the same
   // reviewer when they are still in scope, but fall back to the current scope's reviewer rather than leaving
   // the case unassigned when the initiator's state/team has moved.
-  const creditReturn = corr.from_stage === "FIRST_CREDIT_REVIEW" || corr.from_stage === "SECOND_CREDIT_REVIEW";
+  const creditReturn = ["FIRST_CREDIT_REVIEW", "SECOND_CREDIT_REVIEW", "CREDIT_CORRECTION", "CX_CREDIT_REVIEW"].includes(corr.from_stage);
   const chosen = await chooseAssignee(tx, app, corr.from_stage, { preferred: corr.from_assignee_id, requirePreferred: creditReturn });
-  if (corr.from_stage === "FIRST_CREDIT_REVIEW" && chosen.staffId) app.first_reviewer_id = chosen.staffId;
+  if ((corr.from_stage === "FIRST_CREDIT_REVIEW" || corr.from_stage === "CREDIT_CORRECTION") && chosen.staffId) app.first_reviewer_id = chosen.staffId;
+  if (corr.from_stage === "CX_CREDIT_REVIEW" && chosen.staffId) await setCxReviewer(tx, app, chosen.staffId);
   await moveTo(tx, ctx, app, corr.from_stage, chosen, "Resubmitted after correction (non-material)");
   return `Resubmitted to ${STAGE_LABELS[corr.from_stage]}.`;
 }
