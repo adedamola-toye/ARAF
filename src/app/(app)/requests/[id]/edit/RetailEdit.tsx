@@ -197,6 +197,13 @@ export async function RetailEdit({ c, staffId, sessionId, mode }: { c: Case; sta
         maskedBvn={version?.bvn_last4 ? maskWithLast4(version.bvn_last4) : null}
         maskedTin={version?.tin_last4 ? maskWithLast4(version.tin_last4, 10) : null}
         directors={(c.working ? (await db.query("SELECT id, full_name, bvn_last4 FROM application_directors WHERE version_id = $1 ORDER BY position", [c.working.id])).rows : c.directors).map((d: { id: string; full_name: string; bvn_last4: string }) => ({ id: d.id, fullName: d.full_name, masked: maskWithLast4(d.bvn_last4) }))}
+        repayment={(app.repayment_account as { bankName?: string; accountNumber?: string; accountName?: string; branch?: string; townCity?: string } | null) ? {
+          bankName: (app.repayment_account as { bankName?: string }).bankName ?? "",
+          accountNumber: (app.repayment_account as { accountNumber?: string }).accountNumber ?? "",
+          accountName: (app.repayment_account as { accountName?: string }).accountName ?? "",
+          branch: (app.repayment_account as { branch?: string }).branch ?? "",
+          townCity: (app.repayment_account as { townCity?: string }).townCity ?? "",
+        } : null}
         vendors={[...vendorMap.values()]}
         locations={locations.map((l) => ({ id: l.id, state: l.state, city: l.city, outletType: l.outlet_type, name: l.name, oss: l.oss_name ?? null }))}
         rmLocations={rmLocations.map((l) => ({ id: l.id, label: `${l.name} · ${OUTLET_TYPE_LABELS[l.outlet_type]} · ${l.city}, ${l.state}` }))}

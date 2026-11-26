@@ -106,6 +106,8 @@ export interface AppRow {
   /** The Unit Head resolved at submission (DBC regional Unit Head or the E-commerce Unit Head). */
   routing_unit_head_id?: string | null;
   cx_reviewer_id?: string | null;
+  /** Customer repayment account recorded at origination or before offer preparation. */
+  repayment_account?: { bankName?: string; accountNumber?: string; accountName?: string; branch?: string; townCity?: string } | null;
   suspended_at: Date | null;
   suspension_reason: string | null;
   business_approved_at?: Date | null;

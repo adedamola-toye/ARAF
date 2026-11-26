@@ -38,6 +38,8 @@ export interface RetailFormProps {
   maskedBvn: string | null;
   maskedTin: string | null;
   directors: { id: string; fullName: string; masked: string }[];
+  /** The customer's repayment account, captured at origination (used for the direct-debit mandate later). */
+  repayment: { bankName: string; accountNumber: string; accountName: string; branch: string; townCity: string } | null;
   vendors: { vendorId: string; vendorName: string; vendorEmail: string | null; accounts: { id: string; label: string; status: string; bank: string; number: string }[] }[];
   locations: { id: string; state: string; city: string; outletType: string; name: string; oss: string | null }[];
   rms: { id: string; label: string }[];
@@ -58,6 +60,7 @@ export interface RetailFormProps {
 
 const SECTIONS = [
   { id: "customer", label: "Customer", keys: ["customerName", "businessName", "companyName", "registrationNumber", "phone", "email", "businessAddress", "bvn", "tin", "directors", "applicantType"] },
+  { id: "repayment", label: "Repayment account", keys: ["repaymentBankName", "repaymentAccountNumber", "repaymentAccountName", "repaymentBranch", "repaymentTownCity"] },
   { id: "work", label: "Employment or business", keys: ["employerName", "statedMonthlySalaryKobo", "salaryHistory", "businessSector", "statedMonthlyTurnoverKobo"] },
   { id: "facility", label: "Facility", keys: ["requestedAmountKobo", "tenorMonths", "structure", "purpose", "assetDescription", "assetCostKobo", "deliveryAddress", "equityContributionKobo"] },
   { id: "affordability", label: "Obligations and DSR", keys: ["incomeBasisKobo", "annualInflowKobo", "proposedMonthlyObligationKobo", "obligations"] },
@@ -117,6 +120,7 @@ export function RetailDraftForm(props: RetailFormProps) {
   const [obligations, setObligations] = useState(props.data.obligations);
   const [salary, setSalary] = useState(props.data.salaryHistory);
   const [consents, setConsents] = useState(props.data.consents);
+  const [rep, setRep] = useState({ bankName: props.repayment?.bankName ?? "", accountNumber: props.repayment?.accountNumber ?? "", accountName: props.repayment?.accountName ?? "", branch: props.repayment?.branch ?? "", townCity: props.repayment?.townCity ?? "" });
   const [directors, setDirectors] = useState(props.directors.length ? props.directors.map((d) => ({ id: d.id as string | null, fullName: d.fullName, bvn: "", masked: d.masked })) : [{ id: null as string | null, fullName: "", bvn: "", masked: "" }]);
   const [bvn, setBvn] = useState("");
   const [tin, setTin] = useState("");
@@ -139,7 +143,7 @@ export function RetailDraftForm(props: RetailFormProps) {
   const isRmChannel = !isDo;
   const locationRequired = props.initiatorRole === "RM";
 
-  const snapshot = JSON.stringify({ t, money, tenor, years, structure, obligations, salary, consents, directors: directors.map((d) => [d.fullName, d.bvn]), bvn, tin });
+  const snapshot = JSON.stringify({ t, money, tenor, years, structure, obligations, salary, consents, rep, directors: directors.map((d) => [d.fullName, d.bvn]), bvn, tin });
   const [baseline, setBaseline] = useState(snapshot);
   const dirty = snapshot !== baseline;
   useEffect(() => {
@@ -159,7 +163,7 @@ export function RetailDraftForm(props: RetailFormProps) {
       setTin("");
       const d = state.data as { savedAt?: string } | undefined;
       if (d?.savedAt) setSavedAt(d.savedAt);
-      setBaseline(JSON.stringify({ t, money, tenor, years, structure, obligations, salary, consents, directors: directors.map((x) => [x.fullName, ""]), bvn: "", tin: "" }));
+      setBaseline(JSON.stringify({ t, money, tenor, years, structure, obligations, salary, consents, rep, directors: directors.map((x) => [x.fullName, ""]), bvn: "", tin: "" }));
       router.refresh();
     }
     if (state.error) formRef.current?.querySelector<HTMLElement>(".alert-error")?.focus();
@@ -172,6 +176,7 @@ export function RetailDraftForm(props: RetailFormProps) {
   const fe = (k: string) => (state.fields ?? {})[k] ?? (attempted ? props.readiness.fieldErrors[k] : undefined);
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => setT({ ...t, [k]: e.target.value });
   const setM = (k: string) => (v: string) => setMoney({ ...money, [k]: v });
+  const setR = (k: keyof typeof rep) => (e: React.ChangeEvent<HTMLInputElement>) => setRep({ ...rep, [k]: e.target.value });
 
   // Dependent location dropdowns: State → Town/City → Outlet type → Outlet
   const selectedLoc = props.locations.find((l) => l.id === t.outletLocationId);
@@ -225,6 +230,7 @@ export function RetailDraftForm(props: RetailFormProps) {
     structure,
     tenor,
     yearsInOperation: years,
+    repayment: rep,
     expectedLockVersion: props.lockVersion,
   });
 
@@ -340,6 +346,39 @@ export function RetailDraftForm(props: RetailFormProps) {
               </div>
             </fieldset>
           )}
+        </section>
+
+        {/* ------------------------------------------------ repayment account */}
+        <section className="card" id="repayment" aria-labelledby="h-repayment">
+          <h2 id="h-repayment">Customer repayment account</h2>
+          <p className="small muted">
+            The customer&apos;s bank account for repayments. It is used to prepare the direct-debit mandate and Remita set-up. Enter the 10-digit account number now,
+            or add it before the offer is prepared.
+          </p>
+          <div className="grid-2">
+            <Field id="repaymentBankName" label="Customer's bank" error={fe("repaymentBankName")}>
+              <input id="repaymentBankName" value={rep.bankName} onChange={setR("bankName")} aria-invalid={!!fe("repaymentBankName")} autoComplete="off" />
+            </Field>
+            <Field id="repaymentAccountNumber" label="Account number" hint="10 digits" error={fe("repaymentAccountNumber")}>
+              <input
+                id="repaymentAccountNumber"
+                inputMode="numeric"
+                value={rep.accountNumber}
+                onChange={(e) => setRep({ ...rep, accountNumber: e.target.value.replace(/\D/g, "").slice(0, 10) })}
+                aria-invalid={!!fe("repaymentAccountNumber")}
+                autoComplete="off"
+              />
+            </Field>
+            <Field id="repaymentAccountName" label="Account name" error={fe("repaymentAccountName")}>
+              <input id="repaymentAccountName" value={rep.accountName} onChange={setR("accountName")} aria-invalid={!!fe("repaymentAccountName")} autoComplete="off" />
+            </Field>
+            <Field id="repaymentBranch" label="Branch (optional)">
+              <input id="repaymentBranch" value={rep.branch} onChange={setR("branch")} autoComplete="off" />
+            </Field>
+            <Field id="repaymentTownCity" label="Town / city (optional)">
+              <input id="repaymentTownCity" value={rep.townCity} onChange={setR("townCity")} autoComplete="off" />
+            </Field>
+          </div>
         </section>
 
         {/* ------------------------------------------------ employment / business */}
@@ -723,6 +762,7 @@ export function RetailDraftForm(props: RetailFormProps) {
             <div><dt>Customer</dt><dd>{T === "LIMITED" ? t.companyName : t.customerName}{t.businessName ? ` trading as ${t.businessName}` : ""} · {t.phone || "no phone"} <a href="#customer">Edit</a></dd></div>
             <div><dt>Facility</dt><dd>{money.requestedAmountKobo ? `₦${groupAmount(money.requestedAmountKobo)}` : "amount missing"} over {tenor || "?"} months{st ? ` · ${st.label} ${st.rate}` : ""} <a href="#facility">Edit</a></dd></div>
             <div><dt>DSR</dt><dd>{r.preliminary?.dsr ? `${r.preliminary.dsr}% (threshold ${r.preliminary.maxPercent ?? "?"}%)` : "not calculated yet"} <a href="#affordability">Edit</a></dd></div>
+            <div><dt>Repayment account</dt><dd>{rep.accountNumber ? `${rep.bankName} · ${rep.accountNumber}` : "not entered (can be added before the offer is prepared)"} <a href="#repayment">Edit</a></dd></div>
             {props.beneficiaryRequired && <div><dt>Beneficiary</dt><dd>{account ? `${vendor?.vendorName} · ${account.bank} · ${account.number}` : "not selected"} <a href="#beneficiary">Edit</a></dd></div>}
             {isRmChannel && <div><dt>Location</dt><dd>{props.rmLocations.find((l) => l.id === t.originationLocationId)?.label ?? "not selected"} <a href="#origination">Edit</a></dd></div>}
             {isDo && <div><dt>Outlet / RM</dt><dd>{props.locations.find((l) => l.id === t.outletLocationId)?.name ?? "outlet not selected"} · {props.rms.find((x) => x.id === t.assignedRmId)?.label ?? "RM not assigned"} <a href="#origination">Edit</a></dd></div>}

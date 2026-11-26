@@ -120,12 +120,22 @@ export async function createRetailDraft(ctx: Ctx, p: { initiatorRole: string; pr
   });
 }
 
+export interface RepaymentAccountInput {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  branch?: string;
+  townCity?: string;
+}
+
 export interface RetailDraftInput {
   data: Partial<RetailData>;
   structure?: string | null;
   bvn?: string | null;
   tin?: string | null;
   directors?: DirectorFormRow[];
+  /** Customer's repayment account (bank, account number and name) captured at origination. */
+  repaymentAccount?: RepaymentAccountInput | null;
   expectedLockVersion?: number | null;
 }
 
@@ -227,6 +237,23 @@ export async function saveRetailDraft(ctx: Ctx, appId: string, input: RetailDraf
         }
       });
     }
+    // Customer's repayment account (captured at origination; used for GSI and Remita later).
+    let repaymentAccount: { bankName: string; accountNumber: string; accountName: string; branch: string; townCity: string } | null = null;
+    if (input.repaymentAccount) {
+      const clean = {
+        bankName: (input.repaymentAccount.bankName ?? "").trim().slice(0, 120),
+        accountNumber: (input.repaymentAccount.accountNumber ?? "").trim(),
+        accountName: (input.repaymentAccount.accountName ?? "").trim().slice(0, 160),
+        branch: (input.repaymentAccount.branch ?? "").trim().slice(0, 120),
+        townCity: (input.repaymentAccount.townCity ?? "").trim().slice(0, 120),
+      };
+      if (clean.bankName || clean.accountNumber || clean.accountName || clean.branch || clean.townCity) {
+        if (!clean.bankName) errors.repaymentBankName = "Enter the customer's bank.";
+        if (!/^\d{10}$/.test(clean.accountNumber)) errors.repaymentAccountNumber = "Enter the 10-digit account number.";
+        if (clean.accountName.length < 3) errors.repaymentAccountName = "Enter the account name.";
+        repaymentAccount = clean;
+      }
+    }
     if (Object.keys(errors).length) throw invalid("Some fields are not valid.", errors);
     await tx.query(`UPDATE application_versions SET data=$2, bvn_enc=$3, bvn_last4=$4, tin_enc=$5, tin_last4=$6, requested_amount_kobo=$7 WHERE id=$1`, [
       v.id, JSON.stringify(data), bvnEnc, bvnL4, tinEnc, tinL4, data.requestedAmountKobo,
@@ -243,6 +270,13 @@ export async function saveRetailDraft(ctx: Ctx, appId: string, input: RetailDraf
       if (cfgRow) app.product_config_id = cfgRow.id;
     }
     await persistApp(tx, app, ctx.now);
+    if (repaymentAccount) {
+      const before = (app as AppRow & { repayment_account?: unknown }).repayment_account;
+      if (JSON.stringify(before ?? null) !== JSON.stringify(repaymentAccount)) {
+        await tx.query("UPDATE applications SET repayment_account = $2 WHERE id = $1", [app.id, JSON.stringify(repaymentAccount)]);
+        await audit(tx, ctx, { action: "REPAYMENT_ACCOUNT_RECORDED", applicationId: app.id, stage: app.stage, details: { bank: repaymentAccount.bankName, accountLast4: repaymentAccount.accountNumber.slice(-4), changed: !!before } });
+      }
+    }
     if (app.assigned_rm_id && app.assigned_rm_id !== previousRm) {
       const email = await staffEmail(tx, app.assigned_rm_id);
       if (email)

@@ -248,6 +248,21 @@ export async function RetailOverview({ c }: { c: Case }) {
                 )}
               </td>
             </tr>
+            <tr>
+              <th>Customer repayment account</th>
+              <td>
+                {(() => {
+                  const ra = app.repayment_account as { bankName?: string; accountNumber?: string; accountName?: string; branch?: string; townCity?: string } | null;
+                  if (!ra?.accountNumber) return <span className="muted">Not recorded yet</span>;
+                  return (
+                    <>
+                      <span className="mono">{ra.bankName} · {ra.accountNumber}</span> · {ra.accountName}
+                      {ra.branch || ra.townCity ? <div className="small muted">{[ra.branch, ra.townCity].filter(Boolean).join(", ")}</div> : null}
+                    </>
+                  );
+                })()}
+              </td>
+            </tr>
           </tbody>
         </table>
       </div>

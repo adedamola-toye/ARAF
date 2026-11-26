@@ -52,6 +52,7 @@ interface RetailPayload {
   structure: string;
   tenor: string;
   yearsInOperation: string;
+  repayment?: { bankName: string; accountNumber: string; accountName: string; branch: string; townCity: string } | null;
   expectedLockVersion: number | null;
 }
 
@@ -96,6 +97,7 @@ function parseRetailPayload(raw: string) {
     bvn: p.bvn || null,
     tin: p.tin || null,
     directors: p.directors,
+    repaymentAccount: p.repayment ?? null,
     expectedLockVersion: p.expectedLockVersion,
   };
 }
@@ -107,7 +109,7 @@ export async function saveRetailDraftAction(_p: ActionState, fd: FormData): Prom
   let savedAt = "";
   try {
     const parsed = parseRetailPayload(str(fd, "payload"));
-    const r = await saveRetailDraft(ctx, appId, { data: parsed.data, structure: parsed.structure, bvn: parsed.bvn, tin: parsed.tin, directors: parsed.directors });
+    const r = await saveRetailDraft(ctx, appId, { data: parsed.data, structure: parsed.structure, bvn: parsed.bvn, tin: parsed.tin, directors: parsed.directors, repaymentAccount: parsed.repaymentAccount });
     savedAt = r.savedAt;
     if (intent === "submit") {
       const taskId = str(fd, "taskId");
