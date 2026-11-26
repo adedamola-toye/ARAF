@@ -18,6 +18,7 @@ import { z } from "zod";
 import { db } from "../../db";
 import { config } from "../../config";
 import { fixtureFetch } from "./fixtures";
+import { forgetPericulumConnection, normaliseBaseUrl, periculumConnection, type PericulumConnection } from "./settings";
 
 export type PericulumSource = "PERICULUM" | "FIXTURE";
 export type CallOutcome = "SUCCESS" | "REJECTED" | "RATE_LIMITED" | "TIMEOUT" | "FAILED" | "AMBIGUOUS";
@@ -29,6 +30,7 @@ let testFetch: FetchLike | null = null;
 export function setPericulumFetchForTests(f: FetchLike | null) {
   testFetch = f;
   token = null;
+  forgetPericulumConnection();
 }
 
 export function periculumSource(): PericulumSource {
@@ -44,12 +46,26 @@ function transport(): FetchLike {
   return (url, init) => fetch(url, init);
 }
 
+/**
+ * The connection to use: settings saved by a Super Admin (Administration → Periculum), else environment variables.
+ * Test data mode and tests use a placeholder connection with the documented addresses.
+ */
+async function connection(): Promise<PericulumConnection | null> {
+  const saved = await periculumConnection();
+  if (saved) return saved;
+  if (testFetch || config.periculum.mode === "fixture") {
+    const c = config.periculum;
+    return { clientId: "fixture-client", clientSecret: "fixture-secret", baseUrl: normaliseBaseUrl(c.baseUrl), authUrl: c.authUrl, origin: "ENVIRONMENT", fingerprint: "fixture" };
+  }
+  return null;
+}
+
 /** Whether Automatic Statement Analysis can run at all (and why not). */
-export function periculumReadiness(): { ready: boolean; problem: string | null } {
+export async function periculumReadiness(): Promise<{ ready: boolean; problem: string | null }> {
   const c = config.periculum;
   if (!c.enabled) return { ready: false, problem: "Automatic Statement Analysis is not enabled. Periculum is switched off until credentials, testing and the bank's approvals are in place." };
   if (c.mode === "fixture" && process.env.NODE_ENV === "production") return { ready: false, problem: "Test data mode is not allowed in production." };
-  if (c.mode === "live" && !testFetch && (!c.clientId || !c.clientSecret)) return { ready: false, problem: "Periculum credentials are not configured." };
+  if (!(await connection())) return { ready: false, problem: "Periculum credentials are not configured. A Super Admin enters them in Administration → Periculum." };
   return { ready: true, problem: null };
 }
 
@@ -80,14 +96,16 @@ const tokenSchema = z.object({ access_token: z.string().min(1), expires_in: z.nu
 
 // ------------------------------------------------------------------ token
 
-let token: { value: string; expiresAt: number } | null = null;
+let token: { value: string; expiresAt: number; fingerprint: string } | null = null;
 /** Refresh this long before expiry (Periculum recommends obtaining a new token some minutes before). */
 const REFRESH_MARGIN_MS = 5 * 60_000;
 
 async function accessToken(ctxIds: Ids, force = false): Promise<CallResult<string>> {
   const now = Date.now();
-  if (!force && token && token.expiresAt - REFRESH_MARGIN_MS > now) return { ok: true, data: token.value, status: 200 };
-  const c = config.periculum;
+  const c = await connection();
+  if (!c) return { ok: false, outcome: "FAILED", status: null, message: "Periculum credentials are not configured.", category: "NOT_CONFIGURED" };
+  // A cached token is reused only while the same credentials are in force.
+  if (!force && token && token.fingerprint === c.fingerprint && token.expiresAt - REFRESH_MARGIN_MS > now) return { ok: true, data: token.value, status: 200 };
   // Exactly as documented (Authentication Request): client_id, client_secret and grant_type in the form body.
   // (Not HTTP Basic: secrets containing characters such as "+" or "%" can be decoded differently in a header.)
   const r = await send(
@@ -104,7 +122,7 @@ async function accessToken(ctxIds: Ids, force = false): Promise<CallResult<strin
   if (!r.ok) return r;
   const parsed = tokenSchema.safeParse(r.data);
   if (!parsed.success) return invalidResponse(ctxIds, "TOKEN");
-  token = { value: parsed.data.access_token, expiresAt: now + parsed.data.expires_in * 1000 };
+  token = { value: parsed.data.access_token, expiresAt: now + parsed.data.expires_in * 1000, fingerprint: c.fingerprint };
   return { ok: true, data: token.value, status: r.status };
 }
 
@@ -200,7 +218,7 @@ export function classifyRejection(message: string): string {
 async function api(ids: Ids, operation: string, path: string, init: RequestInit, submission = false): Promise<CallResult<unknown>> {
   const t = await accessToken(ids);
   if (!t.ok) return t;
-  const url = `${config.periculum.baseUrl}${path}`;
+  const url = `${(await connection())!.baseUrl}${path}`;
   const withAuth = (tok: string): RequestInit => ({ ...init, headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${tok}` } });
   let r = await send(ids, operation, url, withAuth(t.data), submission);
   if (!r.ok && r.status === 401) {
@@ -265,4 +283,16 @@ export async function blacklistSearch(ids: Ids, p: { statementKey: number; bvn: 
   if (!r.ok) return r;
   const parsed = blacklistSchema.safeParse(r.data);
   return parsed.success ? { ok: true, data: parsed.data, status: r.status } : invalidResponse(ids, "BLACKLIST_SEARCH");
+}
+
+/** Plain-language explanation of a sign-in test result (for the Super Admin screen). */
+export function explainSignIn(r: CallResult<{ expiresInSeconds: number }>): { ok: boolean; message: string } {
+  if (r.ok) return { ok: true, message: `Signed in. Periculum issued an access token valid for about ${Math.round(r.data.expiresInSeconds / 3600)} hour(s). No statement was sent.` };
+  const m = r.message.toLowerCase();
+  if (m.includes("invalid client secret"))
+    return { ok: false, message: "Periculum recognised the Client ID but not the Secret Key. Copy the API Secret Key again from the Insights portal (Settings → API Credentials) and save it." };
+  if (m.includes("invalid client credentials") || m.includes("invalid_client"))
+    return { ok: false, message: "Periculum did not recognise the Client ID at this token URL. Check the API Client ID, or ask Periculum which token URL your credentials belong to." };
+  if (r.category === "NOT_CONFIGURED") return { ok: false, message: "No credentials are saved yet." };
+  return { ok: false, message: `Sign-in failed: ${r.message}` };
 }

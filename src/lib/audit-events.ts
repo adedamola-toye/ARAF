@@ -98,6 +98,8 @@ const LABELS: Record<string, [string, AuditCategory]> = {
   PERICULUM_BUREAU_CHECK_COMPLETED: ["Periculum Blacklist Search completed", "Assessment"],
   PERICULUM_BUREAU_CHECK_FAILED: ["Periculum Blacklist Search failed", "Assessment"],
   PERICULUM_BUREAU_CHECK_SKIPPED: ["Periculum Blacklist Search skipped", "Assessment"],
+  PERICULUM_CREDENTIALS_SAVED: ["Periculum credentials saved", "Configuration"],
+  PERICULUM_SIGN_IN_TESTED: ["Periculum sign-in tested", "Configuration"],
   PERICULUM_WEBHOOK_SIGNATURE_MISMATCH: ["Periculum notification with an invalid signature", "Access"],
   STAFF_ADVANCE_REPAYMENT_RECORDED: ["Salary advance repayment recorded", "Repayment"],
   REPAYMENT_PROMPTS_ACTIVATED: ["Repayment reminders activated", "Repayment"],

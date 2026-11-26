@@ -119,7 +119,7 @@ async function finish(row: { id: string; application_id: string; subject: string
 
 /** Worker step: run due searches. */
 export async function processBureauChecks(now = new Date()) {
-  if (!config.periculum.blacklistEnabled || !periculumReadiness().ready) return 0;
+  if (!config.periculum.blacklistEnabled || !(await periculumReadiness()).ready) return 0;
   const rows = await withTx(async (tx) => {
     const r = (
       await tx.query<{ id: string; analysis_id: string; application_id: string; subject: string; vendor_statement_key: string; attempts: number }>(

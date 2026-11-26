@@ -27,6 +27,7 @@ export default async function ConfigurationCentre() {
   const registerN = await n("SELECT count(*) AS n FROM salary_register");
   const briefingOn = !!(await db.query("SELECT enabled FROM schedule_settings WHERE code = 'PERSONAL_BRIEFING'")).rows[0]?.enabled;
   const bouquetOn = await sw("BOUQUET_APPROVALS");
+  const periculumSaved = !!(await db.query("SELECT 1 FROM integration_credentials WHERE provider = 'PERICULUM'")).rowCount;
   const photoOn = await sw("VF_TL_PHOTO_REVIEW");
   const groups: [string, Tile[]][] = [
     [
@@ -36,6 +37,7 @@ export default async function ConfigurationCentre() {
         { href: "/admin/feature-controls", title: "Business photograph requirement", body: "Vendor Financing Team Lead photograph (upload, or skip with a reason carried to the Unit Head).", status: photoOn ? "Required" : "Off" },
         { href: "/admin/staff-financing", title: "Salary advance", body: "Eligibility percentage, management fee, record validity, amounts, tenor and the Unit Head for the staff route.", status: sa ? `v${sa.version} · ${sa.eligibility_mode === "SALARY_REGISTER" ? `automatic ${sa.eligibility_percent_bps / 100}%` : "manual verification"} · fee ${sa.deduction_rate_bps / 100}% · record valid ${sa.salary_record_max_age_days} days` : undefined },
         { href: "/admin/salary-register", title: "Salary register", body: "Verified salaries and salary accounts (CSV with preview), holds and confirmed repayments.", status: `${registerN} record(s)` },
+        { href: "/admin/periculum", title: "Periculum connection", body: "API credentials for Automatic Statement Analysis (secret stored encrypted, never shown) and a free sign-in test.", status: periculumSaved ? "Credentials saved" : "Not set" },
         { href: "/disbursements", title: "Disbursement controls", body: "CAD workspace: pre-disbursement checklist, holds, failed and uncertain postings. Offer acceptance: 24 hours for salary advance; no expiry configured for other products." },
         { href: "/admin/profile-editors", title: "Team profile editors", body: "Team Leads allowed to correct the name and business unit of people in their own team (never roles or access)." },
         { href: "/admin/schedules", title: "Weekly Performance Briefing", body: "Sunday reports (Africa/Lagos), personal briefings, preview and test send.", status: `Personal briefings ${briefingOn ? "on" : "off"}` },

@@ -112,7 +112,7 @@ export interface StartInput {
 }
 
 export async function startStatementAnalysis(ctx: Ctx, appId: string, input: StartInput = {}) {
-  const ready = periculumReadiness();
+  const ready = await periculumReadiness();
   if (!ready.ready) throw gate(ready.problem!);
   const res = await withTx(async (tx) => {
     const app = await lockApp(tx, appId);
@@ -232,7 +232,7 @@ export async function startStatementAnalysis(ctx: Ctx, appId: string, input: Sta
 
 /** Retry the statements that failed or need verification (e.g. after a password is supplied). */
 export async function retryStatements(ctx: Ctx, analysisId: string, input: { reason: string; passwords?: Record<string, string> }) {
-  const ready = periculumReadiness();
+  const ready = await periculumReadiness();
   if (!ready.ready) throw gate(ready.problem!);
   return withTx(async (tx) => {
     const a = (await tx.query<AnalysisRow>("SELECT * FROM fi_analyses WHERE id = $1 FOR UPDATE", [analysisId])).rows[0];
@@ -458,7 +458,7 @@ async function pollOne(s: StatementRow, now: Date) {
 
 /** Worker step: submit within the concurrency limit, then poll what is due. */
 export async function processStatementAnalysis(now = new Date()) {
-  if (!periculumReadiness().ready) return { submitted: 0, polled: 0 };
+  if (!(await periculumReadiness()).ready) return { submitted: 0, polled: 0 };
   const inFlight = Number((await db.query("SELECT count(*) AS n FROM fi_statements WHERE status IN ('SUBMITTING','UPLOADED','PROCESSING')")).rows[0].n);
   const toSubmit = await claim(["PENDING", "SUBMISSION_UNCERTAIN"], now, config.periculum.maxConcurrent - inFlight);
   for (const s of toSubmit) await submitOne(s, now).catch((e) => console.error("[periculum] submission step failed", s.id, (e as Error).message));
