@@ -17,7 +17,7 @@ async function main() {
   const existing = await db.query("SELECT count(*)::int AS n FROM applications");
   if (includeDemo && process.argv.includes("--with-retail-demo")) {
     console.log("Applying SYNTHETIC retail configuration (demo only) and creating retail demo cases…");
-    for (const p of ["VENDOR_FINANCING", "ALT_DRIVE"]) await applyConfig(p, syntheticConfig(p), "SYNTHETIC DEMO CONFIGURATION - not bank policy");
+    for (const p of ["VENDOR_FINANCING", "ALT_DRIVE", "ALT_POWER"]) await applyConfig(p, syntheticConfig(p), "SYNTHETIC DEMO CONFIGURATION - not bank policy");
     await approveRetailTemplates();
     const N = (n: number) => n * 100;
     await createRetailCase({ channel: "RM", product: "VENDOR_FINANCING", profile: "BUSINESS_OWNER", amountKobo: N(8_000_000), incomeBasisKobo: N(10_000_000) });

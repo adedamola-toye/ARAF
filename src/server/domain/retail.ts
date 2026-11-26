@@ -427,7 +427,9 @@ export async function retailReadiness(q: Db, appId: string, now: Date): Promise<
   if (!data.tenorMonths || data.tenorMonths < 1) e.tenorMonths = "Enter the tenor in months.";
   else if (rules?.maxTenorMonths != null && data.tenorMonths > rules.maxTenorMonths) e.tenorMonths = `The maximum tenor for this product is ${rules.maxTenorMonths} months.`;
   else if (rules?.minTenorMonths != null && data.tenorMonths < rules.minTenorMonths) e.tenorMonths = `The minimum repayment period for this product is ${rules.minTenorMonths} months.`;
-  if (!structure) e.structure = "Choose the financing structure.";
+  // Only ask the initiator to choose when at least one structure is configured; otherwise the missing
+  // configuration is already reported as a submission blocker (there is no control to choose).
+  if (!structure && (rules?.structures.length ?? 0) > 0) e.structure = "Choose the financing structure.";
   if (!data.purpose) e.purpose = "Describe the purpose of the financing.";
   const assetProduct = cfg?.config.fulfilmentSteps.some((s) => s !== "POS_DEPLOYMENT") ?? false;
   if (assetProduct) {
