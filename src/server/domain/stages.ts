@@ -173,7 +173,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
       case "DISBURSEMENT_BOOKING":
         return ["BOOK_FACILITY", "REJECT"];
       case "DISBURSEMENT_CHECK":
-        return ["OKAY", "SEND_FOR_CORRECTION", "RETURN"];
+        return ["OKAY", "SEND_FOR_CORRECTION", "RETURN", "REJECT"];
       case "PAYMENT_RECONCILIATION":
         return ["RECONCILE_PAYMENT"];
       case "FULFILMENT":
@@ -204,7 +204,7 @@ export function allowedActions(stage: Stage, route: number | null, workflow: str
     case "CO3_PACK_REVIEW":
       return ["FORWARD", "RETURN"];
     case "DISBURSEMENT_CHECK":
-      return ["OKAY", "SEND_FOR_CORRECTION"];
+      return ["OKAY", "SEND_FOR_CORRECTION", "REJECT"];
     case "DISBURSEMENT_CORRECTION":
       return ["RESUBMIT"];
     case "DISBURSEMENT_BOOKING":

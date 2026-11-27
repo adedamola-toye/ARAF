@@ -69,6 +69,28 @@ describe("CAD disbursement controls", () => {
     expect(await completionRecord(db, id)).not.toBeNull();
   });
 
+  it("DO1 can reject at the disbursement check, with a reason recorded", async () => {
+    const id = await toCheck();
+    await expect(act(id, "REJECT", { reason: "no" })).rejects.toMatchObject({ code: "VALIDATION" });
+    expect((await appRow(id)).stage).toBe("DISBURSEMENT_CHECK");
+    await act(id, "REJECT", { reason: "Beneficiary account is dormant and the facility must not be paid" });
+    const row = await appRow(id);
+    expect(row.stage).toBe("REJECTED");
+    expect(row.rejected_at).not.toBeNull();
+    const decision = (await db.query("SELECT action, decision_kind, reason FROM decisions WHERE application_id = $1 AND action = 'REJECT'", [id])).rows[0];
+    expect(decision).toMatchObject({ action: "REJECT", decision_kind: "DECLINE", reason: "Beneficiary account is dormant and the facility must not be paid" });
+    expect((await db.query("SELECT count(*)::int AS n FROM tasks WHERE application_id = $1 AND status = 'OPEN'", [id])).rows[0].n).toBe(0);
+  });
+
+  it("DO2 can reject at booking, with a reason recorded", async () => {
+    const id = await toCheck();
+    await act(id, "OKAY", { crmsLogged: true });
+    expect((await openTaskOf(id)).stage).toBe("DISBURSEMENT_BOOKING");
+    await act(id, "REJECT", { reason: "Core banking will not clear the beneficiary for this facility" });
+    expect((await appRow(id)).stage).toBe("REJECTED");
+    expect((await db.query("SELECT decision_kind FROM decisions WHERE application_id = $1 AND action = 'REJECT'", [id])).rows[0].decision_kind).toBe("DECLINE");
+  });
+
   it("no completion record exists without a recorded disbursement, and non-CAD staff cannot hold", async () => {
     const id = await toCheck();
     expect(await completionRecord(db, id)).toBeNull();

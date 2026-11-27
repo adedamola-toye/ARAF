@@ -23,7 +23,8 @@ DRAFT ──submit──▶ BUSINESS_ENDORSEMENT ──endorse──▶ FIRST_CR
 OFFER_PREPARATION (initiator: generate offer, upload signed offer, KYC, pre-disbursement, GSI, signed insurance)
    ──submit pack──▶ CO3_PACK_REVIEW (Credit Officer 3, any route; uploads insurance evidence; may return pack)
    ──forward──▶ DISBURSEMENT_CHECK (DO1: "Logged CRMS" + Okay) ──send for correction──▶ DISBURSEMENT_CORRECTION (CO3) ──resubmit──▶ same DO1
-   ──okay──▶ DISBURSEMENT_BOOKING (DO2: amount, date, ref, schedule → Disbursed; status BOOKED; CO3 + initiator notified)
+   ──reject (reason)──▶ REJECTED
+   ──okay──▶ DISBURSEMENT_BOOKING (DO2: amount, date, ref, schedule → Disbursed; status BOOKED; CO3 + initiator notified) ──reject (reason)──▶ REJECTED
    ──▶ COMPLETION (CO3: Complete Process → one closure email to Legal + Shariah, cc initiator)
    ──▶ VENDOR_CONFIRMATION (initiator) ──confirm──▶ CLOSED (repayment prompts active)
 
@@ -40,9 +41,9 @@ Any approval stage ──reject (reason)──▶ REJECTED (initiator notified)
 | INITIATOR_CORRECTION | Initiator | Resubmit | — |
 | OFFER_PREPARATION | Initiator | Submit pack | — |
 | CO3_PACK_REVIEW | Credit Officer 3 | Forward, Return | Return |
-| DISBURSEMENT_CHECK | DO1 | Okay (CRMS gate), Send for Correction | Send for Correction |
+| DISBURSEMENT_CHECK | DO1 | Okay (CRMS gate), Send for Correction, Reject | Send for Correction, Reject |
 | DISBURSEMENT_CORRECTION | CO3 | Resubmit (to same DO1) | — |
-| DISBURSEMENT_BOOKING | DO2 | Disbursed | — |
+| DISBURSEMENT_BOOKING | DO2 | Disbursed, Reject | Reject |
 | COMPLETION | CO3 | Complete Process | — |
 | VENDOR_CONFIRMATION | Initiator | Confirm vendor payment and end of process | — |
 

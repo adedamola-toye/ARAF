@@ -575,7 +575,7 @@ export async function RetailActionPanel({ c, task, doneHref }: { c: Case; task: 
       body.push(<UploadPanel key="u" compact applicationId={app.id} title="Upload CRMS evidence" categories={[{ code: "CRMS_EVIDENCE", label: CATEGORY_LABEL.CRMS_EVIDENCE }, { code: "SUPPORTING", label: CATEGORY_LABEL.SUPPORTING }]} />);
       if (benProblems.length) body.push(<Blocked key="b">Return the request to the initiator to update the beneficiary; this triggers re-approval.</Blocked>);
       else body.push(<CrmsOkay key="o" hidden={hidden} doneHref={doneHref} />);
-      secondary.push(["SEND_FOR_CORRECTION", "Send pack for correction (Credit Officer 3)", false], ["RETURN", "Return to initiator (beneficiary revalidation)", false]);
+      secondary.push(["SEND_FOR_CORRECTION", "Send pack for correction (Credit Officer 3)", false], ["RETURN", "Return to initiator (beneficiary revalidation)", false], ["REJECT", "Decline", true]);
       break;
     }
     case "DISBURSEMENT_BOOKING": {

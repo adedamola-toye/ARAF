@@ -836,7 +836,7 @@ async function ActionPanel({ c, task, data, doneHref }: { c: Case; task: NonNull
     const checklist = checklistFor({ kind: "APPLICATION", stage: task.stage, action, policy: app.approval_policy ?? null, workflow: app.workflow });
     return checklist ? { checklist, reference: app.ref, actionLabel: label, viewedVersion: app.lock_version } : undefined;
   };
-  const actions = allowedActions(stage, app.route);
+  const actions = allowedActions(stage, app.route, app.workflow);
   const docs = c.documents.filter((d) => !d.superseded_at && d.scan_status === "CLEAN");
   const has = (cat: string) => docs.some((d) => d.category === cat);
   const reports = docs.filter((d) => d.category === "CREDIT_REPORT").length;
