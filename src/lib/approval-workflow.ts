@@ -90,6 +90,8 @@ export const ROLE_NAMES: Record<string, string> = {
   DIVISIONAL_HEAD: "Divisional Head",
   RBE: "Regional Business Executive",
   MERCHANT_OFFICER_LEAD: "Merchant Officer Lead",
+  MERCHANT_OFFICER_HEAD: "Merchant Officer Head",
+  CX_GROUP_HEAD: "Group Head, Customer Experience",
   ANM_LEAD_NORTH: "ANM Lead (North)",
   ANM_LEAD_SOUTH: "ANM Lead (South)",
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager",

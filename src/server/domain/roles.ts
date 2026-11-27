@@ -104,7 +104,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   BUSINESS_PERFORMANCE_MANAGER: "Business Performance Manager (Altphones)",
   ALTPHONES_PRODUCT_MANAGER: "Altphones Product Manager",
   CX_CREDIT_REVIEWER: "CX Credit Reviewer (retail)",
-  CX_GROUP_HEAD: "CX Group Head (retail CX oversight)",
+  CX_GROUP_HEAD: "Group Head, Customer Experience (retail CX oversight)",
   EXECUTIVE_VIEW: "Executive View (God's Eye, read-only)",
   INVOICE_CONFIRMATION_OFFICER: "Invoice Confirmation Officer",
   CX_HEAD: "CX Head (complaints oversight)",
