@@ -378,7 +378,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             )}
           </div>
         )}
-        {isAdmin && ws === "SUPER_ADMIN" && (
+        {isAdmin && (
           <div className="nav-section">
             <span className="nav-title">Administration</span>
             <NavLink href="/admin" exact icon={<LayoutGrid {...ic} />}>

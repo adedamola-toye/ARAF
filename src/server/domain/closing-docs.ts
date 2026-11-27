@@ -219,10 +219,12 @@ async function generateOne(tx: Tx, appId: string, kind: ClosingKind, now: Date):
     await tx.query("ROLLBACK TO SAVEPOINT closing_doc");
     if (e instanceof Waiting) {
       await tx.query(
-        "UPDATE document_generation SET status = 'WAITING', detail = $4, updated_at = $5 WHERE application_id = $1 AND kind = $2 AND version_id = $3",
-        [appId, kind, app.current_version_id, `${e.reason}: ${e.message}`, now],
+        // The corporate GSI is a manual form, so stop retrying it; a template or account issue is retried.
+        "UPDATE document_generation SET status = 'WAITING', detail = $4, attempts = CASE WHEN $5 THEN $6 ELSE attempts END, updated_at = $7 WHERE application_id = $1 AND kind = $2 AND version_id = $3",
+        [appId, kind, app.current_version_id, `${e.reason}: ${e.message}`, e.reason === "CORPORATE_GSI", MAX_ATTEMPTS, now],
       );
-      if (e.reason === "TEMPLATE" || e.reason === "CORPORATE_GSI") await alertAdmins(tx, ctx, app, kind, e.message, row);
+      if (e.reason === "TEMPLATE") await alertAdmins(tx, ctx, app, kind, e.message, row, "Upload and approve the bank template under Administration → Offer templates; ARAF will prepare it automatically.");
+      else if (e.reason === "CORPORATE_GSI") await notifyCorporateGsi(tx, ctx, app, kind);
       return false;
     }
     const msg = e instanceof Error ? e.message : String(e);
@@ -236,7 +238,7 @@ async function generateOne(tx: Tx, appId: string, kind: ClosingKind, now: Date):
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function alertAdmins(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: ClosingKind, message: string, row: { admin_alerted_at: Date | null }) {
+async function alertAdmins(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: ClosingKind, message: string, row: { admin_alerted_at: Date | null }, hint = "") {
   if (row.admin_alerted_at) return;
   const admins = (
     await tx.query<{ id: string; email: string }>(
@@ -244,7 +246,7 @@ async function alertAdmins(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: Clo
     )
   ).rows;
   const title = `${CLOSING_LABELS[kind]} could not be prepared — ${app.ref}`;
-  const body = `${message} The initiator sees the document as being prepared. Configure it (Administration → Offer templates / Document settings) and ARAF will prepare it automatically.`;
+  const body = `${message} The initiator sees the document as being prepared.${hint ? ` ${hint}` : ""}`;
   for (const a of admins) {
     await notify(tx, ctx.now, { recipientId: a.id, kind: "CLOSING_DOCUMENT_ALERT", title, body, applicationId: app.id, link: `/requests/${app.id}`, dedupeKey: `closing-alert:${app.id}:${kind}:${app.current_version_id}` });
   }
@@ -262,12 +264,42 @@ async function alertAdmins(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: Clo
   await audit(tx, ctx, { action: "CLOSING_DOCUMENT_ADMIN_ALERTED", applicationId: app.id, details: { kind, message } });
 }
 
+/**
+ * A limited company uses the bank's corporate GSI mandate form, which ARAF does not generate.
+ * Tell the initiator what to do; no Super Admin configuration is needed.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function notifyCorporateGsi(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: ClosingKind) {
+  const body = "This limited company uses the bank's corporate GSI mandate form, which ARAF does not generate. Download the corporate form, have it completed and signed, then upload the signed copy as “GSI form” under Documents. Nothing needs to be configured in Administration.";
+  await notify(tx, ctx.now, {
+    recipientId: app.initiator_id,
+    kind: "CORPORATE_GSI_MANUAL",
+    title: `${CLOSING_LABELS[kind]} — use the corporate form — ${app.ref}`,
+    body,
+    applicationId: app.id,
+    link: `/requests/${app.id}#closing-documents`,
+    dedupeKey: `corporate-gsi:${app.id}:${kind}:${app.current_version_id}`,
+  });
+  const s = (await tx.query<{ email: string }>("SELECT email FROM staff WHERE id = $1", [app.initiator_id])).rows[0];
+  if (s?.email) {
+    await enqueueEmail(tx, ctx.now, {
+      kind: "CORPORATE_GSI_MANUAL",
+      dedupeKey: `corporate-gsi:${app.id}:${kind}:${app.current_version_id}`,
+      applicationId: app.id,
+      to: [s.email],
+      subject: `ARAF — ${CLOSING_LABELS[kind]} for ${app.ref}: use the corporate form`,
+      text: `${body}\n\nReference: ${app.ref}\nProduct: ${app.product_label ?? app.product_code ?? ""}\n`,
+    });
+  }
+  await audit(tx, ctx, { action: "CORPORATE_GSI_MANUAL_NOTICE", applicationId: app.id, details: { kind } });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function produce(tx: Tx, ctx: Ctx, app: Record<string, any>, kind: ClosingKind): Promise<string> {
   if (kind === "OFFER") return produceOffer(tx, ctx, app);
   const s = await closingSource(tx, app);
   if (kind === "GSI") {
-    if (s.applicantType === "LIMITED") throw new Waiting("CORPORATE_GSI", "The corporate GSI mandate form has not been added to ARAF yet; this limited company needs the corporate form.");
+    if (s.applicantType === "LIMITED") throw new Waiting("CORPORATE_GSI", "This limited company uses the bank's corporate GSI mandate form, which ARAF does not generate.");
     if (!s.account) throw new Waiting("REPAYMENT_ACCOUNT", "Add the customer's repayment account to prepare the GSI form.");
     const pdf = await buildGsiPdf(gsiValues(s));
     return store(tx, ctx, app, "GENERATED_GSI", `GSI-Mandate-${app.ref}.pdf`, pdf);
@@ -501,7 +533,7 @@ export async function closingStatus(q: Db, appId: string): Promise<{ items: Clos
     const detail = String(r?.detail ?? "");
     if (r?.status === "GENERATED") return { kind: k, label: CLOSING_LABELS[k], state: "READY", note: null, documentId: r.document_id, sentAt: r.customer_sent_at ?? null };
     if (detail.startsWith("REPAYMENT_ACCOUNT")) return { kind: k, label: CLOSING_LABELS[k], state: "NEEDS_ACCOUNT", note: "Add the customer's repayment account below.", documentId: null, sentAt: null };
-    if (detail.startsWith("CORPORATE_GSI")) return { kind: k, label: CLOSING_LABELS[k], state: "MANUAL", note: "Use the bank's corporate GSI mandate form for this company and upload the signed copy.", documentId: null, sentAt: null };
+    if (detail.startsWith("CORPORATE_GSI")) return { kind: k, label: CLOSING_LABELS[k], state: "MANUAL", note: "Use the bank's corporate GSI mandate form for this company and upload the signed copy under Documents. No Administration setup is required.", documentId: null, sentAt: null };
     return { kind: k, label: CLOSING_LABELS[k], state: "PREPARING", note: "ARAF is preparing this document.", documentId: null, sentAt: null };
   });
   return { items, account: app.repayment_account ?? null };

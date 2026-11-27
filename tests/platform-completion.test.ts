@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import JSZip from "jszip";
 import { db } from "@/server/db";
 import { audits, resetDb } from "./helpers";
-import { act, confirmInvoiceIfNeeded, ctxFor, DEMO_INVOICE_OFFICER, makePdf, openTaskOf } from "@/server/demo/scenario";
+import { act, confirmInvoiceIfNeeded, createSubmittedCase, ctxFor, DEMO_INVOICE_OFFICER, driveToOffer, makePdf, openTaskOf } from "@/server/demo/scenario";
 import { CREDIT_PERSON, TestBureau } from "@/server/demo/altphones-scenario";
 import { applyConfig, approveRetailTemplates, completeAll, createRetailCase, driveBusinessReview, driveCredit, driveToBooking, passRetailCreditChecks, payAndReconcile, syntheticConfig } from "@/server/demo/retail-scenario";
 import { setCreditBureauForTests } from "@/server/altphones/integrations";
@@ -172,6 +172,22 @@ describe("9–13. Closing documents on final approval", () => {
     expect(docs.every((d: any) => d.uploaded_by === null && d.generated)).toBe(true);
     // idempotent: running again prepares nothing new
     expect(await generateClosingDocuments(id)).toBe(0);
+  });
+
+  it("a limited company's GSI is a manual corporate form; the initiator is told and no admin configuration is requested", async () => {
+    const id = await createSubmittedCase({ initiator: "RM", type: "LIMITED", amountKobo: N(10_000_000) });
+    await driveToOffer(id);
+    expect((await app(id)).stage).toBe("OFFER_PREPARATION");
+    await generateClosingDocuments(id);
+    const gsi = (await closingStatus(db, id))!.items.find((i) => i.kind === "GSI")!;
+    expect(gsi.state).toBe("MANUAL");
+    expect(gsi.note).toMatch(/corporate GSI/i);
+    expect(gsi.note).not.toMatch(/configure/i);
+    expect((await db.query("SELECT 1 FROM notifications n JOIN role_assignments ra ON ra.staff_id = n.recipient_id AND ra.role = 'SUPER_ADMIN' WHERE n.kind = 'CLOSING_DOCUMENT_ALERT' AND n.application_id = $1", [id])).rowCount).toBe(0);
+    const n = (await db.query("SELECT body FROM notifications WHERE application_id = $1 AND kind = 'CORPORATE_GSI_MANUAL'", [id])).rows;
+    expect(n).toHaveLength(1);
+    expect(n[0].body).toMatch(/upload the signed copy/i);
+    expect(n[0].body).toMatch(/Nothing needs to be configured in Administration/i);
   });
 
   it("without an approved template the offer waits silently and the Super Admin is alerted", async () => {

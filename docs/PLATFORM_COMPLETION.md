@@ -62,7 +62,7 @@ How generation behaves:
   - The Super Admin is alerted in-app and by email.
   - The document is prepared as soon as a template is approved.
 - **Repayment account:** the initiator records the customer's repayment account on the case page. GSI and Remita are then (re)prepared, and earlier versions are kept.
-- **Limited companies:** they are pointed to the bank's corporate GSI form, which has not been added to ARAF yet.
+- **Limited companies:** ARAF does not generate the corporate GSI form. The case marks the GSI as *Manual form* and tells the initiator to download the bank's corporate GSI mandate, have it signed and upload it as *GSI form*. No Administration configuration is needed.
 - **Signing:** no tablet signing. Download the document, have the customer sign, then upload the signed copy:
   - *Signed offer letter*;
   - *GSI form*;
